@@ -1,127 +1,114 @@
-# 漫画翻译器 (Manhua Translator)
+# Manga Translator
 
-自动翻译漫画中的文字，支持英文到中文翻译。
+Automatically translate manga/manhwa text with OCR, AI translation, and smart inpainting.
 
-![效果示例](output/chapter_98_parallel_v1/001_translated.png)
+## ✨ Features
 
-## ✨ 功能特性
+- **Multi-language OCR** - PaddleOCR v5 with Korean, Japanese, English, Chinese support
+- **AI Translation** - PPIO GLM / Google Gemini for high-quality translations
+- **Smart Inpainting** - LaMa model removes original text seamlessly
+- **Auto Typography** - Dynamic font sizing to fit speech bubbles
+- **Web Scraper** - Built-in manga/manhwa downloader
+- **Web UI** - Modern Vue 3 interface for easy operation
 
-- **OCR 文字检测** - 使用 PaddleOCR v5 检测漫画中的文字
-- **AI 翻译** - 使用 PPIO GLM API 进行高质量翻译
-- **智能擦除** - 使用 LaMa 模型擦除原文
-- **自动排版** - 动态字号适配气泡
-- **SFX 保留** - 拟声词（如 BOOM、MVP）不翻译不擦除
-- **并行处理** - 多图片同时处理，速度提升 4 倍
+## 🚀 Quick Start
 
-## 🚀 快速开始
-
-### 安装依赖
+### Installation
 
 ```bash
+# Backend dependencies
 pip install -r requirements.txt
+
+# Frontend (optional, for development)
+cd frontend && npm install
 ```
 
-### 配置 API
+### Configuration
 
-编辑 `.env` 文件：
+Copy `.env.example` to `.env` and fill in your API keys:
 
 ```env
-PPIO_API_KEY=your_api_key_here
+# PPIO GLM API (primary)
+PPIO_API_KEY=your_ppio_api_key
 PPIO_BASE_URL=https://api.ppio.com/openai
 PPIO_MODEL=zai-org/glm-4.7-flash
+
+# Google Gemini API (alternative)
+GEMINI_API_KEY=your_gemini_api_key
+
+# Translation settings
+SOURCE_LANGUAGE=korean
+TARGET_LANGUAGE=zh
 ```
 
-### 使用方法
+### Usage
 
 ```bash
-# 翻译单张图片
-python main.py image test.jpg
+# Start web server (recommended)
+python main.py server --port 8000
 
-# 翻译单张图片（指定输出目录）
+# Translate single image
 python main.py image test.jpg -o output/
 
-# 翻译整章（并行处理）
+# Translate chapter (parallel processing)
 python main.py chapter input/ output/ -w 3
-
-# 启动 Web 服务
-python main.py server --port 8000
 ```
 
-## 📊 性能指标
+## 📊 Performance
 
-| 指标 | 数值 |
-|------|------|
-| 单图处理 | ~30s |
-| **并行处理** | **~11s/张** |
-| OCR 检测 | ~4s |
-| AI 翻译 | ~16s (批量) |
-| 擦除渲染 | ~12s |
+| Metric | Value |
+|--------|-------|
+| Single image | ~25s |
+| Parallel processing | ~11s/image |
+| OCR detection | ~8s |
+| AI translation | ~2s (batch) |
+| Inpainting + Render | ~15s |
 
-## 🏗️ 项目结构
+## 🏗️ Project Structure
 
 ```
 manhua/
-├── main.py                 # CLI 主入口
-├── batch_translate.py      # 并行批处理
+├── main.py                 # CLI entry point
 ├── app/
-│   ├── main.py             # FastAPI 服务入口
-│   ├── deps.py             # 依赖注入与配置
-│   └── routes/
-│       └── translate.py    # 翻译 API 路由
+│   ├── main.py             # FastAPI server
+│   └── routes/             # API routes
 ├── core/
-│   ├── pipeline.py         # 处理流水线
-│   ├── ai_translator.py    # AI 翻译器 (PPIO GLM)
-│   ├── models.py           # 数据模型
-│   ├── renderer.py         # 文字渲染
-│   ├── translator.py       # 区域合并逻辑
-│   ├── modules/
-│   │   ├── ocr.py          # OCR 模块
-│   │   ├── translator.py   # 翻译模块
-│   │   ├── inpainter.py    # 擦除模块
-│   │   └── renderer.py     # 渲染模块
+│   ├── pipeline.py         # Processing pipeline
+│   ├── ai_translator.py    # AI translator (PPIO/Gemini)
+│   ├── modules/            # Pipeline modules
+│   │   ├── ocr.py          # OCR module
+│   │   ├── translator.py   # Translation module
+│   │   ├── inpainter.py    # Inpainting module
+│   │   └── renderer.py     # Text rendering
 │   └── vision/
-│       ├── ocr_engine.py   # PaddleOCR 引擎
-│       └── inpainter.py    # LaMa 擦除
-├── scripts/
-│   └── cli.py              # (废弃) 旧版 CLI
-└── output/                 # 输出目录
+│       ├── ocr/            # PaddleOCR engine
+│       └── inpainter.py    # LaMa inpainter
+├── scraper/                # Manga/manhwa downloader
+├── frontend/               # Vue 3 web UI
+└── requirements.txt
 ```
 
-## 🔧 处理流程
+## 🔧 Pipeline
 
 ```
-图片 → OCR 检测 → 区域合并 → SFX 检测 → AI 翻译 → 擦除 → 渲染 → 输出
+Image → OCR → Region Grouping → Translation → Inpainting → Rendering → Output
 ```
 
-1. **OCR 检测** - PaddleOCR 全图检测文字区域
-2. **区域合并** - 合并相邻的对话行
-3. **SFX 检测** - 识别拟声词（跳过处理）
-4. **AI 翻译** - PPIO GLM 批量翻译
-5. **擦除** - LaMa 模型擦除原文
-6. **渲染** - 动态字号渲染中文
+1. **OCR** - Detect text regions with PaddleOCR
+2. **Grouping** - Merge adjacent text lines
+3. **Translation** - Batch translate with AI
+4. **Inpainting** - Remove original text with LaMa
+5. **Rendering** - Render translated text with proper styling
 
-## 📝 配置选项
+## 🌐 Web Interface
 
-### 翻译模块
+Access at `http://localhost:8000` after starting the server.
 
-```python
-TranslatorModule(
-    source_lang="en",     # 源语言
-    target_lang="zh-CN",  # 目标语言
-    use_ai=True,          # 使用 AI 翻译
-    use_mock=False,       # Mock 模式（测试用）
-)
-```
-
-### 并行处理
-
-```python
-translate_chapter(
-    input_dir,
-    output_dir,
-    max_concurrent=3,  # 并发数（建议 2-4）
-)
-```
+Features:
+- Manga library management
+- Chapter translation with progress tracking
+- Built-in manga scraper
+- Side-by-side comparison view
 
 ## 📄 License
 

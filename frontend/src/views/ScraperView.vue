@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScraperStore } from '@/stores/scraper'
 import ComicBackground from '@/components/ui/ComicBackground.vue'
@@ -8,6 +8,8 @@ import GlassNav from '@/components/layout/GlassNav.vue'
 
 const router = useRouter()
 const scraper = useScraperStore()
+const mobileTab = ref('browse')
+const mobileConfigOpen = ref(true)
 
 onUnmounted(() => {
     scraper.stopPolling()
@@ -15,7 +17,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen relative pb-10">
+  <div class="min-h-screen relative pb-24 xl:pb-10">
     <ComicBackground />
     <GlassNav title="资源爬取">
       <template #actions>
@@ -26,7 +28,7 @@ onUnmounted(() => {
     </GlassNav>
 
     <main class="container mx-auto px-4 py-6">
-      <div class="flex flex-wrap gap-2 mb-4">
+      <div class="flex flex-wrap gap-2 mb-4" :class="mobileTab !== 'browse' ? 'hidden xl:flex' : ''">
         <button @click="scraper.setView('search')"
           class="px-3 py-1 text-xs font-semibold rounded-full border transition"
           :class="scraper.state.view === 'search'
@@ -42,10 +44,42 @@ onUnmounted(() => {
           站点目录
         </button>
       </div>
+      <div class="flex flex-wrap gap-2 mb-4 xl:hidden">
+        <button @click="mobileTab = 'browse'"
+          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
+          :class="mobileTab === 'browse'
+            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
+            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+          浏览
+        </button>
+        <button @click="mobileTab = 'chapters'"
+          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
+          :class="mobileTab === 'chapters'
+            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
+            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+          章节
+        </button>
+        <button @click="mobileTab = 'settings'"
+          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
+          :class="mobileTab === 'settings'
+            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
+            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+          设置
+        </button>
+      </div>
       <div class="grid gap-6 xl:grid-cols-12">
         <!-- Config Panel -->
-        <div class="space-y-4 xl:col-span-3">
-          <div class="bg-surface border border-main rounded-xl p-4 space-y-4">
+        <div class="space-y-4 xl:col-span-3" :class="mobileTab === 'settings' ? 'block' : 'hidden xl:block'">
+          <div class="bg-surface border border-main rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <h3 class="font-semibold">站点设置</h3>
+              <button class="text-xs text-slate-400 xl:hidden" @click="mobileConfigOpen = !mobileConfigOpen">
+                <span>{{ mobileConfigOpen ? '收起' : '展开' }}</span>
+                <i class="fas fa-chevron-down ml-1 transition"
+                  :class="mobileConfigOpen ? 'rotate-180' : ''"></i>
+              </button>
+            </div>
+            <div class="mt-3 space-y-4" :class="mobileConfigOpen ? 'block' : 'hidden xl:block'">
             <div>
               <label class="text-xs text-slate-400">站点</label>
               <select v-model="scraper.state.site" @change="scraper.setSite(scraper.state.site)"
@@ -92,6 +126,7 @@ onUnmounted(() => {
               {{ scraper.catalog.loading ? '加载中...' : '加载目录' }}
             </button>
             <p v-if="scraper.error" class="text-xs text-red-400">{{ scraper.error }}</p>
+            </div>
           </div>
 
           <!-- Task Status -->
@@ -113,7 +148,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Results -->
-        <div class="space-y-4 xl:col-span-5">
+        <div class="space-y-4 xl:col-span-5" :class="mobileTab === 'browse' ? 'block' : 'hidden xl:block'">
           <!-- Search Results -->
           <div v-if="scraper.state.view === 'search'" class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-center justify-between">
@@ -193,7 +228,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Chapters -->
-        <div class="space-y-4 xl:col-span-4">
+        <div class="space-y-4 xl:col-span-4" :class="mobileTab === 'chapters' ? 'block' : 'hidden xl:block'">
           <div class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-center justify-between">
               <h3 class="font-semibold">章节列表</h3>
@@ -205,7 +240,7 @@ onUnmounted(() => {
                 </span>
               </div>
             </div>
-            <div class="mt-3 flex flex-wrap gap-2">
+            <div class="mt-3 flex flex-wrap gap-2 hidden xl:flex">
               <button @click="scraper.selectAll()"
                 class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1 transition">
                 全选
@@ -220,7 +255,7 @@ onUnmounted(() => {
                 批量下载 ({{ scraper.selectedIds.length }})
               </button>
             </div>
-            <div class="mt-3 space-y-2 max-h-[480px] overflow-y-auto custom-scrollbar">
+            <div class="mt-3 space-y-2 max-h-[60vh] xl:max-h-[480px] overflow-y-auto custom-scrollbar">
               <p v-if="scraper.chapters.length === 0" class="text-xs text-slate-500">请选择漫画查看章节</p>
               <div v-for="chapter in scraper.chapters" :key="chapter.id"
                 class="flex items-center justify-between bg-bg-primary/50 border border-main/50 rounded-lg px-3 py-2">
@@ -253,6 +288,23 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      <div v-if="mobileTab === 'chapters'" class="fixed bottom-4 left-4 right-4 z-30 xl:hidden">
+        <div class="bg-surface/95 border border-main rounded-full px-3 py-2 flex items-center justify-between gap-2">
+          <button @click="scraper.selectAll()"
+            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50">
+            全选
+          </button>
+          <button @click="scraper.clearSelection()"
+            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50">
+            清空
+          </button>
+          <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0"
+            class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 border border-accent-1/30"
+            :class="scraper.selectedIds.length === 0 ? 'opacity-60 cursor-not-allowed' : ''">
+            下载 {{ scraper.selectedIds.length }}
+          </button>
         </div>
       </div>
     </main>
