@@ -1,0 +1,188 @@
+<script setup>
+import { onMounted, ref, computed, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useMangaStore } from '@/stores/manga'
+import { useToastStore } from '@/stores/toast'
+import { mangaApi, translateApi } from '@/api'
+import { useKeyboard } from '@/composables/useKeyboard'
+import { useReadingHistory } from '@/composables/useReadingHistory'
+import CompareSlider from '@/components/ui/CompareSlider.vue'
+import ContextMenu from '@/components/ui/ContextMenu.vue'
+
+const route = useRoute()
+const router = useRouter()
+const mangaStore = useMangaStore()
+const toast = useToastStore()
+const { addEntry } = useReadingHistory()
+
+const pages = ref([])
+const loading = ref(true)
+const compareMode = ref(false)
+const contextMenuRef = ref(null)
+
+const mangaId = route.params.mangaId
+const chapterId = route.params.chapterId
+
+// Chapter navigation
+const currentChapterIndex = computed(() => {
+  return mangaStore.chapters.findIndex(c => c.id === chapterId)
+})
+
+const prevChapter = computed(() => {
+  const idx = currentChapterIndex.value
+  return idx > 0 ? mangaStore.chapters[idx - 1] : null
+})
+
+const nextChapter = computed(() => {
+  const idx = currentChapterIndex.value
+  return idx >= 0 && idx < mangaStore.chapters.length - 1 
+    ? mangaStore.chapters[idx + 1] 
+    : null
+})
+
+function goToChapter(chapter) {
+  if (!chapter) return
+  router.push({ 
+    name: 'reader', 
+    params: { mangaId, chapterId: chapter.id }
+  })
+}
+
+// Keyboard navigation with chapter support
+useKeyboard({
+  onEscape: () => router.go(-1),
+  onSpace: () => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' }),
+  onPrev: () => { if (prevChapter.value) goToChapter(prevChapter.value) },
+  onNext: () => { if (nextChapter.value) goToChapter(nextChapter.value) }
+})
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    if (!mangaStore.currentManga) {
+      await mangaStore.fetchMangas()
+      await mangaStore.openManga(mangaId)
+    }
+    const data = await mangaApi.getChapter(mangaId, chapterId)
+    pages.value = data.pages
+    
+    // Record reading history
+    const currentChapter = mangaStore.chapters.find(c => c.id === chapterId)
+    addEntry({
+      mangaId,
+      mangaName: mangaStore.currentManga?.name || mangaId,
+      chapterId,
+      chapterName: currentChapter?.name || chapterId
+    })
+  } catch (e) {
+    console.error(e)
+    toast.show('加载失败', 'error')
+  } finally {
+    loading.value = false
+  }
+})
+
+function toggleCompare() {
+  compareMode.value = !compareMode.value
+}
+
+function showPageMenu(event, page) {
+  contextMenuRef.value?.show(event, page)
+}
+
+async function handleRetranslate(page) {
+  const pageName = page?.name || page
+  toast.show('正在重新翻译...', 'info')
+  try {
+    await translateApi.retranslatePage({
+      manga_id: mangaId,
+      chapter_id: chapterId,
+      image_name: pageName
+    })
+    toast.show('翻译请求已提交', 'success')
+  } catch (e) {
+    console.error(e)
+    toast.show('翻译失败', 'error')
+  }
+}
+
+const contextMenuItems = [
+  { label: '重新翻译', icon: 'fa-sync-alt', action: handleRetranslate },
+  { label: '复制图片链接', icon: 'fa-link', action: (page) => {
+    navigator.clipboard?.writeText(window.location.origin + (page.translated_url || page.original_url))
+    toast.show('链接已复制', 'success')
+  }}
+]
+</script>
+
+<template>
+  <div class="min-h-screen bg-black text-white">
+    <!-- Toolbar -->
+    <div class="fixed top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent z-50 flex justify-between items-start pointer-events-none">
+      <button @click="router.go(-1)" class="pointer-events-auto w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center text-white hover:bg-white/20">
+        <i class="fas fa-arrow-left"></i>
+      </button>
+      
+      <button @click="toggleCompare" 
+        class="pointer-events-auto px-4 py-2 rounded-full backdrop-blur font-bold text-sm transition"
+        :class="compareMode ? 'bg-accent-2/80 text-black' : 'bg-black/50 text-white'">
+        <i class="fas fa-columns mr-2"></i> 对比模式
+      </button>
+    </div>
+
+    <!-- Reader Content -->
+    <div class="max-w-4xl mx-auto min-h-screen">
+      <div v-if="loading" class="flex items-center justify-center h-screen">
+        <div class="w-12 h-12 border-4 border-accent-1 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+      
+      <div v-else class="flex flex-col">
+        <div v-for="page in pages" :key="page.name" class="relative group"
+          @contextmenu="showPageMenu($event, page)">
+          <CompareSlider 
+            :original="page.original_url" 
+            :translated="page.translated_url || page.original_url" 
+            :active="compareMode"
+          />
+          
+          <!-- Quick Action Button -->
+          <button 
+            class="absolute top-2 right-2 w-8 h-8 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition flex items-center justify-center hover:bg-accent-1"
+            title="重新翻译"
+            @click="handleRetranslate(page)">
+            <i class="fas fa-sync-alt text-xs"></i>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Navigation Footer -->
+      <div v-if="!loading" class="p-8 pb-20 text-center space-y-4">
+        <h3 class="text-slate-500">章节结束</h3>
+        
+        <!-- Chapter Navigation -->
+        <div class="flex justify-center gap-4 flex-wrap">
+          <button v-if="prevChapter" 
+            @click="goToChapter(prevChapter)"
+            class="px-6 py-3 rounded-full bg-surface border border-slate-700 hover:bg-white/10 flex items-center gap-2">
+            <i class="fas fa-chevron-left"></i> 上一章
+          </button>
+          
+          <button class="px-6 py-3 rounded-full bg-surface border border-slate-700 hover:bg-white/10" @click="router.go(-1)">
+            返回章节列表
+          </button>
+          
+          <button v-if="nextChapter" 
+            @click="goToChapter(nextChapter)"
+            class="px-6 py-3 rounded-full bg-accent-1/80 hover:bg-accent-1 text-white flex items-center gap-2">
+            下一章 <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+        
+        <p class="text-xs text-slate-600">提示: 使用 ← → 箭头键切换章节</p>
+      </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
+  </div>
+</template>

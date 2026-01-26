@@ -1,0 +1,144 @@
+"""
+日志配置模块 - 统一管理项目日志输出。
+
+日志文件存储在 logs/ 目录下，按日期和模块分类。
+"""
+
+import logging
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+# 日志目录
+LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def setup_logging(
+    level: int = logging.INFO,
+    log_file: Optional[str] = None,
+    console: bool = True,
+):
+    """
+    配置全局日志系统。
+
+    Args:
+        level: 日志级别 (DEBUG, INFO, WARNING, ERROR)
+        log_file: 日志文件名（自动添加日期前缀）
+        console: 是否输出到控制台
+    """
+    # 日志格式
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # 根 logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # 清除已有 handlers
+    root_logger.handlers.clear()
+
+    # 控制台输出
+    if console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(level)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+
+    # 文件输出
+    if log_file:
+        date_str = datetime.now().strftime("%Y%m%d")
+        log_path = LOG_DIR / f"{date_str}_{log_file}"
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+    # 抑制第三方库的冗余日志
+    logging.getLogger("ppocr").setLevel(logging.WARNING)
+    logging.getLogger("paddlex").setLevel(logging.WARNING)
+    logging.getLogger("paddle").setLevel(logging.WARNING)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    return root_logger
+
+
+def setup_module_logger(
+    name: str,
+    log_file: str,
+    level: int = logging.INFO,
+) -> logging.Logger:
+    """
+    为指定模块创建独立日志文件（不影响全局 handler）。
+
+    Args:
+        name: logger 名称
+        log_file: 日志文件名（自动添加日期前缀）
+        level: 日志级别
+    """
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    date_str = datetime.now().strftime("%Y%m%d")
+    log_path = LOG_DIR / f"{date_str}_{log_file}"
+    for handler in logger.handlers:
+        if (
+            isinstance(handler, logging.FileHandler)
+            and Path(handler.baseFilename) == log_path
+        ):
+            return logger
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(level)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    return logger
+
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    获取指定名称的 logger。
+
+    Args:
+        name: logger 名称（通常使用 __name__）
+
+    Returns:
+        配置好的 Logger 实例
+    """
+    return logging.getLogger(name)
+
+
+# 默认初始化
+_initialized = False
+
+
+def init_default_logging():
+    """初始化默认日志配置。"""
+    global _initialized
+    if not _initialized:
+        setup_logging(
+            level=logging.INFO,
+            log_file="app.log",
+            console=True,
+        )
+        _initialized = True
+
+
+# 导出
+__all__ = [
+    "setup_logging",
+    "setup_module_logger",
+    "get_logger",
+    "LOG_DIR",
+    "init_default_logging",
+]

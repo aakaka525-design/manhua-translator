@@ -1,0 +1,127 @@
+"""
+Manhua Translation System - FastAPI Application.
+
+Main entry point for the web API.
+"""
+
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .deps import get_settings
+from .routes import translate, manga, scraper
+from .routes import settings as settings_router
+from .routes import system
+from fastapi.staticfiles import StaticFiles
+
+# 初始化日志系统
+from core.logging_config import init_default_logging
+
+init_default_logging()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup/shutdown."""
+    settings = get_settings()
+
+    # Create required directories
+    Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
+    Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
+    Path(settings.temp_dir).mkdir(parents=True, exist_ok=True)
+    Path(settings.static_dir).mkdir(parents=True, exist_ok=True)
+
+    yield
+
+    print("👋 Shutting down...")
+
+
+app = FastAPI(
+    title="Manhua Translation API",
+    description="AI-powered manga/manhua translation system",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register routes
+app.include_router(translate.router, prefix="/api/v1")
+app.include_router(manga.router, prefix="/api/v1")
+app.include_router(scraper.router, prefix="/api/v1")
+app.include_router(settings_router.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
+
+# Mount static files
+settings = get_settings()
+app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
+app.mount("/data", StaticFiles(directory=Path(settings.data_dir).resolve()), name="data")
+app.mount("/output", StaticFiles(directory=Path(settings.output_dir).resolve()), name="output")
+
+from fastapi.responses import FileResponse, HTMLResponse
+
+# Mount Vue assets
+dist_dir = Path("app/static/dist")
+if (dist_dir / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=dist_dir / "assets"), name="assets")
+
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+async def catch_all(request: Request, full_path: str):
+    """Serve the frontend SPA."""
+    # Allow API endpoints to pass through (handled by previous routes)
+    # But if no API matched (404), they usually fall through here unless processed.
+    # Actually, FastAPI matches specific routes first.
+    # We just need to ensure we don't capture /api/ if it wasn't matched?
+    # No, API routers are included above. If they don't match, it falls here (if this is last).
+    
+    # We should exclude /data and /output explicitly just in case, though they are mounted.
+    if full_path.startswith("api") or full_path.startswith("data") or full_path.startswith("output"):
+        # Let default 404 handler take it (or return 404 manually)
+        # But since we are IN a route handler, we return response.
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        
+    index_file = dist_dir / "index.html"
+    if not index_file.exists():
+         return HTMLResponse("Frontend build not found. Please run 'npm run build'.", status_code=500)
+         
+    return FileResponse(index_file)
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler."""
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "detail": str(exc),
+        },
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    settings = get_settings()
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug,
+    )

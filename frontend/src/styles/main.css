@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    /* Default Theme (Dark Glass) */
+    --bg-primary: #0F0F11;
+    --bg-surface: #1A1A1E;
+    --text-main: #F0F0F0;
+    --accent-1: #FF0055;
+    --accent-2: #00F0FF;
+    --border-color: rgba(255, 255, 255, 0.1);
+
+    /* Component Specifics */
+    --card-border-width: 3px;
+    --card-border-color: #000000;
+    --card-shadow-color: #FF0055;
+    --card-shadow-hover: #00F0FF;
+
+    --nav-bg: rgba(15, 15, 17, 0.7);
+    --nav-backdrop-blur: 12px;
+    --nav-border: rgba(255, 255, 255, 0.1);
+
+    /* Base Body */
+    background-color: var(--bg-primary);
+    color-scheme: dark;
+}
+
+[data-theme="pop"] {
+    /* High-Voltage Pop Theme */
+    --bg-primary: #FDFBF7;
+    --bg-surface: #FFFFFF;
+    --text-main: #121212;
+    --accent-1: #FF2E00;
+    /* Action Red */
+    --accent-2: #0099FF;
+    /* Cyan */
+    --border-color: #121212;
+
+    /* Component Specifics */
+    --card-border-width: 3px;
+    --card-border-color: #121212;
+    --card-shadow-color: #121212;
+    --card-shadow-hover: #FFEB3B;
+    /* Highlighter Yellow */
+
+    --nav-bg: #FFFFFF;
+    --nav-backdrop-blur: 0px;
+    --nav-border: #121212;
+
+    color-scheme: light;
+}
+
+body {
+    @apply bg-bg-primary text-text-main antialiased;
+    min-height: 100vh;
+    background-color: var(--bg-primary);
+    color: var(--text-main);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Comic Grid Pattern for Pop Theme */
+[data-theme="pop"] body {
+    background-image:
+        linear-gradient(#E0E0E0 1px, transparent 1px),
+        linear-gradient(90deg, #E0E0E0 1px, transparent 1px);
+    background-size: 40px 40px;
+}

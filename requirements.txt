@@ -1,0 +1,33 @@
+# Core dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-multipart>=0.0.6
+
+# Image processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Async support
+aiofiles>=23.2.0
+httpx>=0.25.0
+
+# Scraper stack
+aiohttp>=3.9.0
+beautifulsoup4>=4.12.0
+playwright>=1.42.0
+
+# CLI
+click>=8.1.0
+rich>=13.0.0
+
+# Development
+python-dotenv>=1.0.0
+
+# Future: Uncomment when implementing real modules
+# paddlepaddle>=2.5.0
+# paddleocr>=2.7.0
+# ultralytics>=8.0.0  # YOLO
+# torch>=2.0.0

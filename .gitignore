@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+*.manifest
+*.spec
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment Variables (SENSITIVE!)
+.env
+.env.local
+.env.*.local
+
+# Project specific - Data & Output
+data/
+output/
+temp/
+temp_debug/
+logs/
+test_img/
+
+# Models (large files)
+models/*.pth
+models/*.pt
+models/*.onnx
+models/lama/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+frontend/npm-cache/
+frontend/dist/
+
+# Cache
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Debug files
+debug_*.py
+*_report.txt
+*.resolved
+
+# Misc
+*.log
+*.tmp
+=0.23.0
