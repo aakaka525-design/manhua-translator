@@ -96,6 +96,43 @@ class _NoopModule(BaseModule):
         return context
 
 
+def _make_result(tmp_path, monkeypatch, region):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    ctx = TaskContext(
+        image_path="/tmp/input.png",
+        target_language="zh-CN",
+        regions=[region],
+    )
+    metrics = PipelineMetrics(total_duration_ms=100)
+    return PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=100,
+        stages_completed=["ocr", "translator"],
+        metrics=metrics.to_dict(),
+    )
+
+
+def test_quality_report_recommendations_and_order(tmp_path, monkeypatch):
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+        source_text="Hello",
+        target_text="H",
+        confidence=0.4,
+    )
+
+    result = _make_result(tmp_path, monkeypatch, region)
+
+    from core.quality_report import write_quality_report
+
+    report_path = write_quality_report(result)
+    data = json.loads(Path(report_path).read_text())
+    recs = data["regions"][0]["recommendations"]
+
+    assert recs[0] == "retry_translation"
+    assert "low_ocr_confidence" in recs
+
+
 def test_pipeline_writes_quality_report(tmp_path, monkeypatch):
     monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
 
