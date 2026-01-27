@@ -2,6 +2,7 @@ import re
 from typing import List
 
 from .models import RegionData
+from .modules.translator import _is_sfx as _is_sfx_translator
 
 
 class OCRPostProcessor:
@@ -10,6 +11,9 @@ class OCRPostProcessor:
         (re.compile(r"이닌"), "이번"),
         (re.compile(r"억은"), "역은"),
     ]
+    _SFX_CJK_RE = re.compile(r"^[\u4e00-\u9fff]{1,6}[!！]?$")
+    _SFX_JP_RE = re.compile(r"^[\u3040-\u30ff]{2,8}[!！]?$")
+    _SFX_KO_RE = re.compile(r"^[\uac00-\ud7a3]{1,6}[!！]?$")
 
     def _normalize(self, text: str) -> str:
         if not text:
@@ -17,6 +21,17 @@ class OCRPostProcessor:
         return self._WS_RE.sub(" ", text).strip()
 
     def _is_sfx(self, text: str) -> bool:
+        if not text:
+            return False
+        if _is_sfx_translator(text):
+            return True
+        t = text.strip()
+        if self._SFX_CJK_RE.match(t):
+            return True
+        if self._SFX_JP_RE.match(t):
+            return True
+        if self._SFX_KO_RE.match(t):
+            return True
         return False
 
     def _fix_korean(self, text: str) -> str:
