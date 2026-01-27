@@ -12,6 +12,7 @@ from typing import Optional
 from ..models import TaskContext
 from ..modules.base import BaseModule
 from ..vision import OCREngine, PaddleOCREngine, MockOCREngine
+from ..ocr_postprocessor import OCRPostProcessor
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -93,6 +94,9 @@ class OCRModule(BaseModule):
             context.regions = await self.engine.detect_and_recognize(
                 context.image_path,
             )
+
+        # Post-process OCR text (normalize + SFX detection + locale fixes)
+        OCRPostProcessor().process_regions(context.regions, lang=target_lang)
         
         duration_ms = (time.perf_counter() - start_time) * 1000
         
