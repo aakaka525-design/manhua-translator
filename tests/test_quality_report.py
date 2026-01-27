@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import pytest
 
 from core.metrics import PipelineMetrics, StageMetrics
 from core.models import Box2D, PipelineResult, RegionData, TaskContext
+from core.modules.base import BaseModule
+from core.pipeline import Pipeline
 
 
 def test_write_quality_report_creates_file(tmp_path, monkeypatch):
@@ -48,3 +51,26 @@ def test_write_quality_report_creates_file(tmp_path, monkeypatch):
     assert data["target_language"] == "zh-CN"
     assert "timings_ms" in data
     assert data["regions"][0]["source_text"] == "Hello"
+
+
+class _NoopModule(BaseModule):
+    async def process(self, context):
+        return context
+
+
+def test_pipeline_writes_quality_report(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+
+    pipeline = Pipeline(
+        ocr=_NoopModule(),
+        translator=_NoopModule(),
+        inpainter=_NoopModule(),
+        renderer=_NoopModule(),
+    )
+
+    ctx = TaskContext(image_path="/tmp/input.png", target_language="zh-CN")
+
+    asyncio.run(pipeline.process(ctx))
+
+    report_path = tmp_path / f"{ctx.task_id}.json"
+    assert report_path.exists()
