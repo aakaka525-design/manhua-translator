@@ -118,7 +118,7 @@ def test_quality_report_recommendations_and_order(tmp_path, monkeypatch):
         box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
         source_text="Hello",
         target_text="H",
-        confidence=0.4,
+        confidence=0.1,
     )
 
     result = _make_result(tmp_path, monkeypatch, region)

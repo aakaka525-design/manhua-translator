@@ -45,6 +45,24 @@ def _evaluate_region_quality(region) -> Dict[str, object]:
         + 0.10 * model_conf
     )
 
+    recs: List[str] = []
+    if score < 0.55:
+        recs.append("retry_translation")
+    if ocr_conf < 0.6:
+        recs.append("low_ocr_confidence")
+    if length_fit < 0.7:
+        recs.append("check_overflow")
+    if glossary_cov < 0.6:
+        recs.append("review_glossary")
+
+    priority = {
+        "retry_translation": 0,
+        "low_ocr_confidence": 1,
+        "check_overflow": 2,
+        "review_glossary": 3,
+    }
+    recs.sort(key=lambda r: priority.get(r, 999))
+
     return {
         "quality_score": round(score, 4),
         "quality_signals": {
@@ -54,7 +72,7 @@ def _evaluate_region_quality(region) -> Dict[str, object]:
             "punctuation_ok": punctuation_ok,
             "model_conf": model_conf,
         },
-        "recommendations": [],
+        "recommendations": recs,
     }
 
 
