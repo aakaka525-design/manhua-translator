@@ -51,3 +51,28 @@ def test_ocr_postprocessor_marks_sfx(text):
     processed = OCRPostProcessor().process_regions([region], lang="en")
 
     assert processed[0].is_sfx is True
+
+
+@pytest.mark.parametrize(
+    "text, expected_norm, expected_sfx",
+    [
+        ("", "", False),
+        ("   ", "", False),
+        ("...", "...", False),
+        ("!!!", "!!!", True),
+        ("LONG   TEXT   HERE", "LONG TEXT HERE", False),
+    ],
+)
+def test_ocr_postprocessor_edge_cases(text, expected_norm, expected_sfx):
+    from core.models import Box2D, RegionData
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text=text,
+        confidence=0.9,
+    )
+
+    from core.ocr_postprocessor import OCRPostProcessor
+    processed = OCRPostProcessor().process_regions([region], lang="en")
+
+    assert processed[0].normalized_text == expected_norm
+    assert processed[0].is_sfx is expected_sfx
