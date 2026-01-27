@@ -70,3 +70,6 @@ debug_*.py
 *.log
 *.tmp
 =0.23.0
+
+# Worktrees
+.worktrees/
