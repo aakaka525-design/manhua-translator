@@ -6,6 +6,10 @@ from .models import RegionData
 
 class OCRPostProcessor:
     _WS_RE = re.compile(r"\s+")
+    _KO_FIXES = [
+        (re.compile(r"이닌"), "이번"),
+        (re.compile(r"억은"), "역은"),
+    ]
 
     def _normalize(self, text: str) -> str:
         if not text:
@@ -16,7 +20,10 @@ class OCRPostProcessor:
         return False
 
     def _fix_korean(self, text: str) -> str:
-        return text
+        out = text
+        for pattern, repl in self._KO_FIXES:
+            out = pattern.sub(repl, out)
+        return out
 
     def process_regions(self, regions: List[RegionData], lang: str = "en") -> List[RegionData]:
         for r in regions:
