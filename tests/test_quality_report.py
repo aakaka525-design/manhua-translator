@@ -53,6 +53,44 @@ def test_write_quality_report_creates_file(tmp_path, monkeypatch):
     assert data["regions"][0]["source_text"] == "Hello"
 
 
+def test_quality_report_includes_quality_signals_and_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+
+    ctx = TaskContext(
+        image_path="/tmp/input.png",
+        output_path="/tmp/output.png",
+        source_language="en",
+        target_language="zh-CN",
+        regions=[
+            RegionData(
+                box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+                source_text="Hello",
+                target_text="你好",
+                confidence=0.8,
+            )
+        ],
+    )
+
+    metrics = PipelineMetrics(total_duration_ms=100)
+    result = PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=100,
+        stages_completed=["ocr", "translator"],
+        metrics=metrics.to_dict(),
+    )
+
+    from core.quality_report import write_quality_report
+
+    report_path = write_quality_report(result)
+    data = json.loads(Path(report_path).read_text())
+
+    region = data["regions"][0]
+    assert "quality_score" in region
+    assert "quality_signals" in region
+    assert region["quality_signals"]["length_fit"] == 0.5
+
+
 class _NoopModule(BaseModule):
     async def process(self, context):
         return context
