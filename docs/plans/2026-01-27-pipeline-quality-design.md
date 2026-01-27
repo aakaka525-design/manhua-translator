@@ -76,22 +76,58 @@ Fallback heuristic (if font metrics unavailable):
 - max_chars = floor((w / avg_char_w) * (h / line_height)), where
   avg_char_w ~= font_size * 0.9, line_height ~= font_size * 1.2.
 
+### 5.4 SFX Strategy (rendering policy)
+Default behavior should be explicit and configurable:
+- Tag SFX using existing _is_sfx() rules.
+- Default policy: keep original text (do not translate), but re-render after inpainting to preserve style.
+- Optional policy: transliterate SFX using a small mapping table (config/style.yml).
+- Optional policy: keep original without inpainting (skip render) for performance.
+
+Implementation note: translator can set target_text to "[SFX:<original>]" and renderer strips the marker. This matches current behavior and keeps policy centralized.
+
 ## 6. Quality Score Definition (Concrete)
 Define a normalized score in [0,1]. Suggested weights (tunable in config/quality.yml):
 
-score = 0.35 * ocr_conf + 0.25 * length_fit + 0.20 * glossary_cov + 0.10 * punctuation_ok + 0.10 * model_conf
+score = 0.35 * ocr_conf + 0.25 * length_fit + 0.20 * glossary_cov + 0.10 * punctuation_ok + 0.10 * latency_score
 
 Signals:
 - ocr_conf: existing RegionData.confidence (or avg per bubble).
 - length_fit: 1 - min(1, abs(len(tgt)-target_len)/target_len) where target_len is from max_chars.
 - glossary_cov: percentage of glossary terms matched.
 - punctuation_ok: 1 if output is well-formed (no dangling quotes/ellipsis), else 0.
-- model_conf: optional; 0.5 default if no confidence available.
+- latency_score: 1 - min(1, latency_ms / threshold_ms); threshold_ms defaults to 1500ms.
 
 Thresholds (initial):
 - >= 0.75: accept
 - 0.55-0.75: retry with concise prompt
 - < 0.55: fallback model or mark for manual review
+
+### 6.1 QualityReport JSON Schema (Phase 1 output)
+Emit a JSON file per image to enable later visualization and auditing.
+
+Suggested schema:
+{
+  "task_id": "...",
+  "image_path": "...",
+  "target_language": "zh-CN",
+  "timings_ms": {"ocr": 0, "translate": 0, "inpaint": 0, "render": 0},
+  "regions": [
+    {
+      "region_id": "...",
+      "bubble_id": 1,
+      "reading_order": 3,
+      "source_text": "...",
+      "normalized_text": "...",
+      "target_text": "...",
+      "max_chars": 18,
+      "quality_score": 0.82,
+      "quality_breakdown": {"ocr_conf": 0.9, "length_fit": 0.8, "glossary_cov": 1.0, "punctuation_ok": 1.0, "latency_score": 0.7},
+      "retries": 0,
+      "model_used": "glm-4-flash-250414",
+      "latency_ms": 820
+    }
+  ]
+}
 
 ## 7. Data Model Changes
 Extend RegionData with:
@@ -119,7 +155,7 @@ Minimum tests to lock quality behavior:
 3) Layout constraints (max_chars / overflow handling).
 
 ## 10. Rollout Plan (Incremental)
-Phase 1: Add configs + inject glossary into prompt; emit QualityReport JSON.
+Phase 1: Add configs + inject glossary into prompt; emit QualityReport JSON per image (output/quality_reports/<task_id>.json).
 Phase 2: Enable QualityGate and retries for low scores.
 Phase 3: Add LayoutEstimator + enforce length constraints in renderer.
 
