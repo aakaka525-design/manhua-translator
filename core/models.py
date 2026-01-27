@@ -66,7 +66,9 @@ class RegionData(BaseModel):
     box_2d: Optional[Box2D] = Field(default=None, description="Bounding box coordinates")
     mask_path: Optional[str] = Field(default=None, description="Path to region mask image")
     source_text: Optional[str] = Field(default=None, description="Original text (OCR result)")
+    normalized_text: Optional[str] = Field(default=None, description="Normalized OCR text")
     target_text: Optional[str] = Field(default=None, description="Translated text")
+    is_sfx: bool = Field(default=False, description="Whether region is SFX")
     font_style_params: FontStyleParams = Field(
         default_factory=FontStyleParams,
         description="Font styling for rendering"
