@@ -149,3 +149,51 @@ def test_pipeline_writes_quality_report(tmp_path, monkeypatch):
 
     report_path = tmp_path / f"{ctx.task_id}.json"
     assert report_path.exists()
+
+
+def test_quality_report_skips_glossary_for_sfx(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    ctx = TaskContext(
+        image_path="/tmp/input.png",
+        target_language="zh-CN",
+        regions=[
+            RegionData(
+                box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+                source_text="BANG!",
+                target_text="砰!",
+                confidence=0.8,
+                is_sfx=True,
+                glossary_cov=0.3,
+            )
+        ],
+    )
+    metrics = PipelineMetrics(total_duration_ms=100)
+    result = PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=100,
+        stages_completed=["ocr", "translator"],
+        metrics=metrics.to_dict(),
+    )
+
+    from core.quality_report import write_quality_report
+
+    report_path = write_quality_report(result)
+    data = json.loads(Path(report_path).read_text())
+    recs = data["regions"][0]["recommendations"]
+
+    assert "review_glossary" not in recs
+
+    non_sfx = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+        source_text="Hello",
+        target_text="你好",
+        confidence=0.8,
+        glossary_cov=0.3,
+    )
+    non_sfx_result = _make_result(tmp_path, monkeypatch, non_sfx)
+    non_sfx_path = write_quality_report(non_sfx_result)
+    non_sfx_data = json.loads(Path(non_sfx_path).read_text())
+    non_sfx_recs = non_sfx_data["regions"][0]["recommendations"]
+
+    assert "review_glossary" in non_sfx_recs

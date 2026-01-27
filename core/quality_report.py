@@ -33,7 +33,9 @@ def _timings_from_metrics(metrics: Any) -> Dict[str, float]:
 def _evaluate_region_quality(region) -> Dict[str, object]:
     ocr_conf = region.confidence if region.confidence is not None else 0.5
     length_fit = 0.5
-    glossary_cov = 1.0
+    glossary_cov = (
+        region.glossary_cov if getattr(region, "glossary_cov", None) is not None else 1.0
+    )
     punctuation_ok = 1.0
     model_conf = 0.5
 
@@ -52,7 +54,7 @@ def _evaluate_region_quality(region) -> Dict[str, object]:
         recs.append("low_ocr_confidence")
     if length_fit < 0.7:
         recs.append("check_overflow")
-    if glossary_cov < 0.6:
+    if (not region.is_sfx) and glossary_cov < 0.6:
         recs.append("review_glossary")
 
     priority = {
