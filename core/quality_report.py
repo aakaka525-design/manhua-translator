@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 def _resolve_output_dir() -> Path:
@@ -30,6 +30,34 @@ def _timings_from_metrics(metrics: Any) -> Dict[str, float]:
     return timings
 
 
+def _evaluate_region_quality(region) -> Dict[str, object]:
+    ocr_conf = region.confidence if region.confidence is not None else 0.5
+    length_fit = 0.5
+    glossary_cov = 1.0
+    punctuation_ok = 1.0
+    model_conf = 0.5
+
+    score = (
+        0.35 * ocr_conf
+        + 0.25 * length_fit
+        + 0.20 * glossary_cov
+        + 0.10 * punctuation_ok
+        + 0.10 * model_conf
+    )
+
+    return {
+        "quality_score": round(score, 4),
+        "quality_signals": {
+            "ocr_conf": ocr_conf,
+            "length_fit": length_fit,
+            "glossary_cov": glossary_cov,
+            "punctuation_ok": punctuation_ok,
+            "model_conf": model_conf,
+        },
+        "recommendations": [],
+    }
+
+
 def write_quality_report(result) -> str:
     ctx = result.task
     output_dir = _resolve_output_dir()
@@ -41,18 +69,20 @@ def write_quality_report(result) -> str:
         "output_path": ctx.output_path,
         "target_language": ctx.target_language,
         "timings_ms": _timings_from_metrics(result.metrics),
-        "regions": [
-            {
-                "region_id": str(r.region_id),
-                "source_text": r.source_text,
-                "target_text": r.target_text,
-                "confidence": r.confidence,
-                "box_2d": r.box_2d.model_dump() if r.box_2d else None,
-                "quality_score": None,
-            }
-            for r in (ctx.regions or [])
-        ],
+        "regions": [],
     }
+    for region in ctx.regions or []:
+        quality = _evaluate_region_quality(region)
+        data["regions"].append(
+            {
+                "region_id": str(region.region_id),
+                "source_text": region.source_text,
+                "target_text": region.target_text,
+                "confidence": region.confidence,
+                "box_2d": region.box_2d.model_dump() if region.box_2d else None,
+                **quality,
+            }
+        )
 
     report_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     return str(report_path)
