@@ -197,3 +197,24 @@ def test_quality_report_skips_glossary_for_sfx(tmp_path, monkeypatch):
     non_sfx_recs = non_sfx_data["regions"][0]["recommendations"]
 
     assert "review_glossary" in non_sfx_recs
+
+
+def test_quality_report_includes_font_size_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+        source_text="Hello",
+        target_text="你好",
+        confidence=0.8,
+        font_size_ref=20,
+        font_size_used=18,
+        font_size_relaxed=False,
+        font_size_source="estimate",
+    )
+    result = _make_result(tmp_path, monkeypatch, region)
+    from core.quality_report import write_quality_report
+    data = json.loads(Path(write_quality_report(result)).read_text())
+    r = data["regions"][0]
+    assert r["font_size_ref"] == 20
+    assert r["font_size_used"] == 18
+    assert r["font_size_source"] == "estimate"

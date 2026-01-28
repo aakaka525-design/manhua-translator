@@ -100,6 +100,10 @@ def write_quality_report(result) -> str:
                 "target_text": region.target_text,
                 "confidence": region.confidence,
                 "box_2d": region.box_2d.model_dump() if region.box_2d else None,
+                "font_size_ref": getattr(region, "font_size_ref", None),
+                "font_size_used": getattr(region, "font_size_used", None),
+                "font_size_relaxed": getattr(region, "font_size_relaxed", None),
+                "font_size_source": getattr(region, "font_size_source", None),
                 **quality,
             }
         )

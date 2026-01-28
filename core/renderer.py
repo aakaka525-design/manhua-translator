@@ -480,8 +480,32 @@ class TextRenderer:
             )
             needs_stroke = self.style_estimator.needs_stroke(original_cv, box)
 
-            # Fit text to box
-            font_size, lines = self.fit_text_to_box(text, box)
+            # Fit text to box with reference size
+            ref_size = None
+            ref_source = "estimate"
+            default_font = FontStyleParams().font_size
+            if (
+                region.font_style_params
+                and region.font_style_params.font_size != default_font
+            ):
+                ref_size = region.font_style_params.font_size
+                ref_source = "override"
+            elif region.source_text:
+                ref_size = self.style_estimator.estimate_font_size(
+                    box, len(region.source_text)
+                )
+                ref_source = "estimate"
+
+            font_size, lines, meta = self.fit_text_to_box_with_reference(
+                text=text,
+                box=box,
+                ref_size=ref_size,
+                ref_source=ref_source,
+            )
+            region.font_size_ref = meta["font_size_ref"]
+            region.font_size_used = font_size
+            region.font_size_relaxed = meta["font_size_relaxed"]
+            region.font_size_source = meta["font_size_source"]
             font = self._get_font(font_size)
 
             # Calculate positioning (center text in box)

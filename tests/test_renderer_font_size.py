@@ -1,3 +1,7 @@
+from pathlib import Path
+
+from PIL import Image
+
 from core.models import Box2D, RegionData
 from core.renderer import TextRenderer
 
@@ -49,3 +53,25 @@ def test_fit_text_reference_relaxes_when_needed():
     )
     assert meta["font_size_relaxed"] is True
     assert size < int(round(20 * 0.85))
+
+
+def test_renderer_sets_font_size_metadata(tmp_path: Path):
+    img_path = tmp_path / "src.png"
+    Image.new("RGB", (200, 100), "white").save(img_path)
+
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=200, y2=80),
+        source_text="你好",
+        target_text="你好",
+    )
+    renderer = TextRenderer()
+    renderer._render_sync(
+        image_path=str(img_path),
+        regions=[region],
+        output_path=str(tmp_path / "out.png"),
+        original_image_path=str(img_path),
+    )
+
+    assert region.font_size_ref is not None
+    assert region.font_size_used is not None
+    assert region.font_size_source in {"estimate", "override", "fallback"}
