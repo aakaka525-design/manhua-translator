@@ -81,3 +81,24 @@ def test_retry_prompt_template_substitution():
     assert "10" in prompt
     assert "Hello" in prompt
     assert "A,B" in prompt
+
+
+def test_quality_gate_skips_retry_for_sfx():
+    from core.quality_gate import QualityGate
+
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text="BANG!",
+        target_text="",
+        confidence=0.2,
+        is_sfx=True,
+    )
+    ctx = TaskContext(image_path="/tmp/input.png", target_language="zh-CN", regions=[region])
+
+    translator = AsyncMock()
+    translator.translate_region = AsyncMock(return_value="boom")
+
+    gate = QualityGate()
+    gate.apply(ctx, translator)
+
+    assert translator.translate_region.call_count == 0
