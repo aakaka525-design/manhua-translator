@@ -76,6 +76,10 @@ class RegionData(BaseModel):
         default_factory=FontStyleParams,
         description="Font styling for rendering"
     )
+    font_size_ref: Optional[int] = Field(default=None, description="Reference font size")
+    font_size_used: Optional[int] = Field(default=None, description="Rendered font size")
+    font_size_relaxed: bool = Field(default=False, description="Whether font size was relaxed below range")
+    font_size_source: Optional[str] = Field(default=None, description="Source of ref size: estimate/override/fallback")
     confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Detection/OCR confidence")
 
     class Config:
