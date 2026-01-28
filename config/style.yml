@@ -1,0 +1,3 @@
+font_size_ref_range: [0.85, 1.15]
+font_size_fallback: [16, 32]
+font_size_relax_min: 12

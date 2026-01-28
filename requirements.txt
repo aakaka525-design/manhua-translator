@@ -25,6 +25,7 @@ rich>=13.0.0
 
 # Development
 python-dotenv>=1.0.0
+PyYAML>=6.0.0
 
 # Future: Uncomment when implementing real modules
 # paddlepaddle>=2.5.0
