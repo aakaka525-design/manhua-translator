@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed, onUnmounted } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMangaStore } from '@/stores/manga'
 import { useToastStore } from '@/stores/toast'

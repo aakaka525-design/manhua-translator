@@ -1,4 +1,6 @@
 <script setup>
+import LazyImage from '@/components/ui/LazyImage.vue'
+
 defineProps({
   title: String,
   cover: String,
@@ -22,7 +24,7 @@ const emit = defineEmits(['click'])
     @click="emit('click')"
   >
     <div class="relative overflow-hidden aspect-[3/4]">
-      <img 
+      <LazyImage 
         :src="cover || '/static/placeholder.png'" 
         class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         :alt="title"

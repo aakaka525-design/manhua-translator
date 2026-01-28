@@ -32,19 +32,41 @@ function onMove(e) {
   sliderVal.value = Math.max(0, Math.min(100, percentage))
 }
 
-// Global event listeners for drag end
-onMounted(() => {
-  window.addEventListener('mouseup', onEnd)
-  window.addEventListener('touchend', onEnd)
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('touchmove', onMove, { passive: false })
-})
-
 onUnmounted(() => {
   window.removeEventListener('mouseup', onEnd)
   window.removeEventListener('touchend', onEnd)
   window.removeEventListener('mousemove', onMove)
   window.removeEventListener('touchmove', onMove)
+  if (observer) observer.disconnect()
+})
+
+// Lazy Loading Logic
+const isVisible = ref(false)
+let observer = null
+
+onMounted(() => {
+  // Global event listeners
+  window.addEventListener('mouseup', onEnd)
+  window.addEventListener('touchend', onEnd)
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('touchmove', onMove, { passive: false })
+
+  // Observer
+  if (!window.IntersectionObserver) {
+    isVisible.value = true
+    return
+  }
+  
+  observer = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) {
+      isVisible.value = true
+      observer.disconnect()
+    }
+  }, { rootMargin: '50% 0px' })
+  
+  if (container.value) {
+    observer.observe(container.value)
+  }
 })
 </script>
 
@@ -56,7 +78,9 @@ onUnmounted(() => {
     @touchstart="onStart"
   >
     <!-- Translated Image (Background) -->
+    <div v-if="!isVisible" class="w-full pb-[140%] bg-bg-secondary/30 animate-pulse"></div>
     <img 
+      v-if="isVisible"
       :src="translated" 
       class="w-full h-auto block" 
       draggable="false"

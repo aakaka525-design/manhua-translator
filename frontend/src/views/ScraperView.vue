@@ -3,7 +3,6 @@ import { onUnmounted, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScraperStore } from '@/stores/scraper'
 import ComicBackground from '@/components/ui/ComicBackground.vue'
-import ComicLoading from '@/components/ui/ComicLoading.vue'
 import GlassNav from '@/components/layout/GlassNav.vue'
 
 const router = useRouter()
@@ -218,44 +217,32 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Task Status -->
-          <div class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-semibold text-text-main">下载状态</h3>
-              <span v-if="scraper.task.status" class="text-[10px] font-semibold px-2 py-1 rounded-full"
-                :class="scraper.statusClass(scraper.task.status)">
-                {{ scraper.statusLabel(scraper.task.status) }}
-              </span>
-            </div>
-            <p class="mt-2 text-xs text-text-secondary">{{ scraper.task.message || '暂无任务' }}</p>
-            <p class="mt-1 text-[10px] text-text-secondary opacity-70">队列中 {{ scraper.queue.length }} 项</p>
-            <div v-if="scraper.task.report" class="mt-2 text-xs text-text-secondary space-y-1">
-              <p>成功 {{ scraper.task.report.success_count }} / 失败 {{ scraper.task.report.failed_count }}</p>
-              <p class="break-all">输出目录: {{ scraper.task.report.output_dir }}</p>
-            </div>
-          </div>
         </div>
 
         <!-- Results -->
         <div class="space-y-4 xl:col-span-5" :class="mobileTab === 'browse' ? 'block' : 'hidden xl:block'">
           <!-- Search Results -->
           <div v-if="scraper.state.view === 'search'" class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-semibold text-text-main">搜索结果</h3>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h3 class="font-semibold text-text-main">搜索结果</h3>
+                <p class="text-xs text-text-secondary opacity-70 mt-1">输入关键词或 URL 搜索漫画</p>
+              </div>
               <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
             </div>
-            <div class="mt-3 space-y-2">
+            <div class="mt-4 space-y-3">
               <p v-if="!scraper.loading && scraper.results.length === 0" class="text-xs text-text-secondary opacity-70">暂无结果</p>
               <div v-for="manga in scraper.results" :key="manga.id"
-                class="flex items-center justify-between bg-bg-secondary/50 border border-border-subtle rounded-lg px-3 py-2">
-                <div class="flex items-center gap-3">
-                  <div class="w-12 h-16 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
+                class="flex items-center justify-between rounded-xl px-4 py-3 border transition"
+                :class="manga.id === scraper.selectedManga?.id ? 'bg-accent-1/10 border-accent-1/60' : 'bg-bg-secondary/50 border-border-subtle hover:border-accent-1/40'">
+                <div class="flex items-center gap-4">
+                  <div class="w-16 h-24 sm:w-20 sm:h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
                     <img v-if="manga.cover_url" :src="scraper.proxyImageUrl(manga.cover_url)" alt="cover"
                       class="w-full h-full object-cover" loading="lazy" />
                   </div>
                   <div>
                     <p class="text-sm font-semibold text-text-main">{{ manga.title || manga.id }}</p>
-                    <p class="text-[10px] text-text-secondary truncate">{{ manga.url }}</p>
+                    <p class="text-[11px] text-text-secondary truncate">{{ manga.url }}</p>
                   </div>
                 </div>
                 <button @click="scraper.selectManga(manga)" :disabled="scraper.loading"
@@ -269,8 +256,11 @@ onUnmounted(() => {
 
           <!-- Catalog List -->
           <div v-if="scraper.state.view === 'catalog'" class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <h3 class="font-semibold text-text-main">站点目录</h3>
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-text-main">站点目录</h3>
+                <p class="text-xs text-text-secondary opacity-70 mt-1">按站点排序浏览全部漫画</p>
+              </div>
               <div class="flex items-center gap-2 text-xs text-text-secondary">
                 <span>目录</span>
                 <select v-model="scraper.catalog.mode" @change="scraper.setCatalogMode(scraper.catalog.mode)"
@@ -283,18 +273,19 @@ onUnmounted(() => {
                 </select>
               </div>
             </div>
-            <div class="mt-3 space-y-2">
+            <div class="mt-4 space-y-3">
               <p v-if="!scraper.catalog.loading && scraper.catalog.items.length === 0" class="text-xs text-text-secondary opacity-70">暂无目录数据</p>
               <div v-for="manga in scraper.catalog.items" :key="manga.id"
-                class="flex items-center justify-between bg-bg-secondary/50 border border-border-subtle rounded-lg px-3 py-2">
-                <div class="flex items-center gap-3">
-                  <div class="w-12 h-16 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
+                class="flex items-center justify-between rounded-xl px-4 py-3 border transition"
+                :class="manga.id === scraper.selectedManga?.id ? 'bg-accent-1/10 border-accent-1/60' : 'bg-bg-secondary/50 border-border-subtle hover:border-accent-1/40'">
+                <div class="flex items-center gap-4">
+                  <div class="w-16 h-24 sm:w-20 sm:h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
                     <img v-if="manga.cover_url" :src="scraper.proxyImageUrl(manga.cover_url)" alt="cover"
                       class="w-full h-full object-cover" loading="lazy" />
                   </div>
                   <div>
                     <p class="text-sm font-semibold text-text-main">{{ manga.title || manga.id }}</p>
-                    <p class="text-[10px] text-text-secondary truncate">{{ manga.url }}</p>
+                    <p class="text-[11px] text-text-secondary truncate">{{ manga.url }}</p>
                   </div>
                 </div>
                 <button @click="scraper.selectManga(manga)" :disabled="scraper.catalog.loading || scraper.loading"
@@ -319,14 +310,42 @@ onUnmounted(() => {
         <!-- Chapters -->
         <div class="space-y-4 xl:col-span-4" :class="mobileTab === 'chapters' ? 'block' : 'hidden xl:block'">
           <div class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-semibold text-text-main">章节列表</h3>
-              <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
-              <div v-if="scraper.selectedManga" class="text-xs text-text-secondary flex items-center gap-2">
-                <span>{{ scraper.selectedManga.title || scraper.selectedManga.id }}</span>
-                <span v-if="scraper.downloadSummary.total > 0">
-                  已下载 {{ scraper.downloadSummary.done }}/{{ scraper.downloadSummary.total }} 章
-                </span>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-text-main">下载状态</h3>
+                <p class="text-xs text-text-secondary opacity-70 mt-1">当前任务与队列摘要</p>
+              </div>
+              <span v-if="scraper.task.status" class="text-[10px] font-semibold px-2 py-1 rounded-full"
+                :class="scraper.statusClass(scraper.task.status)">
+                {{ scraper.statusLabel(scraper.task.status) }}
+              </span>
+            </div>
+            <div class="mt-3 space-y-2 text-xs">
+              <p class="text-text-secondary">{{ scraper.task.message || '暂无任务' }}</p>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-text-secondary opacity-70">队列中 {{ scraper.queue.length }} 项</span>
+              </div>
+              <div v-if="scraper.task.report" class="text-text-secondary space-y-1">
+                <p>成功 {{ scraper.task.report.success_count }} / 失败 {{ scraper.task.report.failed_count }}</p>
+                <p class="break-all">输出目录: {{ scraper.task.report.output_dir }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="bg-surface border border-main rounded-xl p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h3 class="font-semibold text-text-main">章节下载</h3>
+                <p class="text-xs text-text-secondary opacity-70 mt-1">选择章节加入队列，支持批量下载</p>
+              </div>
+              <div class="flex flex-col items-end gap-2">
+                <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
+                <div v-if="scraper.selectedManga" class="text-xs text-text-secondary flex items-center gap-2">
+                  <span>{{ scraper.selectedManga.title || scraper.selectedManga.id }}</span>
+                  <span v-if="scraper.downloadSummary.total > 0"
+                    class="px-2 py-1 text-[10px] rounded-full bg-bg-secondary border border-border-subtle text-text-secondary">
+                    已下载 {{ scraper.downloadSummary.done }}/{{ scraper.downloadSummary.total }} 章
+                  </span>
+                </div>
               </div>
             </div>
             <div class="mt-3 flex flex-wrap gap-2 hidden xl:flex">
@@ -344,16 +363,16 @@ onUnmounted(() => {
                 批量下载 ({{ scraper.selectedIds.length }})
               </button>
             </div>
-            <div class="mt-3 space-y-2 max-h-[60vh] xl:max-h-[480px] overflow-y-auto custom-scrollbar">
+            <div class="mt-4 space-y-3 max-h-[64vh] xl:max-h-[520px] overflow-y-auto custom-scrollbar">
               <p v-if="scraper.chapters.length === 0" class="text-xs text-text-secondary opacity-70">请选择漫画查看章节</p>
               <div v-for="chapter in scraper.chapters" :key="chapter.id"
-                class="flex items-center justify-between bg-bg-secondary/50 border border-border-subtle rounded-lg px-3 py-2">
+                class="flex items-start justify-between bg-bg-secondary/50 border border-border-subtle rounded-xl px-4 py-3">
                 <div class="flex items-center gap-3">
                   <input type="checkbox" :checked="scraper.selectedIds.includes(chapter.id)"
                     @change="scraper.toggleSelection(chapter.id)" class="accent-accent-1" />
                   <div>
                     <p class="text-sm font-semibold text-text-main">{{ chapter.title || chapter.id }}</p>
-                    <p class="text-[10px] text-text-secondary truncate">{{ chapter.url }}</p>
+                    <p class="text-[11px] text-text-secondary truncate">{{ chapter.url }}</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">

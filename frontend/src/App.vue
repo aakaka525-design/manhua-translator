@@ -1,6 +1,7 @@
 <script setup>
 import SettingsModal from '@/components/SettingsModal.vue'
 import Toast from '@/components/ui/Toast.vue'
+import ReloadPrompt from '@/components/ReloadPrompt.vue'
 import { useToastStore } from '@/stores/toast'
 
 const toastStore = useToastStore()
@@ -11,6 +12,7 @@ const toastStore = useToastStore()
     <router-view></router-view>
     <SettingsModal />
     <Toast :message="toastStore.message" :type="toastStore.type" :visible="toastStore.visible" @close="toastStore.close()" />
+    <ReloadPrompt />
   </div>
 </template>
 
