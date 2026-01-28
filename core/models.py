@@ -70,6 +70,8 @@ class RegionData(BaseModel):
     target_text: Optional[str] = Field(default=None, description="Translated text")
     glossary_cov: Optional[float] = Field(default=None, description="Glossary coverage ratio")
     is_sfx: bool = Field(default=False, description="Whether region is SFX")
+    is_watermark: bool = Field(default=False, description="Whether region is watermark")
+    inpaint_mode: str = Field(default="replace", description="Inpaint mode: erase or replace")
     font_style_params: FontStyleParams = Field(
         default_factory=FontStyleParams,
         description="Font styling for rendering"
