@@ -17,6 +17,7 @@ from typing import Optional
 
 from .models import PipelineResult, TaskContext, TaskStatus
 from .metrics import PipelineMetrics, StageMetrics, Timer, start_metrics
+from .quality_report import write_quality_report
 from .modules import (
     BaseModule,
     InpainterModule,
@@ -168,7 +169,12 @@ class Pipeline:
             # Attach metrics to result
             if metrics:
                 result.metrics = metrics
-            
+
+            try:
+                write_quality_report(result)
+            except Exception:
+                logger.exception(f"[{context.task_id}] Quality report write failed")
+
             return result
 
         except Exception as e:
@@ -190,7 +196,12 @@ class Pipeline:
             
             if metrics:
                 result.metrics = metrics
-            
+
+            try:
+                write_quality_report(result)
+            except Exception:
+                logger.exception(f"[{context.task_id}] Quality report write failed")
+
             return result
 
     async def process_batch(

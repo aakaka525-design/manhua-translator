@@ -11,8 +11,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-# 日志目录
-LOG_DIR = Path(__file__).parent.parent / "logs"
+# 日志目录（可通过环境变量覆盖）
+_env_log_dir = os.getenv("MANHUA_LOG_DIR")
+LOG_DIR = Path(_env_log_dir).expanduser() if _env_log_dir else Path(__file__).parent.parent / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
