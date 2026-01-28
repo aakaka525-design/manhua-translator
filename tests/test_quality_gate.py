@@ -64,3 +64,20 @@ def test_quality_gate_uses_fallback_when_available(monkeypatch):
     gate.apply(ctx, translator)
 
     assert translator.create_translator.called
+
+
+def test_retry_prompt_template_substitution():
+    from core.quality_gate import build_retry_prompt
+
+    template = (
+        "请将以下文本翻译得更简洁（不超过{max_chars}字）：\n"
+        "{source_text}\n"
+        "保留专有名词：{glossary_terms}\n"
+        "仅输出翻译结果。"
+    )
+    prompt = build_retry_prompt(
+        template, max_chars=10, source_text="Hello", glossary_terms="A,B"
+    )
+    assert "10" in prompt
+    assert "Hello" in prompt
+    assert "A,B" in prompt
