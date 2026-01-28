@@ -182,6 +182,11 @@ class TranslatorModule(BaseModule):
             
             if not combined_text.strip():
                 continue
+
+            if any(getattr(r, "is_watermark", False) for r in group):
+                for region in group:
+                    region.target_text = ""
+                continue
             
             # 检测是否应跳过翻译（纯数字/符号等）
             should_skip, skip_reason = _should_skip_translation(combined_text)

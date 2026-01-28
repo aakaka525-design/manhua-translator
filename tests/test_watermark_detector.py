@@ -46,3 +46,22 @@ def test_watermark_detector_sets_inpaint_mode():
     result = detector.detect([region], image_shape=(1000, 800))
 
     assert result[0].inpaint_mode == "erase"
+
+
+def test_translator_skips_watermark_region():
+    import asyncio
+
+    from core.models import TaskContext
+    from core.modules.translator import TranslatorModule
+
+    region = RegionData(
+        box_2d=Box2D(x1=10, y1=10, x2=100, y2=40),
+        source_text="watermark",
+        is_watermark=True,
+    )
+    ctx = TaskContext(image_path="/tmp/input.png", regions=[region])
+    module = TranslatorModule(use_mock=True)
+
+    result = asyncio.run(module.process(ctx))
+
+    assert result.regions[0].target_text == ""

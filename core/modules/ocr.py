@@ -13,6 +13,8 @@ from ..models import TaskContext
 from ..modules.base import BaseModule
 from ..vision import OCREngine, PaddleOCREngine, MockOCREngine
 from ..ocr_postprocessor import OCRPostProcessor
+from ..watermark_detector import WatermarkDetector
+from PIL import Image
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -97,6 +99,14 @@ class OCRModule(BaseModule):
 
         # Post-process OCR text (normalize + SFX detection + locale fixes)
         OCRPostProcessor().process_regions(context.regions, lang=target_lang)
+
+        # Detect watermark regions (skip translation, erase inpainting)
+        try:
+            with Image.open(context.image_path) as img:
+                image_shape = (img.height, img.width)
+        except Exception:
+            image_shape = (0, 0)
+        WatermarkDetector().detect(context.regions, image_shape=image_shape)
         
         duration_ms = (time.perf_counter() - start_time) * 1000
         
