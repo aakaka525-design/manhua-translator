@@ -11,3 +11,15 @@ def test_watermark_detector_keyword_case_insensitive():
     result = detector.detect(regions, image_shape=(1000, 800))
 
     assert result[0].is_watermark is True
+
+
+def test_watermark_detector_position_short_text():
+    from core.watermark_detector import WatermarkDetector
+
+    regions = [
+        RegionData(box_2d=Box2D(x1=5, y1=950, x2=120, y2=980), source_text="note"),
+    ]
+    detector = WatermarkDetector()
+    result = detector.detect(regions, image_shape=(1000, 800))
+
+    assert result[0].is_watermark is True
