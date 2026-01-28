@@ -73,15 +73,22 @@ class InpainterModule(BaseModule):
         import time
         start_time = time.perf_counter()
 
-        # 过滤掉 SFX 区域（没有 target_text 的区域不需要擦除）
-        regions_to_inpaint = [r for r in context.regions if r.target_text]
+        def _should_inpaint(region) -> bool:
+            if getattr(region, "is_sfx", False):
+                return False
+            if getattr(region, "inpaint_mode", "replace") == "erase":
+                return True
+            return bool(region.target_text)
+
+        # 过滤掉不需要擦除的区域
+        regions_to_inpaint = [r for r in context.regions if _should_inpaint(r)]
         skipped_count = len(context.regions) - len(regions_to_inpaint)
         
         if skipped_count > 0:
-            logger.debug(f"[{context.task_id}] 跳过 {skipped_count} 个 SFX 区域")
+            logger.debug(f"[{context.task_id}] 跳过 {skipped_count} 个区域")
         
         if not regions_to_inpaint:
-            logger.debug(f"[{context.task_id}] 所有区域都是 SFX，跳过擦除")
+            logger.debug(f"[{context.task_id}] 所有区域无需擦除，跳过擦除")
             context.inpainted_path = context.image_path
             return context
 
