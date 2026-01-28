@@ -36,3 +36,13 @@ def test_watermark_detector_cross_page_repeat():
     result = detector.detect(regions_page2, image_shape=(1000, 800))
 
     assert result[0].is_watermark is True
+
+
+def test_watermark_detector_sets_inpaint_mode():
+    from core.watermark_detector import WatermarkDetector
+
+    region = RegionData(box_2d=Box2D(x1=5, y1=950, x2=120, y2=980), source_text="mangaforfree")
+    detector = WatermarkDetector()
+    result = detector.detect([region], image_shape=(1000, 800))
+
+    assert result[0].inpaint_mode == "erase"
