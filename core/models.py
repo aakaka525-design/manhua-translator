@@ -64,6 +64,7 @@ class RegionData(BaseModel):
     """
     region_id: UUID = Field(default_factory=uuid4, description="Unique region identifier")
     box_2d: Optional[Box2D] = Field(default=None, description="Bounding box coordinates")
+    render_box_2d: Optional[Box2D] = Field(default=None, description="Optional layout box for rendering")
     mask_path: Optional[str] = Field(default=None, description="Path to region mask image")
     source_text: Optional[str] = Field(default=None, description="Original text (OCR result)")
     normalized_text: Optional[str] = Field(default=None, description="Normalized OCR text")

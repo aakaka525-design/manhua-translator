@@ -43,6 +43,7 @@ def test_ocr_postprocessor_korean_corrections():
     "咔嚓",
     "ドキドキ",
     "쾅!",
+    "두근두근",
 ])
 def test_ocr_postprocessor_marks_sfx(text):
     from core.models import Box2D, RegionData
@@ -56,6 +57,19 @@ def test_ocr_postprocessor_marks_sfx(text):
     processed = OCRPostProcessor().process_regions([region], lang="en")
 
     assert processed[0].is_sfx is True
+
+
+def test_ocr_postprocessor_does_not_mark_korean_phrase_as_sfx():
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text="유령씨표정이",
+        confidence=0.9,
+    )
+
+    from core.ocr_postprocessor import OCRPostProcessor
+    processed = OCRPostProcessor().process_regions([region], lang="korean")
+
+    assert processed[0].is_sfx is False
 
 
 @pytest.mark.parametrize(

@@ -11,7 +11,7 @@ import re
 import time
 from typing import Optional
 
-from ..models import TaskContext
+from ..models import TaskContext, Box2D
 from .base import BaseModule
 
 # 配置日志
@@ -240,10 +240,19 @@ class TranslatorModule(BaseModule):
                     else:
                         # 多区域分组：只在最大区域渲染完整翻译
                         # 其他区域设为占位符（用于 inpainting 擦除原文，但不渲染新文字）
+                        xs = [r.box_2d.x1 for r in group if r.box_2d]
+                        ys = [r.box_2d.y1 for r in group if r.box_2d]
+                        xe = [r.box_2d.x2 for r in group if r.box_2d]
+                        ye = [r.box_2d.y2 for r in group if r.box_2d]
+                        render_box = None
+                        if xs and ys and xe and ye:
+                            render_box = Box2D(x1=min(xs), y1=min(ys), x2=max(xe), y2=max(ye))
                         largest_region = max(group, key=lambda r: r.box_2d.width * r.box_2d.height)
                         for region in group:
                             if region is largest_region:
                                 region.target_text = translation
+                                if render_box:
+                                    region.render_box_2d = render_box
                             else:
                                 # 占位符：触发 inpainting 但渲染时跳过
                                 region.target_text = "[INPAINT_ONLY]"

@@ -47,3 +47,21 @@ def test_inpainter_selects_regions_for_erase_and_replace(tmp_path):
 
     selected = {r.region_id for r in (dummy.regions or [])}
     assert selected == {r_erase.region_id, r_replace.region_id}
+
+
+def test_inpainter_does_not_skip_on_is_sfx_when_target_text_present(tmp_path):
+    dummy = _DummyInpainter()
+    module = InpainterModule(inpainter=dummy, output_dir=str(tmp_path), use_time_subdir=False)
+
+    r_misclassified = RegionData(
+        box_2d=Box2D(x1=10, y1=10, x2=20, y2=20),
+        source_text="유령씨표정이",
+        target_text="幽灵先生的表情",
+        is_sfx=True,
+    )
+
+    ctx = TaskContext(image_path="/tmp/input.png", regions=[r_misclassified])
+    asyncio.run(module.process(ctx))
+
+    selected = {r.region_id for r in (dummy.regions or [])}
+    assert selected == {r_misclassified.region_id}
