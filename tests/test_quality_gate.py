@@ -41,3 +41,26 @@ def test_quality_gate_respects_image_retry_budget(monkeypatch):
     gate.apply(ctx, translator)
 
     assert translator.translate_region.call_count == 2
+
+
+def test_quality_gate_uses_fallback_when_available(monkeypatch):
+    from core.quality_gate import QualityGate
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text="Hello",
+        target_text="bad",
+        confidence=0.2,
+    )
+    ctx = TaskContext(image_path="/tmp/input.png", target_language="zh-CN", regions=[region])
+
+    translator = AsyncMock()
+    translator.translate_region = AsyncMock(return_value="bad")
+    translator.create_translator = AsyncMock(return_value=translator)
+
+    gate = QualityGate(fallback_model="gemini")
+    gate.apply(ctx, translator)
+
+    assert translator.create_translator.called
