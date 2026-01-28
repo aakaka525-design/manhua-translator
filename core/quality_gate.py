@@ -32,3 +32,7 @@ class QualityGate:
                         fallback_result = asyncio.run(fallback_result)
                     region.target_text = fallback_result
         return ctx
+
+
+def build_retry_prompt(template: str, **kwargs) -> str:
+    return template.format(**kwargs)
