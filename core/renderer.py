@@ -19,6 +19,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from .models import Box2D, FontStyleParams, RegionData
+from .style_config import load_style_config
 
 
 # Chinese typography rules - punctuation handling
@@ -216,6 +217,7 @@ class TextRenderer:
         self.default_font_size = default_font_size
         self.line_spacing = line_spacing
         self.style_estimator = StyleEstimator()
+        self.style_config = load_style_config()
 
     def _find_system_font(self) -> str:
         """Find a suitable CJK font on the system."""
@@ -355,6 +357,44 @@ class TextRenderer:
                 high = mid - 1
 
         return best_size, best_lines
+
+    def fit_text_to_box_with_reference(
+        self,
+        text: str,
+        box: Box2D,
+        ref_size: Optional[int],
+        ref_source: str,
+        padding: int = 4,
+    ) -> Tuple[int, list[str], dict]:
+        cfg = self.style_config
+        fallback_min, fallback_max = cfg.font_size_fallback
+        ref_min_ratio, ref_max_ratio = cfg.font_size_ref_range
+        relax_min = cfg.font_size_relax_min
+
+        if not ref_size or ref_size <= 0:
+            min_size, max_size = fallback_min, fallback_max
+            source = "fallback"
+            ref_value = None
+        else:
+            min_size = max(relax_min, int(round(ref_size * ref_min_ratio)))
+            max_size = max(min_size, int(round(ref_size * ref_max_ratio)))
+            source = ref_source
+            ref_value = int(ref_size)
+
+        size, lines = self.fit_text_to_box(
+            text,
+            box,
+            min_size=min_size,
+            max_size=max_size,
+            padding=padding,
+        )
+
+        meta = {
+            "font_size_ref": ref_value,
+            "font_size_source": source,
+            "font_size_relaxed": False,
+        }
+        return size, lines, meta
 
     async def render(
         self,
