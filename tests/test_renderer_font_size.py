@@ -35,3 +35,17 @@ def test_fit_text_reference_fallback():
     )
     assert meta["font_size_source"] == "fallback"
     assert 16 <= size <= 32
+
+
+def test_fit_text_reference_relaxes_when_needed():
+    renderer = TextRenderer()
+    box = Box2D(x1=0, y1=0, x2=80, y2=20)
+    text = "这是一个非常非常长的文本需要被缩小"
+    size, lines, meta = renderer.fit_text_to_box_with_reference(
+        text=text,
+        box=box,
+        ref_size=20,
+        ref_source="estimate",
+    )
+    assert meta["font_size_relaxed"] is True
+    assert size < int(round(20 * 0.85))

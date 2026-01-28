@@ -394,6 +394,22 @@ class TextRenderer:
             "font_size_source": source,
             "font_size_relaxed": False,
         }
+        available_width = box.width - 2 * padding
+        available_height = box.height - 2 * padding
+        line_height = int(size * self.line_spacing)
+        total_height = len(lines) * line_height
+        if total_height > available_height:
+            meta["font_size_relaxed"] = True
+            for sz in range(min_size - 1, relax_min - 1, -1):
+                font = self._get_font(sz)
+                lines = self.wrap_text(text, font, available_width)
+                if len(lines) * int(sz * self.line_spacing) <= available_height:
+                    size = sz
+                    break
+            else:
+                size = relax_min
+                font = self._get_font(size)
+                lines = self.wrap_text(text, font, available_width)
         return size, lines, meta
 
     async def render(
