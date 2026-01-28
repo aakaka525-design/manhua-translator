@@ -53,6 +53,8 @@ async def list_manga(settings=Depends(get_settings)):
     # A directory is a 'manga' if it has at least one subdirectory that contains images
     for root, dirs, files in os.walk(data_dir, followlinks=True):
         root_path = Path(root)
+        if root_path == data_dir and "cache" in dirs:
+            dirs.remove("cache")
         if root_path == data_dir:
             continue
 

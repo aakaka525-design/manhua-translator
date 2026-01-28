@@ -142,6 +142,7 @@ export const useScraperStore = defineStore('scraper', () => {
 
     function setSite(site) {
         state.site = site
+        error.value = ''
         if (site === 'mangaforfree') {
             state.baseUrl = 'https://mangaforfree.com'
             state.storageStatePath = 'data/mangaforfree_state.json'
@@ -155,9 +156,17 @@ export const useScraperStore = defineStore('scraper', () => {
                 state.userDataDir = 'data/toongod_profile'
             }
         }
+        results.value = []
+        chapters.value = []
+        selectedManga.value = null
+        selectedIds.value = []
+        catalog.items = []
+        catalog.page = 1
+        catalog.hasMore = false
         applyCatalogMode()
         checkStateInfo()
         ensureUserAgent()
+        loadCatalog(true)
     }
 
     function setMode(mode) {
