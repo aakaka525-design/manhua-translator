@@ -22,3 +22,22 @@ def test_quality_gate_retries_low_score_region(monkeypatch):
 
     assert translator.translate_region.called
     assert ctx.regions[0].target_text == "你好"
+
+
+def test_quality_gate_respects_image_retry_budget(monkeypatch):
+    from core.quality_gate import QualityGate
+
+    regions = [
+        RegionData(box_2d=Box2D(x1=0, y1=0, x2=10, y2=10), source_text="A", target_text="bad", confidence=0.4),
+        RegionData(box_2d=Box2D(x1=0, y1=0, x2=10, y2=10), source_text="B", target_text="bad", confidence=0.4),
+        RegionData(box_2d=Box2D(x1=0, y1=0, x2=10, y2=10), source_text="C", target_text="bad", confidence=0.4),
+    ]
+    ctx = TaskContext(image_path="/tmp/input.png", target_language="zh-CN", regions=regions)
+
+    translator = AsyncMock()
+    translator.translate_region = AsyncMock(return_value="X")
+
+    gate = QualityGate(retry_budget_per_image=2)
+    gate.apply(ctx, translator)
+
+    assert translator.translate_region.call_count == 2
