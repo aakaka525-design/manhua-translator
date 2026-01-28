@@ -16,6 +16,8 @@ class QualityGate:
                 break
             if self.retry_per_region <= 0:
                 continue
+            if getattr(region, "is_sfx", False):
+                continue
             low_quality = (not region.target_text) or (region.confidence is not None and region.confidence < 0.55)
             if low_quality:
                 result = translator.translate_region(region)
