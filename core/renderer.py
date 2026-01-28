@@ -120,6 +120,10 @@ class StyleEstimator:
         min_size: int = 12,
         max_size: int = 48,
         padding_ratio: float = 0.1,
+        line_spacing: float = 1.2,
+        line_spacing_compact: Optional[float] = None,
+        compact_threshold: Optional[float] = None,
+        bias: float = 1.0,
     ) -> int:
         """
         Estimate appropriate font size based on box dimensions and text length.
@@ -140,19 +144,42 @@ class StyleEstimator:
         # Available area with padding
         available_width = box.width * (1 - 2 * padding_ratio)
         available_height = box.height * (1 - 2 * padding_ratio)
+        if available_width <= 0 or available_height <= 0:
+            return min_size
 
-        # Estimate based on area
-        # Assume square-ish characters for CJK
-        char_area = (available_width * available_height) / text_length
-        estimated_size = int(math.sqrt(char_area))
+        def _estimate_size(spacing: float) -> int:
+            # Estimate line count: more lines for taller boxes / longer text
+            lines = int(
+                math.ceil(
+                    math.sqrt(text_length * available_height / (available_width * spacing))
+                )
+            )
+            lines = max(lines, 1)
+            # Width-constrained estimate
+            chars_per_line = int(math.ceil(text_length / lines))
+            size_by_width = available_width / max(chars_per_line, 1)
+            size_by_height = available_height / (lines * spacing)
+            size = min(size_by_width, size_by_height)
+            return int(max(min_size, min(max_size, size * bias)))
 
-        # Also consider width constraint
-        # Assume roughly 1.2 characters per line width
-        lines_needed = math.ceil(text_length * estimated_size / available_width)
-        size_by_height = int(available_height / max(lines_needed, 1))
+        size = _estimate_size(line_spacing)
 
-        # Take the smaller of the two estimates
-        size = min(estimated_size, size_by_height)
+        if (
+            line_spacing_compact is not None
+            and compact_threshold is not None
+            and compact_threshold > 0
+        ):
+            # If estimated total height is near the limit, try compact spacing for a larger size
+            lines = int(
+                math.ceil(
+                    math.sqrt(text_length * available_height / (available_width * line_spacing))
+                )
+            )
+            lines = max(lines, 1)
+            estimated_height = lines * size * line_spacing
+            if estimated_height > available_height * compact_threshold:
+                size_compact = _estimate_size(line_spacing_compact)
+                size = max(size, size_compact)
 
         return max(min_size, min(max_size, size))
 
@@ -215,9 +242,12 @@ class TextRenderer:
         """
         self.font_path = font_path or self._find_system_font()
         self.default_font_size = default_font_size
-        self.line_spacing = line_spacing
+        cfg = load_style_config()
+        self.line_spacing = cfg.line_spacing_default or line_spacing
+        self.line_spacing_compact = cfg.line_spacing_compact
+        self.line_spacing_compact_threshold = cfg.line_spacing_compact_threshold
         self.style_estimator = StyleEstimator()
-        self.style_config = load_style_config()
+        self.style_config = cfg
 
     def _find_system_font(self) -> str:
         """Find a suitable CJK font on the system."""
@@ -464,7 +494,8 @@ class TextRenderer:
             if not region.target_text or not region.box_2d:
                 continue
 
-            box = region.box_2d
+            layout_box = region.render_box_2d or region.box_2d
+            style_box = region.box_2d
             text = region.target_text
 
             # Skip SFX markers
@@ -477,9 +508,9 @@ class TextRenderer:
 
             # Estimate style from original
             text_color = self.style_estimator.estimate_text_color(
-                original_cv, box
+                original_cv, style_box
             )
-            needs_stroke = self.style_estimator.needs_stroke(original_cv, box)
+            needs_stroke = self.style_estimator.needs_stroke(original_cv, style_box)
 
             # Fit text to box with reference size
             ref_size = None
@@ -493,13 +524,18 @@ class TextRenderer:
                 ref_source = "override"
             elif region.source_text:
                 ref_size = self.style_estimator.estimate_font_size(
-                    box, len(region.source_text)
+                    layout_box,
+                    len(region.source_text),
+                    line_spacing=self.line_spacing,
+                    line_spacing_compact=self.line_spacing_compact,
+                    compact_threshold=self.line_spacing_compact_threshold,
+                    bias=self.style_config.font_size_estimate_bias,
                 )
                 ref_source = "estimate"
 
             font_size, lines, meta = self.fit_text_to_box_with_reference(
                 text=text,
-                box=box,
+                box=layout_box,
                 ref_size=ref_size,
                 ref_source=ref_source,
             )
@@ -513,7 +549,7 @@ class TextRenderer:
             line_height = int(font_size * self.line_spacing)
             total_height = len(lines) * line_height
             
-            y_start = box.y1 + (box.height - total_height) // 2
+            y_start = layout_box.y1 + (layout_box.height - total_height) // 2
 
             for i, line in enumerate(lines):
                 # Get line width for centering
@@ -522,8 +558,8 @@ class TextRenderer:
                     line_width = bbox[2] - bbox[0]
                 except Exception:
                     line_width = len(line) * font_size
-
-                x = box.x1 + (box.width - line_width) // 2
+                
+                x = layout_box.x1 + (layout_box.width - line_width) // 2
                 y = y_start + i * line_height
 
                 # Draw stroke if needed

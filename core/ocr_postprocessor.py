@@ -21,12 +21,22 @@ class OCRPostProcessor:
     _SFX_CN_WORDS = {"砰", "咔", "咔嚓", "嗖", "嘭", "哗", "呼", "啪", "嘎", "轰", "嘶", "咚", "叮", "嗡", "嘀", "哐", "咣", "嘣", "噗", "咻", "唰"}
     _SFX_CJK_RE = re.compile(r"^(砰|咔嚓|咔|嗖|嘭|哗|呼|啪|嘎|轰|嘶|咚|叮|嗡|嘀|哐|咣|嘣|噗|咻|唰)+[！!]*$")
     _SFX_JP_RE = re.compile(r"^[\u3040-\u30ff]{2,8}[!！]?$")
-    _SFX_KO_PUNCT_RE = re.compile(r"^[\uac00-\ud7a3]{1,4}[!！]+$")
-    _SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,3})\\1{1,}$")
     _SFX_KO_WORDS = {
         "쾅",
         "쿵",
         "탕",
+        "펑",
+        "퍽",
+        "두근두근",
+        "덜컹덜컹",
+        "철컹철컹",
+        "우두둑",
+        "슥",
+        "슥슥",
+        "쓱",
+        "쓱쓱",
+        "파닥",
+        "파닥파닥",
         "팡",
         "딱",
         "헉",
@@ -36,8 +46,9 @@ class OCRPostProcessor:
         "휴",
         "후",
         "휙",
-        "쓱",
     }
+    _SFX_KO_EXCL_RE = re.compile(r"^[\uac00-\ud7a3]{1,4}[!！]+$")
+    _SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,2})\\1+$")
 
     def _normalize(self, text: str) -> str:
         if not text:
@@ -56,7 +67,7 @@ class OCRPostProcessor:
             return True
         if t in self._SFX_KO_WORDS:
             return True
-        if self._SFX_KO_PUNCT_RE.match(t):
+        if self._SFX_KO_EXCL_RE.match(t):
             return True
         if self._SFX_KO_REPEAT_RE.match(t):
             return True

@@ -74,11 +74,13 @@ class InpainterModule(BaseModule):
         start_time = time.perf_counter()
 
         def _should_inpaint(region) -> bool:
-            if getattr(region, "is_sfx", False):
-                return False
             if getattr(region, "inpaint_mode", "replace") == "erase":
                 return True
-            return bool(region.target_text)
+            if not region.target_text:
+                return False
+            if region.target_text.startswith("[SFX:") and region.target_text.endswith("]"):
+                return False
+            return True
 
         # 过滤掉不需要擦除的区域
         regions_to_inpaint = [r for r in context.regions if _should_inpaint(r)]
