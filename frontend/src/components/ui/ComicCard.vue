@@ -43,16 +43,15 @@ const emit = defineEmits(['click'])
 
 <style scoped>
 .comic-card {
-  @apply bg-surface rounded-lg overflow-hidden;
+  @apply bg-surface rounded-lg overflow-hidden shadow-comic;
   border-width: var(--card-border-width);
   border-color: var(--card-border-color);
-  box-shadow: 5px 5px 0px 0px var(--card-shadow-color);
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .comic-card:hover {
   transform: translate(-2px, -2px);
-  box-shadow: 7px 7px 0px 0px var(--card-shadow-hover);
+  @apply shadow-comic-hover;
 }
 
 /* Bento Grid Sizes */

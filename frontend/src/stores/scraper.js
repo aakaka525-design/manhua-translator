@@ -29,6 +29,32 @@ const api = {
         if (!res.ok) throw new Error((await res.json()).detail || 'Catalog failed')
         return res.json()
     },
+    async stateInfo(payload) {
+        const res = await fetch('/api/v1/scraper/state-info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        if (!res.ok) throw new Error((await res.json()).detail || 'State info failed')
+        return res.json()
+    },
+    async accessCheck(payload) {
+        const res = await fetch('/api/v1/scraper/access-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        if (!res.ok) throw new Error((await res.json()).detail || 'Access check failed')
+        return res.json()
+    },
+    async uploadState(formData) {
+        const res = await fetch('/api/v1/scraper/upload-state', {
+            method: 'POST',
+            body: formData
+        })
+        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed')
+        return res.json()
+    },
     async download(payload) {
         const res = await fetch('/api/v1/scraper/download', {
             method: 'POST',
@@ -49,11 +75,16 @@ export const useScraperStore = defineStore('scraper', () => {
     const state = reactive({
         site: 'toongod',
         baseUrl: 'https://toongod.org',
-        mode: 'http',
+        mode: 'headless',
         httpMode: true,
         headless: true,
         manualChallenge: false,
         storageStatePath: 'data/toongod_state.json',
+        useProfile: true,
+        userDataDir: 'data/toongod_profile',
+        lockUserAgent: true,
+        userAgent: '',
+        useChromeChannel: true,
         concurrency: 6,
         keyword: '',
         view: 'search'
@@ -76,6 +107,24 @@ export const useScraperStore = defineStore('scraper', () => {
         path: null,
         mode: 'all'
     })
+    const stateInfo = reactive({
+        status: 'idle',
+        message: '',
+        cookieName: null,
+        expiresAt: null,
+        expiresAtText: '',
+        expiresInSec: null,
+        remainingText: ''
+    })
+    const accessInfo = reactive({
+        status: 'idle',
+        httpStatus: null,
+        message: ''
+    })
+    const uploadInfo = reactive({
+        status: 'idle',
+        message: ''
+    })
     const downloadSummary = computed(() => {
         const total = chapters.value.length
         const done = chapters.value.filter(chapter => chapter.downloaded_count > 0).length
@@ -96,11 +145,19 @@ export const useScraperStore = defineStore('scraper', () => {
         if (site === 'mangaforfree') {
             state.baseUrl = 'https://mangaforfree.com'
             state.storageStatePath = 'data/mangaforfree_state.json'
+            if (!state.userDataDir || state.userDataDir.includes('toongod_profile')) {
+                state.userDataDir = 'data/mangaforfree_profile'
+            }
         } else if (site === 'toongod') {
             state.baseUrl = 'https://toongod.org'
             state.storageStatePath = 'data/toongod_state.json'
+            if (!state.userDataDir || state.userDataDir.includes('mangaforfree_profile')) {
+                state.userDataDir = 'data/toongod_profile'
+            }
         }
         applyCatalogMode()
+        checkStateInfo()
+        ensureUserAgent()
     }
 
     function setMode(mode) {
@@ -109,11 +166,33 @@ export const useScraperStore = defineStore('scraper', () => {
             state.httpMode = false
             state.headless = false
             state.manualChallenge = true
+        } else if (mode === 'headless') {
+            state.httpMode = false
+            state.headless = true
+            state.manualChallenge = false
         } else {
             state.httpMode = true
             state.headless = true
             state.manualChallenge = false
         }
+    }
+
+    function getBrowserUserAgent() {
+        if (typeof navigator === 'undefined') return ''
+        return navigator.userAgent || ''
+    }
+
+    function syncUserAgent() {
+        const ua = getBrowserUserAgent()
+        if (ua) {
+            state.userAgent = ua
+        }
+    }
+
+    function ensureUserAgent() {
+        if (!state.lockUserAgent) return
+        if (state.userAgent && state.userAgent.trim()) return
+        syncUserAgent()
     }
 
     function getCatalogBasePath() {
@@ -146,6 +225,9 @@ export const useScraperStore = defineStore('scraper', () => {
         if (view === 'catalog' && catalog.items.length === 0) {
             loadCatalog(true)
         }
+        if (view === 'settings') {
+            ensureUserAgent()
+        }
     }
 
     function setCatalogMode(mode) {
@@ -161,14 +243,40 @@ export const useScraperStore = defineStore('scraper', () => {
             headless: state.headless,
             manual_challenge: state.manualChallenge,
             storage_state_path: state.storageStatePath || null,
+            user_data_dir: state.useProfile ? (state.userDataDir || null) : null,
+            user_agent: state.lockUserAgent ? (state.userAgent || null) : null,
+            browser_channel: (!state.httpMode && state.useChromeChannel) ? 'chrome' : null,
             concurrency: state.concurrency
         }
+    }
+
+    function proxyImageUrl(url) {
+        if (!url) return ''
+        if (url.startsWith('data:') || url.startsWith('blob:')) return url
+        if (url.startsWith(window.location.origin)) return url
+        const params = new URLSearchParams({
+            url,
+            base_url: state.baseUrl,
+            storage_state_path: state.storageStatePath || ''
+        })
+        if (state.useProfile && state.userDataDir) {
+            params.set('user_data_dir', state.userDataDir)
+        }
+        if (!state.httpMode && state.useChromeChannel) {
+            params.set('browser_channel', 'chrome')
+        }
+        if (state.lockUserAgent && state.userAgent) {
+            params.set('user_agent', state.userAgent)
+        }
+        return `/api/v1/scraper/image?${params.toString()}`
     }
 
     async function search() {
         if (state.view !== 'search') {
             state.view = 'search'
         }
+        ensureUserAgent()
+        checkStateInfo()
         const kw = state.keyword.trim()
         if (!kw) { error.value = '请输入关键词'; return }
         loading.value = true
@@ -219,6 +327,8 @@ export const useScraperStore = defineStore('scraper', () => {
         if (catalog.loading) return
         catalog.loading = true
         error.value = ''
+        ensureUserAgent()
+        checkStateInfo()
         try {
             if (reset) {
                 catalog.page = 1
@@ -249,6 +359,126 @@ export const useScraperStore = defineStore('scraper', () => {
         if (catalog.loading || !catalog.hasMore) return
         catalog.page += 1
         loadCatalog(false)
+    }
+
+    function formatRemaining(seconds) {
+        const total = Math.max(0, Math.floor(seconds || 0))
+        const days = Math.floor(total / 86400)
+        const hours = Math.floor((total % 86400) / 3600)
+        const minutes = Math.floor((total % 3600) / 60)
+        if (days > 0) return `${days}天${hours}小时`
+        if (hours > 0) return `${hours}小时${minutes}分钟`
+        if (minutes > 0) return `${minutes}分钟`
+        return '即将过期'
+    }
+
+    async function checkStateInfo() {
+        const path = (state.storageStatePath || '').trim()
+        if (!path) {
+            stateInfo.status = 'missing'
+            stateInfo.message = '未填写状态文件'
+            return
+        }
+        stateInfo.status = 'checking'
+        stateInfo.message = '检测中...'
+        try {
+            const data = await api.stateInfo({
+                base_url: state.baseUrl,
+                storage_state_path: path
+            })
+            stateInfo.status = data.status || 'unknown'
+            stateInfo.message = data.message || ''
+            stateInfo.cookieName = data.cookie_name || null
+            stateInfo.expiresAt = data.expires_at || null
+            stateInfo.expiresAtText = data.expires_at_text || ''
+            stateInfo.expiresInSec = data.expires_in_sec ?? null
+            if (data.expires_in_sec !== null && data.expires_in_sec !== undefined) {
+                stateInfo.remainingText = formatRemaining(data.expires_in_sec)
+            } else {
+                stateInfo.remainingText = ''
+            }
+        } catch (e) {
+            stateInfo.status = 'error'
+            stateInfo.message = e.message || '状态检测失败'
+        }
+    }
+
+    async function checkAccess() {
+        accessInfo.status = 'checking'
+        accessInfo.message = '检测中...'
+        try {
+            const data = await api.accessCheck({
+                base_url: state.baseUrl,
+                storage_state_path: (state.storageStatePath || '').trim() || null,
+                path: catalog.path || null
+            })
+            accessInfo.status = data.status || 'unknown'
+            accessInfo.httpStatus = data.http_status || null
+            accessInfo.message = data.message || ''
+        } catch (e) {
+            accessInfo.status = 'error'
+            accessInfo.message = e.message || '检测失败'
+        }
+    }
+
+    async function uploadStateFile(file) {
+        if (!file) return
+        uploadInfo.status = 'uploading'
+        uploadInfo.message = '上传中...'
+        try {
+            const formData = new FormData()
+            formData.append('base_url', state.baseUrl)
+            formData.append('file', file)
+            const data = await api.uploadState(formData)
+            state.storageStatePath = data.path
+            uploadInfo.status = 'success'
+            uploadInfo.message = '上传成功'
+            await checkStateInfo()
+        } catch (e) {
+            uploadInfo.status = 'error'
+            uploadInfo.message = e.message || '上传失败'
+        }
+    }
+
+    function accessInfoLabel() {
+        if (accessInfo.status === 'checking') return '站点检测中...'
+        if (accessInfo.status === 'ok') return '站点可访问'
+        if (accessInfo.status === 'forbidden') return '站点拒绝访问（403）'
+        if (accessInfo.status === 'error') return accessInfo.message || '站点检测失败'
+        return accessInfo.message || '站点状态未知'
+    }
+
+    function accessInfoClass() {
+        if (accessInfo.status === 'ok') return 'text-green-300'
+        if (accessInfo.status === 'forbidden') return 'text-red-300'
+        if (accessInfo.status === 'checking') return 'text-slate-300'
+        return 'text-slate-400'
+    }
+
+    function stateInfoLabel() {
+        if (stateInfo.status === 'checking') return '状态检测中...'
+        if (stateInfo.status === 'missing') return '未填写状态文件'
+        if (stateInfo.status === 'not_found') return '状态文件不存在'
+        if (stateInfo.status === 'invalid') return '状态文件无法解析'
+        if (stateInfo.status === 'no_cookie') return '状态文件中没有 cookie'
+        if (stateInfo.status === 'no_domain') return '没有匹配域名的 cookie'
+        if (stateInfo.status === 'session') return 'Cookie 无过期时间（会话）'
+        if (stateInfo.status === 'expired') {
+            return `Cookie 已过期 (${stateInfo.expiresAtText || '未知时间'})`
+        }
+        if (stateInfo.status === 'valid') {
+            const expiry = stateInfo.expiresAtText ? `，${stateInfo.expiresAtText} 过期` : ''
+            const remaining = stateInfo.remainingText ? `，剩余 ${stateInfo.remainingText}` : ''
+            return `Cookie 有效${expiry}${remaining}`
+        }
+        return stateInfo.message || '状态未知'
+    }
+
+    function stateInfoClass() {
+        if (stateInfo.status === 'valid') return 'text-green-300'
+        if (stateInfo.status === 'expired' || stateInfo.status === 'error') return 'text-red-300'
+        if (stateInfo.status === 'checking') return 'text-slate-300'
+        return 'text-slate-400'
     }
 
     function isQueued(chapterId) {
@@ -423,16 +653,29 @@ export const useScraperStore = defineStore('scraper', () => {
         queue,
         tasks,
         catalog,
+        stateInfo,
+        accessInfo,
+        uploadInfo,
         downloadSummary,
         task,
         setSite,
         setMode,
         setView,
         setCatalogMode,
+        syncUserAgent,
+        ensureUserAgent,
+        proxyImageUrl,
         search,
         selectManga,
         loadCatalog,
         loadMoreCatalog,
+        checkStateInfo,
+        checkAccess,
+        uploadStateFile,
+        stateInfoLabel,
+        stateInfoClass,
+        accessInfoLabel,
+        accessInfoClass,
         download,
         downloadSelected,
         toggleSelection,

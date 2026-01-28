@@ -79,28 +79,45 @@ class ToonGodScraper(GenericPlaywrightScraper):
         path: str | None = None,
     ):
         page = max(1, page)
-        base_path = path or "/webtoon/"
-        base_path = base_path if base_path.endswith("/") else f"{base_path}/"
-        if page > 1:
-            base_path = f"{base_path}page/{page}/"
-        url = urljoin(self.config.base_url, base_path)
-        if orderby:
-            separator = "&" if "?" in url else "?"
-            url = f"{url}{separator}m_orderby={quote(orderby)}"
-        if self.config.http_mode:
-            html = await self._http_fetch_html(url)
-        else:
-            async with self._browser_context() as context:
-                page_obj = await context.new_page()
-                await page_obj.route("**/*", self._block_search_resources)
-                await page_obj.goto(
-                    url, wait_until="domcontentloaded", timeout=self.config.timeout_ms
-                )
-                await self._guard_cloudflare(page_obj)
-                await self._wait_for_search_results(page_obj)
-                html = await page_obj.content()
+
+        async def _fetch_catalog(catalog_path: str):
+            base_path = (
+                catalog_path if catalog_path.endswith("/") else f"{catalog_path}/"
+            )
+            if page > 1:
+                base_path = f"{base_path}page/{page}/"
+            url = urljoin(self.config.base_url, base_path)
+            if orderby:
+                separator = "&" if "?" in url else "?"
+                url = f"{url}{separator}m_orderby={quote(orderby)}"
+            if self.config.http_mode:
+                html = await self._http_fetch_html(url)
+            else:
+                async with self._browser_context() as context:
+                    page_obj = await context.new_page()
+                    if not self.config.manual_challenge:
+                        await page_obj.route("**/*", self._block_search_resources)
+                    await page_obj.goto(
+                        url,
+                        wait_until="domcontentloaded",
+                        timeout=self.config.timeout_ms,
+                    )
+                    await self._guard_cloudflare(page_obj)
+                    await self._wait_for_search_results(page_obj)
+                    html = await page_obj.content()
+            return html
+
+        primary_path = path or "/webtoons/"
+        html = await _fetch_catalog(primary_path)
         results = self._parse_search_results(html)
         has_more = self._has_next_page(html)
+
+        if not results and path is None:
+            fallback_path = "/webtoon/"
+            html = await _fetch_catalog(fallback_path)
+            results = self._parse_search_results(html)
+            has_more = self._has_next_page(html)
+
         return results, has_more
 
     async def _block_search_resources(self, route, request=None) -> None:

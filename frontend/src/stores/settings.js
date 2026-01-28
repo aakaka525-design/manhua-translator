@@ -4,9 +4,18 @@ import { ref, reactive, onMounted } from 'vue'
 const STORAGE_KEY = 'manhua_settings'
 
 const availableModels = [
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: '快速响应' },
-    { id: 'gemini-2.5-pro-exp', name: 'Gemini 2.5 Pro Exp', desc: '高质量翻译' },
-    { id: 'gemini-2.0-flash-thinking-exp-01-21', name: 'Gemini Thinking', desc: '思考模式' },
+    // Gemini 3.x 系列 (最新)
+    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', desc: '最新旗舰，高质量翻译' },
+    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', desc: '最新快速模型' },
+    // Gemini 2.5 系列
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: '平衡速度与质量' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', desc: '轻量级快速' },
+    { id: 'gemini-2.5-pro-exp', name: 'Gemini 2.5 Pro Exp', desc: '实验版高质量' },
+    // PPIO 模型
+    { id: 'zai-org/glm-4.7-flash', name: 'GLM-4.7 Flash', desc: 'PPIO 快速翻译' },
+    { id: 'deepseek/deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B', desc: 'PPIO 高质量' },
+    { id: 'deepseek/deepseek-v3', name: 'DeepSeek V3', desc: 'PPIO 通用模型' },
+    // 其他
     { id: 'gpt-4o', name: 'GPT-4o', desc: 'OpenAI 模型' }
 ]
 
@@ -17,8 +26,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const loading = ref(false)
 
     const settings = reactive({
-        aiModel: 'gemini-2.0-flash',
-        aiModelName: 'Gemini 2.0 Flash',
+        aiModel: 'zai-org/glm-4.7-flash',
+        aiModelName: 'GLM-4.7 Flash',
         sourceLang: 'en',
         targetLang: 'zh',
         theme: 'default' // default (dark) or pop (light)

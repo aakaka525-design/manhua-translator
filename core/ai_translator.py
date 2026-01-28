@@ -20,11 +20,44 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _clean_ai_annotations(text: str) -> str:
+    """
+    清理翻译结果中可能残留的 AI 注释。
+    
+    过滤模式:
+    - (Note: ...) 或 (注: ...)
+    - "This means..." 或 "这意味着..."
+    - Without more context, ...
+    - This seems to be...
+    """
+    import re
+    
+    if not text:
+        return text
+    
+    # 移除括号内的注释 (Note: ...), (注: ...), etc.
+    # 支持闭合和未闭合的括号
+    text = re.sub(r'\s*\(Note:.*?(\)|$)', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'\s*\(注[:：].*?(\)|$)', '', text, flags=re.DOTALL)
+    text = re.sub(r'\s*\(This\s+(seems?|means?|appears?).*?(\)|$)', '', text, flags=re.IGNORECASE | re.DOTALL)
+    
+    # 移除独立的解释性句子
+    text = re.sub(r'Without\s+more\s+context[,，].*?([。.]|$)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'This\s+(seems?|means?|appears?)\s+to\s+be.*?([。.]|$)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'direct\s+translation\s+might\s+not.*?([。.]|$)', '', text, flags=re.IGNORECASE)
+    
+    return text.strip()
+
 class AITranslator:
     """支持多个 AI 提供商的翻译器。"""
     
-    # Gemini 模型列表
-    GEMINI_MODELS = {'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'}
+    # Gemini 模型列表 (2026-01 更新：Gemini 2.0 将于 2026年3月31日弃用)
+    GEMINI_MODELS = {
+        # Gemini 3.x 系列
+        'gemini-3-pro', 'gemini-3-flash',
+        # Gemini 2.5 系列
+        'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro-exp',
+    }
     
     # Gemini OpenAI 兼容 API 地址
     GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -150,14 +183,27 @@ Text: {text}
         target_name = self._get_lang_name(self.target_lang)
         numbered_texts = "\n".join(f"{i+1}. {t}" for i, (_, t) in enumerate(valid_pairs))
         
-        prompt = f"""You are a professional translator for manga/comics.
-Translate ALL the following texts to {target_name}.
-These are dialogues from a comic, translate them naturally.
-You MUST translate every line, do NOT return any original text.
-Output each translation on a new line with the same number prefix (1. 2. 3. etc).
-Only output the translations, nothing else.
+        prompt = f"""# Role
+你是一位资深的**漫画/汉化组翻译专家**，精通多国语言与{target_name}的文化转换。
 
-{numbered_texts}"""
+# OCR 纠错
+输入可能含OCR识别错误，请根据上下文自动纠正拼写/字符错误。
+例如：이닌 억은 → 이번 역은
+
+# 专有名词（必须音译）
+地名、人名、站名等专有名词必须音译，不可直译。
+例如：사당 → 舍堂, 東京 → 东京, 강남 → 江南
+
+# 翻译规则
+1. **语境优先**：对话用口语，旁白用书面语
+2. **简练有力**：考虑气泡大小
+3. **拟声词**：转换为{target_name}习惯表达
+4. **语气推断**：根据说话人特征调整用词
+
+# 输出格式
+{numbered_texts}
+
+请用数字编号格式输出翻译结果。禁止添加任何注释、说明或括号备注。"""
         
         max_retries = 2
         for attempt in range(max_retries + 1):
@@ -177,10 +223,10 @@ Only output the translations, nothing else.
                         else:
                             translations.append(line)
                 
-                # 重建完整结果
+                # 重建完整结果，并清理 AI 注释
                 full_results = ["" for _ in texts]
                 for (orig_idx, _), trans in zip(valid_pairs, translations):
-                    full_results[orig_idx] = trans
+                    full_results[orig_idx] = _clean_ai_annotations(trans)
                 
                 for i, (orig_idx, orig_text) in enumerate(valid_pairs):
                     if i >= len(translations):

@@ -44,7 +44,7 @@ class ScraperEngine:
         page: int = 1,
         orderby: str | None = None,
         path: str | None = None,
-    ):
+    ) -> tuple[Sequence[Manga], bool]:
         if not hasattr(self.scraper, "list_catalog"):
             raise NotImplementedError("catalog is not supported")
         self.logger.info(
@@ -54,13 +54,19 @@ class ScraperEngine:
             path or "default",
         )
         result = await self.scraper.list_catalog(page=page, orderby=orderby, path=path)
-        if isinstance(result, tuple):
-            items: Sequence[Manga] = result[0]
+        has_more = False
+        if (
+            isinstance(result, tuple)
+            and len(result) == 2
+            and isinstance(result[1], bool)
+        ):
+            items = list(cast(Sequence[Manga], result[0]))
+            has_more = result[1]
         else:
-            items = cast(Sequence[Manga], result)
+            items = list(cast(Sequence[Manga], result))
         count = len(items)
         self.logger.info("catalog done | page=%s count=%s", page, count)
-        return result
+        return items, has_more
 
     async def download_chapter(self, manga: Manga, chapter: Chapter):
         manga_dir = safe_name(manga.id or manga.title)

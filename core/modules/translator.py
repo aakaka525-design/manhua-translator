@@ -228,11 +228,15 @@ class TranslatorModule(BaseModule):
                         # 单区域分组，直接赋值
                         group[0].target_text = translation
                     else:
-                        # 多区域分组：按比例分割，每个区域都显示部分翻译
-                        splits = split_translation_by_ratio(group, translation)
-                        for region, split_translation in zip(group, splits):
-                            # 确保每个区域至少有一些文字
-                            region.target_text = split_translation if split_translation.strip() else translation
+                        # 多区域分组：只在最大区域渲染完整翻译
+                        # 其他区域设为占位符（用于 inpainting 擦除原文，但不渲染新文字）
+                        largest_region = max(group, key=lambda r: r.box_2d.width * r.box_2d.height)
+                        for region in group:
+                            if region is largest_region:
+                                region.target_text = translation
+                            else:
+                                # 占位符：触发 inpainting 但渲染时跳过
+                                region.target_text = "[INPAINT_ONLY]"
                             
             except Exception as e:
                 logger.error(f"[{context.task_id}] 翻译失败: {e}")

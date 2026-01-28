@@ -71,7 +71,7 @@ async function translateChapter(chapter, event) {
     <ComicBackground />
     <GlassNav :title="mangaStore.currentManga?.name || 'Loading...'">
       <template #actions>
-        <button @click="goBack" class="text-slate-300 hover:text-white transition flex items-center gap-2">
+        <button @click="goBack" class="text-text-secondary hover:text-text-main transition flex items-center gap-2">
           <i class="fas fa-arrow-left"></i> 返回
         </button>
       </template>
@@ -85,23 +85,23 @@ async function translateChapter(chapter, event) {
         <div 
           v-for="chapter in mangaStore.chapters" 
           :key="chapter.id"
-          class="bg-surface border border-slate-700 rounded-xl p-4 flex items-center justify-between hover:bg-white/5 transition cursor-pointer group"
+          class="bg-surface border border-border-main rounded-xl p-4 flex items-center justify-between hover:bg-white/5 transition cursor-pointer group"
           @click="openChapter(chapter)"
         >
           <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-accent-2 group-hover:scale-110 transition-transform">
+            <div class="w-10 h-10 rounded-lg bg-bg-secondary flex items-center justify-center text-accent-2 group-hover:scale-110 transition-transform">
               <i class="fas fa-book-open"></i>
             </div>
             <div>
-              <h3 class="font-semibold text-slate-200">{{ chapter.name }}</h3>
-              <p class="text-xs text-slate-500">{{ chapter.page_count }} 页</p>
+              <h3 class="font-semibold text-text-main">{{ chapter.name }}</h3>
+              <p class="text-xs text-text-secondary opacity-70">{{ chapter.page_count }} 页</p>
             </div>
           </div>
           
           <div class="flex items-center gap-3">
             <!-- Status Badges -->
-            <span v-if="chapter.isComplete" class="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded border border-green-500/30 font-bold">已完成</span>
-            <span v-else-if="chapter.has_translated" class="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded border border-amber-500/30 font-bold">
+            <span v-if="chapter.isComplete" class="px-2 py-0.5 bg-state-success/20 text-state-success text-xs rounded border border-state-success/30 font-bold">已完成</span>
+            <span v-else-if="chapter.has_translated" class="px-2 py-0.5 bg-state-warning/20 text-state-warning text-xs rounded border border-state-warning/30 font-bold">
               {{ chapter.translated_count }}/{{ chapter.page_count }}
             </span>
             <span v-if="chapter.isTranslating" class="text-xs text-accent-1 animate-pulse">翻译中...</span>
@@ -113,14 +113,14 @@ async function translateChapter(chapter, event) {
               :disabled="chapter.isTranslating"
               class="px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
               :class="chapter.isTranslating 
-                ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                ? 'bg-bg-secondary text-text-secondary opacity-50 cursor-not-allowed' 
                 : 'bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white'"
             >
               <i class="fas" :class="chapter.isTranslating ? 'fa-spinner animate-spin' : 'fa-language'"></i>
               {{ chapter.isTranslating ? '翻译中' : '翻译' }}
             </button>
             
-            <i class="fas fa-chevron-right text-slate-600"></i>
+            <i class="fas fa-chevron-right text-text-secondary opacity-50"></i>
           </div>
         </div>
       </div>

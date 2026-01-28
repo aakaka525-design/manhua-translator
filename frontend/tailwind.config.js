@@ -8,11 +8,17 @@ export default {
         extend: {
             colors: {
                 'bg-primary': 'var(--bg-primary)',
+                'bg-secondary': 'var(--bg-secondary)',
                 'surface': 'var(--bg-surface)',
                 'accent-1': 'var(--accent-1)',
                 'accent-2': 'var(--accent-2)',
                 'text-main': 'var(--text-main)',
+                'text-secondary': 'var(--text-secondary)',
                 'border-main': 'var(--border-color)',
+                'border-subtle': 'var(--border-subtle)',
+                'state-success': 'var(--state-success)',
+                'state-warning': 'var(--state-warning)',
+                'state-error': 'var(--state-error)',
             },
             fontFamily: {
                 'heading': ['Bebas Neue', 'sans-serif'],

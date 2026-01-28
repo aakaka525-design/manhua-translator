@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Sequence
 from urllib.parse import urlparse
@@ -86,12 +87,47 @@ def _preview_items(label: str, items: list[str], limit: int = 10) -> None:
         click.echo(f"  ... 还有 {len(items) - limit} 个")
 
 
+def _looks_like_challenge(html: str) -> bool:
+    content = html.lower()
+    markers = (
+        "cf-browser-verification",
+        "challenge-platform",
+        "cloudflare ray id",
+        "attention required",
+        "just a moment",
+    )
+    return any(marker in content for marker in markers)
+
+
+async def _wait_for_challenge_clear(page, timeout_ms: int) -> None:
+    poll_ms = 1000
+    deadline = time.monotonic() + (timeout_ms / 1000)
+    warned = False
+    while True:
+        try:
+            html = await page.content()
+        except Exception:  # noqa: BLE001
+            if time.monotonic() >= deadline:
+                raise RuntimeError("验证未完成，请增加等待时间或稍后重试")
+            await page.wait_for_timeout(poll_ms)
+            continue
+        if not _looks_like_challenge(html):
+            return
+        if not warned:
+            click.echo("检测到 Cloudflare 验证页，等待完成...")
+            warned = True
+        if time.monotonic() >= deadline:
+            raise RuntimeError("验证未完成，请增加等待时间或稍后重试")
+        await page.wait_for_timeout(poll_ms)
+
+
 async def _bootstrap_state(
     base_url: str,
     storage_state: str,
     user_data_dir: str,
     channel: str | None,
     target_url: str | None,
+    challenge_wait_ms: int,
 ) -> None:
     from playwright.async_api import async_playwright
 
@@ -111,10 +147,7 @@ async def _bootstrap_state(
         )
         page = await context.new_page()
         await page.goto(target_url or base_url, wait_until="domcontentloaded")
-        await asyncio.to_thread(
-            input,
-            "请在打开的浏览器中完成 Cloudflare 验证，然后回车继续...",
-        )
+        await _wait_for_challenge_clear(page, challenge_wait_ms)
         path = Path(storage_state)
         path.parent.mkdir(parents=True, exist_ok=True)
         await context.storage_state(path=str(path))
@@ -190,12 +223,14 @@ def cli() -> None:
 @click.option("--bootstrap-url", default=None)
 @click.option("--channel", default="chrome", show_default=True)
 @click.option("--user-data-dir", default=DEFAULT_PROFILE_DIR, show_default=True)
+@click.option("--challenge-wait-ms", default=120000, show_default=True)
 def bootstrap(
     base_url: str,
     storage_state: str,
     bootstrap_url: str | None,
     channel: str | None,
     user_data_dir: str,
+    challenge_wait_ms: int,
 ) -> None:
     """执行 Cloudflare 初始化并保存状态。"""
     asyncio.run(
@@ -205,6 +240,7 @@ def bootstrap(
             user_data_dir=user_data_dir,
             channel=channel,
             target_url=bootstrap_url,
+            challenge_wait_ms=challenge_wait_ms,
         )
     )
     click.echo(f"状态已保存: {storage_state}")
@@ -380,6 +416,7 @@ def interactive(
                     user_data_dir=user_data_dir,
                     channel=channel,
                     target_url=bootstrap_url,
+                    challenge_wait_ms=challenge_wait_ms,
                 )
             )
             click.echo(f"状态已保存: {storage_state}")

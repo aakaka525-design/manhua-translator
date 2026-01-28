@@ -54,7 +54,7 @@ class GenericPlaywrightScraper(BaseScraper):
             )
             await self._guard_cloudflare(page)
             await self._wait_for_search_results(page)
-            html = await page.content()
+            html = await self._safe_page_content(page)
 
         return self._parse_search_results(html)
 
@@ -68,7 +68,7 @@ class GenericPlaywrightScraper(BaseScraper):
             )
             await self._guard_cloudflare(page)
             await self._wait_for_manga_detail(page)
-            html = await page.content()
+            html = await self._safe_page_content(page)
 
         if not self._is_manga_detail_html(html):
             return None
@@ -279,7 +279,7 @@ class GenericPlaywrightScraper(BaseScraper):
         deduped = self._dedupe_keep_order(cleaned)
         if deduped:
             return deduped
-        html = await page.content()
+        html = await self._safe_page_content(page)
         script_urls = self._extract_script_image_urls(html)
         normalized = [normalize_url(self.config.base_url, url) for url in script_urls]
         return self._dedupe_keep_order(normalized)
@@ -671,10 +671,14 @@ class GenericPlaywrightScraper(BaseScraper):
         while True:
             try:
                 await page.wait_for_load_state("domcontentloaded", timeout=poll_ms)
-                html = await page.content()
+                html = await self._safe_page_content(page)
             except Exception:  # noqa: BLE001
                 if waited >= self.config.challenge_wait_ms:
-                    await self._maybe_manual_challenge(page)
+                    handled = await self._maybe_manual_challenge(page)
+                    if handled:
+                        html = await self._safe_page_content(page)
+                        if not self._looks_like_challenge(html):
+                            return html
                     raise CloudflareChallengeError(
                         "检测到 Cloudflare 挑战，请先运行 bootstrap 并使用状态文件。"
                     )
@@ -685,29 +689,60 @@ class GenericPlaywrightScraper(BaseScraper):
             if not self._looks_like_challenge(html):
                 return html
             if waited >= self.config.challenge_wait_ms:
-                await self._maybe_manual_challenge(page)
+                handled = await self._maybe_manual_challenge(page)
+                if handled:
+                    html = await self._safe_page_content(page)
+                    if not self._looks_like_challenge(html):
+                        return html
                 raise CloudflareChallengeError(
                     "检测到 Cloudflare 挑战，请先运行 bootstrap 并使用状态文件。"
                 )
             await page.wait_for_timeout(poll_ms)
             waited += poll_ms
 
-    async def _maybe_manual_challenge(self, page) -> None:
+    async def _maybe_manual_challenge(self, page) -> bool:
         if self.config.headless or not self.config.manual_challenge:
-            return
-        await asyncio.to_thread(
-            input,
-            "检测到 Cloudflare 挑战，请在浏览器中完成验证后回车继续...",
-        )
-        await page.wait_for_timeout(self.config.challenge_poll_ms)
-        html = await page.content()
-        if self._looks_like_challenge(html):
-            raise RuntimeError("手动验证后仍检测到 Cloudflare 挑战。")
+            return False
+        return await self._wait_for_challenge_clear(page, self.config.challenge_wait_ms)
+
+    async def _wait_for_challenge_clear(self, page, timeout_ms: int) -> bool:
+        poll_ms = max(500, self.config.challenge_poll_ms)
+        waited = 0
+        warned = False
+        while waited <= timeout_ms:
+            await page.wait_for_timeout(poll_ms)
+            try:
+                html = await self._safe_page_content(page)
+            except Exception:  # noqa: BLE001
+                waited += poll_ms
+                continue
+            if not self._looks_like_challenge(html):
+                return True
+            if not warned:
+                warned = True
+            waited += poll_ms
+        return False
 
     def _pick_user_agent(self) -> str | None:
         if not self.config.override_user_agent:
             return None
         return self.config.user_agent or self.user_agent_pool.pick()
+
+    async def _safe_page_content(self, page, attempts: int = 3) -> str:
+        last_error = None
+        for _ in range(max(1, attempts)):
+            try:
+                return await page.content()
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                try:
+                    await page.wait_for_load_state(
+                        "domcontentloaded", timeout=self.config.challenge_poll_ms
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                await page.wait_for_timeout(max(200, self.config.challenge_poll_ms))
+        raise last_error
 
     def _looks_like_challenge(self, html: str) -> bool:
         markers = (

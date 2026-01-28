@@ -71,11 +71,16 @@ Alpine.data('mangaApp', () => ({
         targetLang: 'zh'
     },
     availableModels: [
-        { id: 'glm-4-flash-250414', name: 'GLM-4 Flash', desc: '快速响应，适合大批量翻译' },
-        { id: 'deepseek-v3-250324', name: 'DeepSeek V3', desc: '高质量翻译，速度适中' },
-        { id: 'qwen3-30b-a3b', name: 'Qwen3 30B', desc: '阿里通义千问，均衡性能' },
-        { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: 'Google Gemini，需配置 GEMINI_API_KEY' },
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', desc: 'OpenAI 兼容模型' },
+        // PPIO 模型
+        { id: 'zai-org/glm-4.7-flash', name: 'GLM-4.7 Flash', desc: 'PPIO 快速翻译' },
+        { id: 'deepseek/deepseek-v3', name: 'DeepSeek V3', desc: 'PPIO 高质量翻译' },
+        { id: 'deepseek/deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B', desc: 'PPIO 推理模型' },
+        // Gemini 3.x 系列 (最新)
+        { id: 'gemini-3-pro', name: 'Gemini 3 Pro', desc: 'Google 最新旗舰' },
+        { id: 'gemini-3-flash', name: 'Gemini 3 Flash', desc: 'Google 最新快速' },
+        // Gemini 2.5 系列
+        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: '平衡速度与质量' },
+        { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', desc: '轻量级快速' },
     ],
 
     // Merge logic modules

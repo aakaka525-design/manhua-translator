@@ -46,7 +46,7 @@ class Inpainter(ABC):
         regions: list[RegionData],
         output_path: str,
         temp_dir: str = "./temp",
-        dilation: int = 8,  # Increased to cover text edges and glow
+        dilation: int = 12,  # Increased to cover text edges and glow effects
     ) -> str:
         """
         Inpaint all regions in an image.
@@ -79,8 +79,10 @@ class Inpainter(ABC):
 
             box = region.box_2d
             
-            # Expand box to cover full text area with margin
-            expand = 8  # Generous margin for text edges
+            # Expand box to cover full text area with generous margin
+            # Increased to 25 to handle edge cases where original text
+            # extends beyond detected OCR box boundaries (especially for Korean)
+            expand = 25  # Larger margin for text edges 및 anti-aliasing
             y1 = max(0, box.y1 - expand)
             y2 = min(height, box.y2 + expand)
             x1 = max(0, box.x1 - expand)

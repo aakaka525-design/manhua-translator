@@ -413,6 +413,10 @@ class TextRenderer:
             # Skip SFX markers
             if text.startswith("[SFX:"):
                 continue
+            
+            # Skip INPAINT_ONLY markers (regions inpainted but no text rendered)
+            if text == "[INPAINT_ONLY]":
+                continue
 
             # Estimate style from original
             text_color = self.style_estimator.estimate_text_color(

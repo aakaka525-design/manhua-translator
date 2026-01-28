@@ -71,3 +71,4 @@ def get_cached_ocr(lang: str = "en"):
                     )
 
     return _ocr_cache[lang]
+

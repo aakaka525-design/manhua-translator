@@ -116,16 +116,16 @@ const contextMenuItems = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-black text-white">
+  <div class="min-h-screen bg-bg-primary text-text-main">
     <!-- Toolbar -->
-    <div class="fixed top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent z-50 flex justify-between items-start pointer-events-none">
-      <button @click="router.go(-1)" class="pointer-events-auto w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center text-white hover:bg-white/20">
+    <div class="fixed top-0 left-0 right-0 p-4 bg-gradient-to-b from-bg-primary/90 to-transparent z-50 flex justify-between items-start pointer-events-none">
+      <button @click="router.go(-1)" class="pointer-events-auto w-10 h-10 rounded-full bg-bg-surface/50 backdrop-blur flex items-center justify-center text-text-main hover:bg-bg-surface border border-transparent hover:border-border-subtle transition">
         <i class="fas fa-arrow-left"></i>
       </button>
       
       <button @click="toggleCompare" 
-        class="pointer-events-auto px-4 py-2 rounded-full backdrop-blur font-bold text-sm transition"
-        :class="compareMode ? 'bg-accent-2/80 text-black' : 'bg-black/50 text-white'">
+        class="pointer-events-auto px-4 py-2 rounded-full backdrop-blur font-bold text-sm transition border border-transparent"
+        :class="compareMode ? 'bg-accent-2/80 text-white' : 'bg-bg-surface/50 text-text-main border-border-subtle'">
         <i class="fas fa-columns mr-2"></i> 对比模式
       </button>
     </div>
@@ -157,17 +157,17 @@ const contextMenuItems = [
       
       <!-- Navigation Footer -->
       <div v-if="!loading" class="p-8 pb-20 text-center space-y-4">
-        <h3 class="text-slate-500">章节结束</h3>
+        <h3 class="text-text-secondary">章节结束</h3>
         
         <!-- Chapter Navigation -->
         <div class="flex justify-center gap-4 flex-wrap">
           <button v-if="prevChapter" 
             @click="goToChapter(prevChapter)"
-            class="px-6 py-3 rounded-full bg-surface border border-slate-700 hover:bg-white/10 flex items-center gap-2">
+            class="px-6 py-3 rounded-full bg-surface border border-border-main hover:bg-bg-secondary flex items-center gap-2 text-text-main">
             <i class="fas fa-chevron-left"></i> 上一章
           </button>
           
-          <button class="px-6 py-3 rounded-full bg-surface border border-slate-700 hover:bg-white/10" @click="router.go(-1)">
+          <button class="px-6 py-3 rounded-full bg-surface border border-border-main hover:bg-bg-secondary text-text-main" @click="router.go(-1)">
             返回章节列表
           </button>
           
@@ -178,7 +178,7 @@ const contextMenuItems = [
           </button>
         </div>
         
-        <p class="text-xs text-slate-600">提示: 使用 ← → 箭头键切换章节</p>
+        <p class="text-xs text-text-secondary opacity-70">提示: 使用 ← → 箭头键切换章节</p>
       </div>
     </div>
     

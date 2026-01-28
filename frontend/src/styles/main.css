@@ -5,11 +5,19 @@
 :root {
     /* Default Theme (Dark Glass) */
     --bg-primary: #0F0F11;
+    --bg-secondary: #1E1E24;
     --bg-surface: #1A1A1E;
     --text-main: #F0F0F0;
+    --text-secondary: #94A3B8; /* Slate-400 */
     --accent-1: #FF0055;
     --accent-2: #00F0FF;
     --border-color: rgba(255, 255, 255, 0.1);
+    --border-subtle: rgba(255, 255, 255, 0.05);
+
+    /* State Colors */
+    --state-success: #10B981;
+    --state-warning: #F59E0B;
+    --state-error: #EF4444;
 
     /* Component Specifics */
     --card-border-width: 3px;
@@ -29,13 +37,21 @@
 [data-theme="pop"] {
     /* High-Voltage Pop Theme */
     --bg-primary: #FDFBF7;
+    --bg-secondary: #F5F5F0;
     --bg-surface: #FFFFFF;
     --text-main: #121212;
+    --text-secondary: #606060;
     --accent-1: #FF2E00;
     /* Action Red */
     --accent-2: #0099FF;
     /* Cyan */
     --border-color: #121212;
+    --border-subtle: #E0E0E0;
+
+    /* State Colors */
+    --state-success: #00C853;
+    --state-warning: #FFD600;
+    --state-error: #FF0000;
 
     /* Component Specifics */
     --card-border-width: 3px;

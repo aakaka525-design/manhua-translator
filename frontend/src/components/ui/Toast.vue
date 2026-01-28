@@ -10,10 +10,10 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const typeClasses = {
-  info: 'bg-slate-700 border-slate-600',
-  success: 'bg-green-500/20 border-green-500/30 text-green-300',
-  warning: 'bg-amber-500/20 border-amber-500/30 text-amber-300',
-  error: 'bg-red-500/20 border-red-500/30 text-red-300'
+  info: 'bg-bg-secondary border-border-subtle text-text-main',
+  success: 'bg-state-success/20 border-state-success/30 text-state-success',
+  warning: 'bg-state-warning/20 border-state-warning/30 text-state-warning',
+  error: 'bg-state-error/20 border-state-error/30 text-state-error'
 }
 
 const typeIcons = {
@@ -31,7 +31,7 @@ const typeIcons = {
       :class="typeClasses[type]">
       <i class="fas" :class="typeIcons[type]"></i>
       <span class="text-sm font-medium">{{ message }}</span>
-      <button @click="emit('close')" class="ml-auto text-slate-400 hover:text-white transition">
+      <button @click="emit('close')" class="ml-auto text-text-secondary hover:text-text-main transition">
         <i class="fas fa-times text-xs"></i>
       </button>
     </div>

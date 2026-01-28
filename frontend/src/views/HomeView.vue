@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMangaStore } from '@/stores/manga'
 import ComicBackground from '@/components/ui/ComicBackground.vue'
@@ -7,15 +7,26 @@ import ComicCard from '@/components/ui/ComicCard.vue'
 import ComicLoading from '@/components/ui/ComicLoading.vue'
 import GlassNav from '@/components/layout/GlassNav.vue'
 import { useParallax } from '@/composables/useParallax'
+import { useAnimations } from '@/composables/useAnimations'
 
 const router = useRouter()
 const mangaStore = useMangaStore()
+const { animateStagger } = useAnimations()
 
 useParallax()
 
-onMounted(() => {
-  mangaStore.fetchMangas()
+onMounted(async () => {
+  await mangaStore.fetchMangas()
 })
+
+// Watch for mangas to be loaded to trigger animation
+watch(() => mangaStore.mangas, async (newMangas) => {
+  if (newMangas.length > 0) {
+    await nextTick()
+    const cards = document.querySelectorAll('.comic-card')
+    animateStagger(cards)
+  }
+}, { immediate: true })
 
 function openManga(id) {
   router.push({ name: 'manga', params: { id } })
@@ -35,21 +46,19 @@ function openManga(id) {
 
       <!-- Empty State -->
       <div v-else-if="!mangaStore.hasMangas" class="text-center py-20">
-        <h2 class="text-2xl text-slate-500 font-comic">No Mangas Found</h2>
-        <p class="text-slate-600">Place your manga folders in the /data directory.</p>
+        <h2 class="text-2xl text-text-secondary font-comic">No Mangas Found</h2>
+        <p class="text-text-secondary opacity-70">Place your manga folders in the /data directory.</p>
       </div>
 
       <!-- Bento Grid -->
       <div v-else class="bento-grid">
         <ComicCard 
-          v-for="(manga, index) in mangaStore.mangas" 
+          v-for="manga in mangaStore.mangas" 
           :key="manga.id"
           :title="manga.name"
           :cover="manga.cover_url"
           :chapter-count="manga.chapter_count"
           @click="openManga(manga.id)"
-          class="animate-fade-in"
-          :style="{ animationDelay: `${index * 30}ms` }"
         />
       </div>
     </main>
@@ -79,14 +88,5 @@ function openManga(id) {
   .bento-grid {
     grid-template-columns: repeat(5, 1fr);
   }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out backwards;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 </style>

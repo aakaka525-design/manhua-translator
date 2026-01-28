@@ -27,7 +27,7 @@ class InpainterModule(BaseModule):
         self,
         inpainter: Optional[Inpainter] = None,
         output_dir: str = "./temp",
-        dilation: int = 8,  # 增大膨胀范围，确保完全擦除
+        dilation: int = 12,  # 增大膨胀范围，确保完全擦除
         prefer_lama: bool = True,
         use_time_subdir: bool = True,  # 使用时间子目录
     ):

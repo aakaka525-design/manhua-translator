@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, ref } from 'vue'
+import { onUnmounted, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScraperStore } from '@/stores/scraper'
 import ComicBackground from '@/components/ui/ComicBackground.vue'
@@ -11,6 +11,10 @@ const scraper = useScraperStore()
 const mobileTab = ref('browse')
 const mobileConfigOpen = ref(true)
 
+onMounted(() => {
+    scraper.ensureUserAgent()
+})
+
 onUnmounted(() => {
     scraper.stopPolling()
 })
@@ -21,7 +25,7 @@ onUnmounted(() => {
     <ComicBackground />
     <GlassNav title="资源爬取">
       <template #actions>
-        <button @click="router.push({ name: 'home' })" class="text-slate-300 hover:text-white transition flex items-center gap-2">
+        <button @click="router.push({ name: 'home' })" class="text-text-secondary hover:text-text-main transition flex items-center gap-2">
           <i class="fas fa-arrow-left"></i> 返回
         </button>
       </template>
@@ -33,14 +37,14 @@ onUnmounted(() => {
           class="px-3 py-1 text-xs font-semibold rounded-full border transition"
           :class="scraper.state.view === 'search'
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           搜索漫画
         </button>
         <button @click="scraper.setView('catalog')"
           class="px-3 py-1 text-xs font-semibold rounded-full border transition"
           :class="scraper.state.view === 'catalog'
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           站点目录
         </button>
       </div>
@@ -49,21 +53,21 @@ onUnmounted(() => {
           class="px-3 py-1 text-xs font-semibold rounded-full border transition"
           :class="mobileTab === 'browse'
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           浏览
         </button>
         <button @click="mobileTab = 'chapters'"
           class="px-3 py-1 text-xs font-semibold rounded-full border transition"
           :class="mobileTab === 'chapters'
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           章节
         </button>
         <button @click="mobileTab = 'settings'"
           class="px-3 py-1 text-xs font-semibold rounded-full border transition"
           :class="mobileTab === 'settings'
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1'">
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           设置
         </button>
       </div>
@@ -72,8 +76,8 @@ onUnmounted(() => {
         <div class="space-y-4 xl:col-span-3" :class="mobileTab === 'settings' ? 'block' : 'hidden xl:block'">
           <div class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-center justify-between">
-              <h3 class="font-semibold">站点设置</h3>
-              <button class="text-xs text-slate-400 xl:hidden" @click="mobileConfigOpen = !mobileConfigOpen">
+              <h3 class="font-semibold text-text-main">站点设置</h3>
+              <button class="text-xs text-text-secondary xl:hidden" @click="mobileConfigOpen = !mobileConfigOpen">
                 <span>{{ mobileConfigOpen ? '收起' : '展开' }}</span>
                 <i class="fas fa-chevron-down ml-1 transition"
                   :class="mobileConfigOpen ? 'rotate-180' : ''"></i>
@@ -81,37 +85,114 @@ onUnmounted(() => {
             </div>
             <div class="mt-3 space-y-4" :class="mobileConfigOpen ? 'block' : 'hidden xl:block'">
             <div>
-              <label class="text-xs text-slate-400">站点</label>
+              <label class="text-xs text-text-secondary">站点</label>
               <select v-model="scraper.state.site" @change="scraper.setSite(scraper.state.site)"
-                class="mt-1 w-full bg-bg-primary border border-main text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
+                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
                 <option value="toongod">ToonGod</option>
                 <option value="mangaforfree">MangaForFree</option>
                 <option value="custom">自定义</option>
               </select>
             </div>
             <div>
-              <label class="text-xs text-slate-400">基础地址</label>
+              <label class="text-xs text-text-secondary">基础地址</label>
               <input v-model="scraper.state.baseUrl" placeholder="https://toongod.org"
-                class="mt-1 w-full bg-bg-primary border border-main text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
             </div>
             <div>
-              <label class="text-xs text-slate-400">抓取模式</label>
+              <label class="text-xs text-text-secondary">抓取模式</label>
               <select v-model="scraper.state.mode" @change="scraper.setMode(scraper.state.mode)"
-                class="mt-1 w-full bg-bg-primary border border-main text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
+                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
                 <option value="http">HTTP</option>
+                <option value="headless">无头浏览器</option>
                 <option value="headed">有头浏览器</option>
               </select>
-              <p class="text-[10px] text-slate-500 mt-1">有头模式会打开浏览器并需在终端回车继续</p>
+              <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-if="scraper.state.mode === 'headed'">
+                有头模式会打开浏览器并需在终端回车继续
+              </p>
+              <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-else-if="scraper.state.mode === 'headless'">
+                无头模式不会弹窗，但需要有效状态文件
+              </p>
             </div>
             <div>
-              <label class="text-xs text-slate-400">并发</label>
+              <label class="text-xs text-text-secondary">状态文件（可选）</label>
+              <div class="mt-1 flex gap-2">
+                <input v-model="scraper.state.storageStatePath" placeholder="data/toongod_state.json"
+                  class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                <button @click="scraper.checkStateInfo()"
+                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
+                  检测
+                </button>
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <label
+                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition cursor-pointer">
+                  上传状态文件
+                  <input type="file" accept=".json" class="hidden"
+                    @change="scraper.uploadStateFile($event.target.files[0])" />
+                </label>
+                <span v-if="scraper.uploadInfo.status !== 'idle'" class="text-[10px]"
+                  :class="scraper.uploadInfo.status === 'success' ? 'text-green-300' : (scraper.uploadInfo.status === 'error' ? 'text-red-300' : 'text-slate-300')">
+                  {{ scraper.uploadInfo.message }}
+                </span>
+              </div>
+              <p class="text-[10px] text-text-secondary mt-1 opacity-70">无界面服务器可复用本地 bootstrap 文件</p>
+              <p v-if="scraper.stateInfo.status !== 'idle'" class="text-[10px] mt-1"
+                :class="scraper.stateInfoClass()">
+                {{ scraper.stateInfoLabel() }}
+              </p>
+              <div class="mt-2 flex items-center gap-2">
+                <button @click="scraper.checkAccess()"
+                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
+                  站点检测
+                </button>
+                <span v-if="scraper.accessInfo.status !== 'idle'" class="text-[10px]"
+                  :class="scraper.accessInfoClass()">
+                  {{ scraper.accessInfoLabel() }}
+                </span>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-text-secondary">持久化配置（推荐）</label>
+              <div class="mt-1 flex items-center gap-2">
+                <input type="checkbox" v-model="scraper.state.useProfile" class="accent-accent-1" />
+                <span class="text-[10px] text-text-secondary opacity-70">开启可减少重复挑战</span>
+              </div>
+              <input v-if="scraper.state.useProfile" v-model="scraper.state.userDataDir" placeholder="data/toongod_profile"
+                class="mt-2 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+            </div>
+            <div>
+              <label class="text-xs text-text-secondary">固定 UA（推荐）</label>
+              <div class="mt-1 flex items-center gap-2">
+                <input type="checkbox" v-model="scraper.state.lockUserAgent" class="accent-accent-1"
+                  @change="scraper.ensureUserAgent()" />
+                <span class="text-[10px] text-text-secondary opacity-70">避免 UA 变化触发挑战</span>
+              </div>
+              <div v-if="scraper.state.lockUserAgent" class="mt-2 flex gap-2">
+                <input v-model="scraper.state.userAgent" placeholder="浏览器 UA"
+                  class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                <button @click="scraper.syncUserAgent()"
+                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
+                  使用当前浏览器 UA
+                </button>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-text-secondary">浏览器通道（推荐）</label>
+              <div class="mt-1 flex items-center gap-2">
+                <input type="checkbox" v-model="scraper.state.useChromeChannel" class="accent-accent-1"
+                  :disabled="scraper.state.httpMode" />
+                <span class="text-[10px] text-text-secondary opacity-70">仅有头模式生效，需已安装 Chrome</span>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-text-secondary">并发</label>
               <input type="number" min="1" max="12" v-model.number="scraper.state.concurrency"
-                class="mt-1 w-full bg-bg-primary border border-main text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
             </div>
             <div v-if="scraper.state.view === 'search'">
-              <label class="text-xs text-slate-400">关键词 / 网址</label>
+              <label class="text-xs text-text-secondary">关键词 / 网址</label>
               <input v-model="scraper.state.keyword" placeholder="输入漫画关键词或完整网址"
-                class="mt-1 w-full bg-bg-primary border border-main text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
                 @keydown.enter="scraper.search()" />
             </div>
             <button v-if="scraper.state.view === 'search'" @click="scraper.search()" :disabled="scraper.loading"
@@ -126,21 +207,29 @@ onUnmounted(() => {
               {{ scraper.catalog.loading ? '加载中...' : '加载目录' }}
             </button>
             <p v-if="scraper.error" class="text-xs text-red-400">{{ scraper.error }}</p>
+            <div class="bg-bg-secondary/70 border border-border-subtle rounded-lg p-3 text-[10px] text-text-secondary">
+              <p class="font-semibold text-text-main">Cloudflare 指引</p>
+              <p class="mt-2">1) 有界面电脑运行 bootstrap 生成状态文件</p>
+              <p>2) 拷贝到服务器后填写上方路径</p>
+              <p>3) 建议开启“持久化配置”减少重复挑战</p>
+              <p class="mt-2">示例：</p>
+              <p class="font-mono text-[10px] text-text-secondary opacity-70">python scripts/scraper_cli.py bootstrap --base-url https://mangaforfree.com</p>
+            </div>
             </div>
           </div>
 
           <!-- Task Status -->
           <div class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-center justify-between">
-              <h3 class="font-semibold">下载状态</h3>
+              <h3 class="font-semibold text-text-main">下载状态</h3>
               <span v-if="scraper.task.status" class="text-[10px] font-semibold px-2 py-1 rounded-full"
                 :class="scraper.statusClass(scraper.task.status)">
                 {{ scraper.statusLabel(scraper.task.status) }}
               </span>
             </div>
-            <p class="mt-2 text-xs text-slate-400">{{ scraper.task.message || '暂无任务' }}</p>
-            <p class="mt-1 text-[10px] text-slate-500">队列中 {{ scraper.queue.length }} 项</p>
-            <div v-if="scraper.task.report" class="mt-2 text-xs text-slate-500 space-y-1">
+            <p class="mt-2 text-xs text-text-secondary">{{ scraper.task.message || '暂无任务' }}</p>
+            <p class="mt-1 text-[10px] text-text-secondary opacity-70">队列中 {{ scraper.queue.length }} 项</p>
+            <div v-if="scraper.task.report" class="mt-2 text-xs text-text-secondary space-y-1">
               <p>成功 {{ scraper.task.report.success_count }} / 失败 {{ scraper.task.report.failed_count }}</p>
               <p class="break-all">输出目录: {{ scraper.task.report.output_dir }}</p>
             </div>
@@ -152,21 +241,21 @@ onUnmounted(() => {
           <!-- Search Results -->
           <div v-if="scraper.state.view === 'search'" class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-center justify-between">
-              <h3 class="font-semibold">搜索结果</h3>
-              <span v-if="scraper.loading" class="text-xs text-slate-400 animate-pulse">加载中...</span>
+              <h3 class="font-semibold text-text-main">搜索结果</h3>
+              <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
             </div>
             <div class="mt-3 space-y-2">
-              <p v-if="!scraper.loading && scraper.results.length === 0" class="text-xs text-slate-500">暂无结果</p>
+              <p v-if="!scraper.loading && scraper.results.length === 0" class="text-xs text-text-secondary opacity-70">暂无结果</p>
               <div v-for="manga in scraper.results" :key="manga.id"
-                class="flex items-center justify-between bg-bg-primary/50 border border-main/50 rounded-lg px-3 py-2">
+                class="flex items-center justify-between bg-bg-secondary/50 border border-border-subtle rounded-lg px-3 py-2">
                 <div class="flex items-center gap-3">
-                  <div class="w-12 h-16 rounded-lg bg-bg-primary/80 border border-main/50 overflow-hidden">
-                    <img v-if="manga.cover_url" :src="manga.cover_url" alt="cover"
+                  <div class="w-12 h-16 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
+                    <img v-if="manga.cover_url" :src="scraper.proxyImageUrl(manga.cover_url)" alt="cover"
                       class="w-full h-full object-cover" loading="lazy" />
                   </div>
                   <div>
-                    <p class="text-sm font-semibold">{{ manga.title || manga.id }}</p>
-                    <p class="text-[10px] text-slate-500 truncate">{{ manga.url }}</p>
+                    <p class="text-sm font-semibold text-text-main">{{ manga.title || manga.id }}</p>
+                    <p class="text-[10px] text-text-secondary truncate">{{ manga.url }}</p>
                   </div>
                 </div>
                 <button @click="scraper.selectManga(manga)" :disabled="scraper.loading"
@@ -181,11 +270,11 @@ onUnmounted(() => {
           <!-- Catalog List -->
           <div v-if="scraper.state.view === 'catalog'" class="bg-surface border border-main rounded-xl p-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
-              <h3 class="font-semibold">站点目录</h3>
-              <div class="flex items-center gap-2 text-xs text-slate-400">
+              <h3 class="font-semibold text-text-main">站点目录</h3>
+              <div class="flex items-center gap-2 text-xs text-text-secondary">
                 <span>目录</span>
                 <select v-model="scraper.catalog.mode" @change="scraper.setCatalogMode(scraper.catalog.mode)"
-                  class="bg-bg-primary border border-main rounded-lg px-2 py-1 text-xs">
+                  class="bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-2 py-1 text-xs">
                   <option value="all">全部</option>
                   <option value="views">浏览量</option>
                   <option value="new">最新</option>
@@ -195,17 +284,17 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="mt-3 space-y-2">
-              <p v-if="!scraper.catalog.loading && scraper.catalog.items.length === 0" class="text-xs text-slate-500">暂无目录数据</p>
+              <p v-if="!scraper.catalog.loading && scraper.catalog.items.length === 0" class="text-xs text-text-secondary opacity-70">暂无目录数据</p>
               <div v-for="manga in scraper.catalog.items" :key="manga.id"
-                class="flex items-center justify-between bg-bg-primary/50 border border-main/50 rounded-lg px-3 py-2">
+                class="flex items-center justify-between bg-bg-secondary/50 border border-border-subtle rounded-lg px-3 py-2">
                 <div class="flex items-center gap-3">
-                  <div class="w-12 h-16 rounded-lg bg-bg-primary/80 border border-main/50 overflow-hidden">
-                    <img v-if="manga.cover_url" :src="manga.cover_url" alt="cover"
+                  <div class="w-12 h-16 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
+                    <img v-if="manga.cover_url" :src="scraper.proxyImageUrl(manga.cover_url)" alt="cover"
                       class="w-full h-full object-cover" loading="lazy" />
                   </div>
                   <div>
-                    <p class="text-sm font-semibold">{{ manga.title || manga.id }}</p>
-                    <p class="text-[10px] text-slate-500 truncate">{{ manga.url }}</p>
+                    <p class="text-sm font-semibold text-text-main">{{ manga.title || manga.id }}</p>
+                    <p class="text-[10px] text-text-secondary truncate">{{ manga.url }}</p>
                   </div>
                 </div>
                 <button @click="scraper.selectManga(manga)" :disabled="scraper.catalog.loading || scraper.loading"
@@ -216,9 +305,9 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="mt-3 flex items-center justify-between">
-              <span class="text-xs text-slate-500">第 {{ scraper.catalog.page }} 页</span>
+              <span class="text-xs text-text-secondary opacity-70">第 {{ scraper.catalog.page }} 页</span>
               <button @click="scraper.loadMoreCatalog()" :disabled="!scraper.catalog.hasMore || scraper.catalog.loading"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1 transition"
+                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition"
                 :class="(!scraper.catalog.hasMore || scraper.catalog.loading) ? 'opacity-60 cursor-not-allowed' : ''">
                 {{ scraper.catalog.loading ? '加载中...' : (scraper.catalog.hasMore ? '加载更多' : '没有更多') }}
               </button>
@@ -231,9 +320,9 @@ onUnmounted(() => {
         <div class="space-y-4 xl:col-span-4" :class="mobileTab === 'chapters' ? 'block' : 'hidden xl:block'">
           <div class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-center justify-between">
-              <h3 class="font-semibold">章节列表</h3>
-              <span v-if="scraper.loading" class="text-xs text-slate-400 animate-pulse">加载中...</span>
-              <div v-if="scraper.selectedManga" class="text-xs text-slate-400 flex items-center gap-2">
+              <h3 class="font-semibold text-text-main">章节列表</h3>
+              <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
+              <div v-if="scraper.selectedManga" class="text-xs text-text-secondary flex items-center gap-2">
                 <span>{{ scraper.selectedManga.title || scraper.selectedManga.id }}</span>
                 <span v-if="scraper.downloadSummary.total > 0">
                   已下载 {{ scraper.downloadSummary.done }}/{{ scraper.downloadSummary.total }} 章
@@ -242,11 +331,11 @@ onUnmounted(() => {
             </div>
             <div class="mt-3 flex flex-wrap gap-2 hidden xl:flex">
               <button @click="scraper.selectAll()"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1 transition">
+                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
                 全选
               </button>
               <button @click="scraper.clearSelection()"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50 hover:border-accent-1 transition">
+                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
                 清空
               </button>
               <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0"
@@ -256,15 +345,15 @@ onUnmounted(() => {
               </button>
             </div>
             <div class="mt-3 space-y-2 max-h-[60vh] xl:max-h-[480px] overflow-y-auto custom-scrollbar">
-              <p v-if="scraper.chapters.length === 0" class="text-xs text-slate-500">请选择漫画查看章节</p>
+              <p v-if="scraper.chapters.length === 0" class="text-xs text-text-secondary opacity-70">请选择漫画查看章节</p>
               <div v-for="chapter in scraper.chapters" :key="chapter.id"
-                class="flex items-center justify-between bg-bg-primary/50 border border-main/50 rounded-lg px-3 py-2">
+                class="flex items-center justify-between bg-bg-secondary/50 border border-border-subtle rounded-lg px-3 py-2">
                 <div class="flex items-center gap-3">
                   <input type="checkbox" :checked="scraper.selectedIds.includes(chapter.id)"
                     @change="scraper.toggleSelection(chapter.id)" class="accent-accent-1" />
                   <div>
-                    <p class="text-sm font-semibold">{{ chapter.title || chapter.id }}</p>
-                    <p class="text-[10px] text-slate-500 truncate">{{ chapter.url }}</p>
+                    <p class="text-sm font-semibold text-text-main">{{ chapter.title || chapter.id }}</p>
+                    <p class="text-[10px] text-text-secondary truncate">{{ chapter.url }}</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -293,11 +382,11 @@ onUnmounted(() => {
       <div v-if="mobileTab === 'chapters'" class="fixed bottom-4 left-4 right-4 z-30 xl:hidden">
         <div class="bg-surface/95 border border-main rounded-full px-3 py-2 flex items-center justify-between gap-2">
           <button @click="scraper.selectAll()"
-            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50">
+            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle">
             全选
           </button>
           <button @click="scraper.clearSelection()"
-            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-primary/70 text-slate-200 border border-main/50">
+            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle">
             清空
           </button>
           <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0"
