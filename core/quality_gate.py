@@ -13,7 +13,10 @@ class QualityGate:
         for region in ctx.regions:
             if budget <= 0:
                 break
-            if not region.target_text:
+            if self.retry_per_region <= 0:
+                continue
+            low_quality = (not region.target_text) or (region.confidence is not None and region.confidence < 0.55)
+            if low_quality:
                 result = translator.translate_region(region)
                 if asyncio.iscoroutine(result):
                     result = asyncio.run(result)
