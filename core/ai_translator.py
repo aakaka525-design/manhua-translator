@@ -54,13 +54,12 @@ class AITranslator:
     # Gemini 模型列表 (2026-01 更新：Gemini 2.0 将于 2026年3月31日弃用)
     GEMINI_MODELS = {
         # Gemini 3.x 系列
-        'gemini-3-pro', 'gemini-3-flash',
+        'gemini-3-pro-preview', 'gemini-3-flash-preview',
         # Gemini 2.5 系列
         'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro-exp',
     }
     
-    # Gemini OpenAI 兼容 API 地址
-    GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
     
     def __init__(
         self,
@@ -74,6 +73,15 @@ class AITranslator:
         # 从环境变量或参数加载模型
         self.model = model or os.getenv("PPIO_MODEL", "glm-4-flash-250414")
         
+        # 模型名称兼容性映射
+        _compat_map = {
+            'gemini-3-flash': 'gemini-3-flash-preview',
+            'gemini-3-pro': 'gemini-3-pro-preview',
+        }
+        if self.model in _compat_map:
+            logger.warning(f"自动将模型 {self.model} 映射为 {_compat_map[self.model]}")
+            self.model = _compat_map[self.model]
+
         # 检查是否是 Gemini 模型
         self.is_gemini = any(g in self.model for g in self.GEMINI_MODELS)
         
@@ -109,16 +117,22 @@ class AITranslator:
         )
     
     def _init_gemini(self):
-        """初始化 Gemini 客户端（使用 OpenAI 兼容 API）。"""
+        """初始化 Gemini 客户端（使用原生 google-genai SDK）。"""
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ImportError("请安装 google-genai 包: pip install google-genai")
+
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.base_url = os.getenv("GEMINI_BASE_URL", self.GEMINI_BASE_URL)
         
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
         
-        self.client = OpenAI(
-            base_url=self.base_url,
+        # 使用 v1alpha 版本以支持最新的 preview 模型
+        self.client = genai.Client(
             api_key=self.api_key,
+            http_options={'api_version': 'v1alpha'}
         )
     
     def _get_lang_name(self, code: str) -> str:
@@ -148,18 +162,35 @@ Text: {text}
             return f"[翻译失败] {text}"
     
     async def _call_api(self, prompt: str, max_tokens: int = 500) -> str:
-        """统一的 API 调用方法（PPIO 和 Gemini 都使用 OpenAI 兼容接口）。"""
+        """统一的 API 调用方法。"""
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                stream=False,
+        
+        if self.is_gemini:
+            from google.genai import types
+            def call_gemini():
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=0.7,
+                    )
+                )
+                return response.text
+
+            return await loop.run_in_executor(None, call_gemini)
+        else:
+            # PPIO / OpenAI 兼容调用
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    stream=False,
+                )
             )
-        )
-        return response.choices[0].message.content.strip()
+            return response.choices[0].message.content.strip()
     
     async def translate_batch(self, texts: list[str]) -> list[str]:
         """批量翻译多个文本。"""

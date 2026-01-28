@@ -55,6 +55,20 @@ def test_fit_text_reference_relaxes_when_needed():
     assert size < int(round(20 * 0.85))
 
 
+def test_fit_text_reference_wraps_long_text_when_min_size_too_large():
+    renderer = TextRenderer()
+    box = Box2D(x1=0, y1=0, x2=251, y2=88)
+    text = "最重要的是，因为我的缘故，幽灵先生那焦灼的表情"
+    size, lines, meta = renderer.fit_text_to_box_with_reference(
+        text=text,
+        box=box,
+        ref_size=35,
+        ref_source="estimate",
+    )
+    assert len(lines) > 1
+    assert meta["font_size_relaxed"] is True
+
+
 def test_renderer_sets_font_size_metadata(tmp_path: Path):
     img_path = tmp_path / "src.png"
     Image.new("RGB", (200, 100), "white").save(img_path)

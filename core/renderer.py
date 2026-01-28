@@ -333,7 +333,8 @@ class TextRenderer:
         available_height = box.height - 2 * padding
 
         best_size = min_size
-        best_lines = [text]
+        # Initialize with wrapped lines at min_size so we don't fall back to unwrapped text
+        best_lines = self.wrap_text(text, self._get_font(min_size), available_width)
 
         # Binary search for optimal size
         low, high = min_size, max_size

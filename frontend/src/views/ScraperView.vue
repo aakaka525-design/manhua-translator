@@ -46,6 +46,13 @@ onUnmounted(() => {
             : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           站点目录
         </button>
+        <button @click="scraper.setView('auth')"
+          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
+          :class="scraper.state.view === 'auth'
+            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
+          认证
+        </button>
       </div>
       <div class="flex flex-wrap gap-2 mb-4 xl:hidden">
         <button @click="mobileTab = 'browse'"
@@ -150,6 +157,10 @@ onUnmounted(() => {
                 </span>
               </div>
             </div>
+            <button @click="scraper.setView('auth')"
+              class="w-full bg-bg-secondary border border-border-subtle text-text-secondary text-sm font-semibold py-2 rounded-lg hover:border-accent-1 hover:text-text-main transition">
+              去认证
+            </button>
             <div>
               <label class="text-xs text-text-secondary">持久化配置（推荐）</label>
               <div class="mt-1 flex items-center gap-2">
@@ -302,6 +313,43 @@ onUnmounted(() => {
                 :class="(!scraper.catalog.hasMore || scraper.catalog.loading) ? 'opacity-60 cursor-not-allowed' : ''">
                 {{ scraper.catalog.loading ? '加载中...' : (scraper.catalog.hasMore ? '加载更多' : '没有更多') }}
               </button>
+            </div>
+          </div>
+
+          <!-- Auth -->
+          <div v-if="scraper.state.view === 'auth'" class="bg-surface border border-main rounded-xl p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-text-main">站点认证</h3>
+                <p class="text-xs text-text-secondary opacity-70 mt-1">在服务器浏览器中完成 Cloudflare 验证</p>
+              </div>
+            </div>
+            <div class="mt-4 space-y-3 text-sm">
+              <div>
+                <p class="text-xs text-text-secondary opacity-70">认证地址</p>
+                <p class="text-sm text-text-main break-all">
+                  {{ scraper.authInfo.url || '加载中...' }}
+                </p>
+              </div>
+              <a :href="scraper.authInfo.url || '/auth'" target="_blank"
+                class="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition">
+                打开认证页
+                <i class="fas fa-external-link-alt text-[10px]"></i>
+              </a>
+              <div class="text-xs text-text-secondary space-y-1">
+                <p>1) 打开认证页完成验证</p>
+                <p>2) 回到此页点击“检测 / 上传状态文件”</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button @click="scraper.checkStateInfo()"
+                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 hover:text-text-main transition">
+                  检测状态
+                </button>
+                <button @click="scraper.checkAccess()"
+                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 hover:text-text-main transition">
+                  站点检测
+                </button>
+              </div>
             </div>
           </div>
 

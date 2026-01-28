@@ -13,11 +13,23 @@ def test_watermark_detector_keyword_case_insensitive():
     assert result[0].is_watermark is True
 
 
-def test_watermark_detector_position_short_text():
+def test_watermark_detector_position_short_text_not_watermark():
     from core.watermark_detector import WatermarkDetector
 
     regions = [
         RegionData(box_2d=Box2D(x1=5, y1=950, x2=120, y2=980), source_text="note"),
+    ]
+    detector = WatermarkDetector()
+    result = detector.detect(regions, image_shape=(1000, 800))
+
+    assert result[0].is_watermark is False
+
+
+def test_watermark_detector_near_edge_with_keyword():
+    from core.watermark_detector import WatermarkDetector
+
+    regions = [
+        RegionData(box_2d=Box2D(x1=5, y1=950, x2=200, y2=980), source_text="mangaforfree.com"),
     ]
     detector = WatermarkDetector()
     result = detector.detect(regions, image_shape=(1000, 800))

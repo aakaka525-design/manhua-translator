@@ -15,7 +15,7 @@ from core.modules import OCRModule, TranslatorModule, InpainterModule, RendererM
 
 class Settings(BaseSettings):
     """Application settings loaded from environment."""
-    
+
     # API Keys
     openai_api_key: Optional[str] = None
     deepl_api_key: Optional[str] = None
@@ -23,22 +23,25 @@ class Settings(BaseSettings):
     ppio_api_key: Optional[str] = None
     ppio_base_url: Optional[str] = None
     ppio_model: Optional[str] = None
-    
+
     # Translation settings
     source_language: str = "korean"  # 默认韩语 OCR
     target_language: str = "zh"
-    
+
     # Server settings
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = True
-    
+
     # Storage paths
     data_dir: str = "./data"
     output_dir: str = "./output"
     temp_dir: str = "./temp"
     static_dir: str = "./app/static"
     templates_dir: str = "./app/templates"
+
+    # Scraper auth
+    scraper_auth_url: Optional[str] = None
 
     class Config:
         env_file = ".env"
@@ -55,6 +58,7 @@ def get_settings() -> Settings:
 # Global pipeline instance
 _pipeline_instance: Pipeline = None
 
+
 def get_pipeline() -> Pipeline:
     """Get pipeline instance with language-aware OCR."""
     global _pipeline_instance
@@ -67,4 +71,3 @@ def get_pipeline() -> Pipeline:
             renderer=RendererModule(output_dir=settings.output_dir),  # 成品到 output
         )
     return _pipeline_instance
-

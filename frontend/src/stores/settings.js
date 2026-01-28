@@ -5,8 +5,8 @@ const STORAGE_KEY = 'manhua_settings'
 
 const availableModels = [
     // Gemini 3.x 系列 (最新)
-    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', desc: '最新旗舰，高质量翻译' },
-    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', desc: '最新快速模型' },
+    { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', desc: '最新旗舰，高质量翻译' },
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: '最新快速模型' },
     // Gemini 2.5 系列
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: '平衡速度与质量' },
     { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', desc: '轻量级快速' },

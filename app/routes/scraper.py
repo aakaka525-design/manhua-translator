@@ -17,7 +17,16 @@ from typing import Optional, Sequence, cast
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    Query,
+    Request,
+)
 from fastapi.responses import Response
 import aiohttp
 from pydantic import BaseModel
@@ -136,6 +145,10 @@ class ScraperUploadResponse(BaseModel):
 class ScraperImageResponse(BaseModel):
     status: str
     message: Optional[str] = None
+
+
+class ScraperAuthUrlResponse(BaseModel):
+    url: str
 
 
 def _normalize_base_url(value: str) -> str:
@@ -792,6 +805,17 @@ async def proxy_image(
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_bytes(content)
     return Response(content=content, media_type=content_type)
+
+
+@router.get("/auth-url", response_model=ScraperAuthUrlResponse)
+async def get_auth_url(request: Request, settings=Depends(get_settings)):
+    if settings.scraper_auth_url:
+        return ScraperAuthUrlResponse(url=settings.scraper_auth_url)
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
+    if not host:
+        host = request.url.netloc
+    return ScraperAuthUrlResponse(url=f"{scheme}://{host}/auth")
 
 
 @router.post("/chapters", response_model=list[ChapterPayload])

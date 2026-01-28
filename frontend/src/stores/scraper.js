@@ -55,6 +55,11 @@ const api = {
         if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed')
         return res.json()
     },
+    async authUrl() {
+        const res = await fetch('/api/v1/scraper/auth-url')
+        if (!res.ok) throw new Error('Auth url failed')
+        return res.json()
+    },
     async download(payload) {
         const res = await fetch('/api/v1/scraper/download', {
             method: 'POST',
@@ -76,7 +81,7 @@ export const useScraperStore = defineStore('scraper', () => {
         site: 'toongod',
         baseUrl: 'https://toongod.org',
         mode: 'headless',
-        httpMode: true,
+        httpMode: false,
         headless: true,
         manualChallenge: false,
         storageStatePath: 'data/toongod_state.json',
@@ -119,6 +124,11 @@ export const useScraperStore = defineStore('scraper', () => {
     const accessInfo = reactive({
         status: 'idle',
         httpStatus: null,
+        message: ''
+    })
+    const authInfo = reactive({
+        url: '',
+        status: 'idle',
         message: ''
     })
     const uploadInfo = reactive({
@@ -236,6 +246,9 @@ export const useScraperStore = defineStore('scraper', () => {
         }
         if (view === 'settings') {
             ensureUserAgent()
+        }
+        if (view === 'auth') {
+            resolveAuthUrl()
         }
     }
 
@@ -446,6 +459,26 @@ export const useScraperStore = defineStore('scraper', () => {
         } catch (e) {
             uploadInfo.status = 'error'
             uploadInfo.message = e.message || '上传失败'
+        }
+    }
+
+    function defaultAuthUrl() {
+        if (typeof window === 'undefined') return '/auth'
+        return new URL('/auth', window.location.origin).toString()
+    }
+
+    async function resolveAuthUrl() {
+        if (authInfo.status === 'loading') return
+        authInfo.status = 'loading'
+        authInfo.message = ''
+        try {
+            const data = await api.authUrl()
+            authInfo.url = data.url || defaultAuthUrl()
+            authInfo.status = 'ready'
+        } catch (e) {
+            authInfo.url = defaultAuthUrl()
+            authInfo.status = 'ready'
+            authInfo.message = '使用默认认证地址'
         }
     }
 
@@ -665,6 +698,7 @@ export const useScraperStore = defineStore('scraper', () => {
         stateInfo,
         accessInfo,
         uploadInfo,
+        authInfo,
         downloadSummary,
         task,
         setSite,
@@ -681,6 +715,7 @@ export const useScraperStore = defineStore('scraper', () => {
         checkStateInfo,
         checkAccess,
         uploadStateFile,
+        resolveAuthUrl,
         stateInfoLabel,
         stateInfoClass,
         accessInfoLabel,
