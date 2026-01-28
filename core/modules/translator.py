@@ -133,6 +133,11 @@ class TranslatorModule(BaseModule):
         
         return self._ai_translator
 
+    def create_translator(self, model_name: str):
+        """创建指定模型的翻译器实例（用于 fallback）。"""
+        from ..ai_translator import AITranslator
+        return AITranslator(self.source_lang, self.target_lang, model=model_name)
+
     async def process(self, context: TaskContext) -> TaskContext:
         """
         Translate all source texts to target language.

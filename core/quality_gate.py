@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Any
 
 
@@ -22,4 +23,12 @@ class QualityGate:
                     result = asyncio.run(result)
                 region.target_text = result
                 budget -= 1
+                if self.fallback_model and os.getenv("GEMINI_API_KEY"):
+                    fallback = translator.create_translator(self.fallback_model)
+                    if asyncio.iscoroutine(fallback):
+                        fallback = asyncio.run(fallback)
+                    fallback_result = fallback.translate_region(region)
+                    if asyncio.iscoroutine(fallback_result):
+                        fallback_result = asyncio.run(fallback_result)
+                    region.target_text = fallback_result
         return ctx
