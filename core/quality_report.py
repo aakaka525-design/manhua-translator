@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -28,6 +29,35 @@ def _timings_from_metrics(metrics: Any) -> Dict[str, float]:
     if total is not None:
         timings["total"] = total
     return timings
+
+
+def _sanitize_component(text: str) -> str:
+    text = text.strip().lower()
+    text = re.sub(r"[^a-z0-9_-]+", "_", text)
+    text = text.strip("_")
+    return text or "unknown"
+
+
+def _source_slug(image_path: str) -> str:
+    p = Path(image_path)
+    parts = list(p.parts)
+    rel_parts: List[str] = []
+    if "data" in parts:
+        idx = parts.index("data")
+        if idx + 1 < len(parts) and parts[idx + 1] == "raw":
+            rel_parts = parts[idx + 2 :]
+        else:
+            rel_parts = parts[idx + 1 :]
+    if not rel_parts:
+        rel_parts = parts[-3:]
+    if len(rel_parts) > 3:
+        rel_parts = rel_parts[-3:]
+    if rel_parts:
+        rel_parts[-1] = Path(rel_parts[-1]).stem
+    slug = "__".join(_sanitize_component(x) for x in rel_parts if x)
+    if len(slug) > 120:
+        slug = slug[-120:]
+    return slug or _sanitize_component(p.stem)
 
 
 def _evaluate_region_quality(region) -> Dict[str, object]:
@@ -81,7 +111,8 @@ def _evaluate_region_quality(region) -> Dict[str, object]:
 def write_quality_report(result) -> str:
     ctx = result.task
     output_dir = _resolve_output_dir()
-    report_path = output_dir / f"{ctx.task_id}.json"
+    slug = _source_slug(ctx.image_path)
+    report_path = output_dir / f"{slug}__{ctx.task_id}.json"
 
     data = {
         "task_id": str(ctx.task_id),

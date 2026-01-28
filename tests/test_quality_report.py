@@ -147,8 +147,8 @@ def test_pipeline_writes_quality_report(tmp_path, monkeypatch):
 
     asyncio.run(pipeline.process(ctx))
 
-    report_path = tmp_path / f"{ctx.task_id}.json"
-    assert report_path.exists()
+    report_paths = list(tmp_path.glob(f"*{ctx.task_id}.json"))
+    assert report_paths
 
 
 def test_quality_report_skips_glossary_for_sfx(tmp_path, monkeypatch):
@@ -218,3 +218,34 @@ def test_quality_report_includes_font_size_fields(tmp_path, monkeypatch):
     assert r["font_size_ref"] == 20
     assert r["font_size_used"] == 18
     assert r["font_size_source"] == "estimate"
+
+
+def test_quality_report_filename_includes_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    ctx = TaskContext(
+        image_path="data/raw/demo-manga/ch-1/01.jpg",
+        output_path="/tmp/output.png",
+        source_language="en",
+        target_language="zh-CN",
+        regions=[
+            RegionData(
+                box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+                source_text="Hello",
+                target_text="你好",
+                confidence=0.9,
+            )
+        ],
+    )
+    result = PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=10,
+        stages_completed=["ocr"],
+        metrics=PipelineMetrics(total_duration_ms=10).to_dict(),
+    )
+    from core.quality_report import write_quality_report
+
+    report_path = write_quality_report(result)
+    name = Path(report_path).name
+    assert "demo-manga__ch-1__01" in name
+    assert str(ctx.task_id) in name
