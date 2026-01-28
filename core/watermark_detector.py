@@ -30,9 +30,6 @@ class WatermarkDetector:
         self.keywords = {k.lower() for k in (keywords or default_keywords)}
         self._seen = {}
 
-    def _is_ascii_text(self, text: str) -> bool:
-        return text.isascii()
-
     def _near_edge(self, box, shape: Tuple[int, int]) -> bool:
         h, w = shape
         margin_x = w * 0.1
@@ -52,14 +49,6 @@ class WatermarkDetector:
                     self._seen[text] = r.box_2d
                 continue
             if text in self._seen and r.box_2d and self._similar_pos(r.box_2d, self._seen[text]):
-                r.is_watermark = True
-                r.inpaint_mode = "erase"
-            if (
-                r.box_2d
-                and self._near_edge(r.box_2d, image_shape)
-                and len(text) <= 20
-                and self._is_ascii_text(text)
-            ):
                 r.is_watermark = True
                 r.inpaint_mode = "erase"
             if r.box_2d:
