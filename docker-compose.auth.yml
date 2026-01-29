@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  auth-browser:
+    image: lscr.io/linuxserver/chromium:latest
+    container_name: scraper_auth_browser
+    security_opt:
+      - seccomp:unconfined
+    shm_size: "1gb"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data/toongod_profile:/config
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

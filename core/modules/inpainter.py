@@ -83,7 +83,15 @@ class InpainterModule(BaseModule):
             return True
 
         # 过滤掉不需要擦除的区域
-        regions_to_inpaint = [r for r in context.regions if _should_inpaint(r)]
+        regions_to_inpaint = []
+        for r in context.regions:
+            if getattr(r, "inpaint_mode", "replace") == "erase":
+                regions_to_inpaint.append(r)
+                continue
+            # 普通区域：有翻译文本且非 SFX 标记才擦除
+            if r.target_text and not (r.target_text.startswith("[SFX:") and r.target_text.endswith("]")):
+                regions_to_inpaint.append(r)
+
         skipped_count = len(context.regions) - len(regions_to_inpaint)
         
         if skipped_count > 0:

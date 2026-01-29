@@ -140,6 +140,14 @@ def _should_merge_vertical(
     min_width = min(b1.width, b2.width)
     if min_width > 0 and overlap / min_width >= x_overlap_ratio:
         return True
+
+    # 同行相邻：Y 重叠高且水平间距小
+    y_overlap = min(b1.y2, b2.y2) - max(b1.y1, b2.y1)
+    if y_overlap > 0:
+        y_overlap_ratio = y_overlap / max(min(b1.height, b2.height), 1)
+        gap = max(b2.x1 - b1.x2, b1.x1 - b2.x2, 0)
+        if y_overlap_ratio >= 0.7 and gap <= avg_height * 0.8:
+            return True
     
     # 中心点 X 接近也可以合并
     center_x1 = (b1.x1 + b1.x2) / 2

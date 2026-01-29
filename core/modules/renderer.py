@@ -79,8 +79,17 @@ class RendererModule(BaseModule):
             import re
             regions_to_render = []
             for region in context.regions:
+                # 检查是否为抹除模式（水印处理）
+                if getattr(region, "inpaint_mode", "replace") == "erase":
+                    # erase 模式下，即使没有 target_text 也要包含进来
+                    # 这样 Renderer 才能意识到有过 Inpainting 操作
+                    # 但不需要渲染任何文字，所以 target_text 保持为空即可
+                    regions_to_render.append(region)
+                    continue
+
                 if not region.target_text:
                     continue
+                
                 # 跳过纯数字/符号的区域（如 0005~、1234）
                 src = region.source_text.strip() if region.source_text else ""
                 if src and re.match(r'^[\d\W]+$', src):

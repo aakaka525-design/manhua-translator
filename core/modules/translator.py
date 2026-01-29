@@ -7,6 +7,7 @@ Includes SFX detection and performance metrics.
 
 import asyncio
 import logging
+import os
 import re
 import time
 from typing import Optional
@@ -166,6 +167,13 @@ class TranslatorModule(BaseModule):
         # 1. 将相邻区域分组（保持原始区域不变）
         groups = group_adjacent_regions(context.regions)
         logger.debug(f"[{context.task_id}] 区域分组: {len(context.regions)} 个区域 -> {len(groups)} 个分组")
+        debug = os.getenv("DEBUG_TRANSLATOR") == "1"
+        if debug:
+            logger.info(
+                "[%s] Translator groups=%d",
+                context.task_id,
+                len(groups),
+            )
 
         # Metrics tracking
         total_translate_ms = 0.0
@@ -174,13 +182,36 @@ class TranslatorModule(BaseModule):
         # 2. 准备批量翻译：收集所有分组的合并文本
         texts_to_translate = []
         groups_to_translate = []
+        group_indexes = []
         
-        for group in groups:
-            combined_text = " ".join(
-                r.source_text.strip() for r in group if r.source_text
-            )
-            
+        for idx, group in enumerate(groups):
+            skip_region_ids = set()
+            texts = []
+            for r in group:
+                if not r.source_text:
+                    continue
+                should_skip, _ = _should_skip_translation(r.source_text)
+                if should_skip:
+                    skip_region_ids.add(r.region_id)
+                    continue
+                texts.append(r.source_text.strip())
+
+            combined_text = " ".join(texts)
+            if debug:
+                logger.info(
+                    "[%s] group[%d] texts=%s combined=%s skip_ids=%s watermark=%s",
+                    context.task_id,
+                    idx,
+                    texts,
+                    combined_text,
+                    [str(i)[:8] for i in skip_region_ids],
+                    any(getattr(r, "is_watermark", False) for r in group),
+                )
+
             if not combined_text.strip():
+                # 全部是可跳过文本，保持不渲染
+                for region in group:
+                    region.target_text = ""
                 continue
 
             if any(getattr(r, "is_watermark", False) for r in group):
@@ -204,6 +235,7 @@ class TranslatorModule(BaseModule):
             
             texts_to_translate.append(combined_text)
             groups_to_translate.append(group)
+            group_indexes.append(idx)
 
         # 3. 批量翻译（一次 API 调用）
         if texts_to_translate:
@@ -231,12 +263,25 @@ class TranslatorModule(BaseModule):
                         result = await loop.run_in_executor(None, translator.translate, text)
                         translations.append(result)
                         total_translate_ms += (time.perf_counter() - start) * 1000
+                if debug:
+                    logger.info(
+                        "[%s] translations=%s",
+                        context.task_id,
+                        list(zip(group_indexes, translations)),
+                    )
                 
                 # 4. 将翻译结果分配到原始区域
-                for group, translation in zip(groups_to_translate, translations):
+                for group, translation, group_idx in zip(groups_to_translate, translations, group_indexes):
                     if len(group) == 1:
                         # 单区域分组，直接赋值
                         group[0].target_text = translation
+                        if debug:
+                            logger.info(
+                                "[%s] assign group[%d] single -> %s",
+                                context.task_id,
+                                group_idx,
+                                translation,
+                            )
                     else:
                         # 多区域分组：只在最大区域渲染完整翻译
                         # 其他区域设为占位符（用于 inpainting 擦除原文，但不渲染新文字）
@@ -247,7 +292,12 @@ class TranslatorModule(BaseModule):
                         render_box = None
                         if xs and ys and xe and ye:
                             render_box = Box2D(x1=min(xs), y1=min(ys), x2=max(xe), y2=max(ye))
-                        largest_region = max(group, key=lambda r: r.box_2d.width * r.box_2d.height)
+                        non_skip = [r for r in group if r.region_id not in skip_region_ids]
+                        if not non_skip:
+                            for region in group:
+                                region.target_text = ""
+                            continue
+                        largest_region = max(non_skip, key=lambda r: r.box_2d.width * r.box_2d.height)
                         for region in group:
                             if region is largest_region:
                                 region.target_text = translation
@@ -256,6 +306,14 @@ class TranslatorModule(BaseModule):
                             else:
                                 # 占位符：触发 inpainting 但渲染时跳过
                                 region.target_text = "[INPAINT_ONLY]"
+                        if debug:
+                            logger.info(
+                                "[%s] assign group[%d] multi -> %s (largest=%s)",
+                                context.task_id,
+                                group_idx,
+                                translation,
+                                str(largest_region.region_id)[:8],
+                            )
                             
             except Exception as e:
                 logger.error(f"[{context.task_id}] 翻译失败: {e}")

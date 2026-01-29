@@ -18,6 +18,7 @@ from .postprocessing import (
     geometric_cluster_dedup,
     merge_line_regions_geometric,
     merge_paragraph_regions,
+    merge_adjacent_text_regions,
     remove_contained_regions,
 )
 
@@ -41,6 +42,12 @@ class PaddleOCREngine(OCREngine):
         if self._ocr is None:
             self._ocr = get_cached_ocr(self.lang)
         return self._ocr
+
+    def _min_len_for_lang(self) -> int:
+        lang = (self.lang or "").lower()
+        if lang in {"korean", "ko", "kr"}:
+            return 1
+        return 2
 
     def _box_from_any(self, box, y_offset: int):
         """Build Box2D from list/array of coords or points."""
@@ -226,6 +233,7 @@ class PaddleOCREngine(OCREngine):
 
         tiling_manager = get_tiling_manager()
         all_regions: list[RegionData] = []
+        min_len = self._min_len_for_lang()
 
         if tiling_manager.should_tile(height):
             tiles = tiling_manager.create_tiles(processed_image)
@@ -234,7 +242,9 @@ class PaddleOCREngine(OCREngine):
             # 串行处理切片，避免并发导致 OCR 结果不稳定
             for tile in tiles:
                 start = time.perf_counter()
-                tile_regions = self._process_chunk(ocr, tile.image, 0)
+                tile_regions = self._process_chunk(
+                    ocr, tile.image, 0, min_len=min_len
+                )
                 tile_times.append((time.perf_counter() - start) * 1000)
                 remapped = tiling_manager.remap_regions(tile_regions, tile)
                 all_regions.extend(remapped)
@@ -244,8 +254,20 @@ class PaddleOCREngine(OCREngine):
             self.last_tile_avg_ms = (
                 sum(tile_times) / len(tile_times) if tile_times else 0
             )
+
+            # Edge band OCR to catch boundary text (top/bottom)
+            edge_tiles = tiling_manager.create_edge_tiles(processed_image)
+            for edge_tile in edge_tiles:
+                edge_regions = self._process_chunk(
+                    ocr, edge_tile.image, 0, min_score=0.4, min_len=1
+                )
+                remapped = tiling_manager.remap_regions(edge_regions, edge_tile)
+                all_regions.extend(remapped)
+            all_regions = tiling_manager.merge_regions(all_regions, iou_threshold=0.5)
         else:
-            all_regions = self._process_chunk(ocr, processed_image, 0)
+            all_regions = self._process_chunk(
+                ocr, processed_image, 0, min_len=min_len
+            )
             if width < 1200 and height < 2000:
                 scale = 1.5
                 scaled_image = cv2.resize(
@@ -255,7 +277,9 @@ class PaddleOCREngine(OCREngine):
                     fy=scale,
                     interpolation=cv2.INTER_CUBIC,
                 )
-                scaled_regions = self._process_chunk(ocr, scaled_image, 0)
+                scaled_regions = self._process_chunk(
+                    ocr, scaled_image, 0, min_len=min_len
+                )
                 for r in scaled_regions:
                     if r.box_2d:
                         r.box_2d = Box2D(
@@ -283,9 +307,13 @@ class PaddleOCREngine(OCREngine):
         # 简化后处理：只做必要的过滤和排序
         filtered = filter_noise_regions(all_regions, image_height=height, relaxed=True)
         all_regions = remove_contained_regions(filtered, iou_threshold=0.5)
+        all_regions = merge_adjacent_text_regions(all_regions)
+        # 排序逻辑优化：引入 Y 轴容差 (Row Tolerance)
+        # 避免 "좋아"(y=1539) 因为比 "너무"(y=1552) 稍高而被排在前面
+        # 使用 20px 的桶进行 Y 轴归一化，同一桶内按 X 轴排序
         all_regions.sort(
             key=lambda r: (
-                r.box_2d.y1 if r.box_2d else 0,
+                (r.box_2d.y1 // 20 * 20) if r.box_2d else 0,
                 r.box_2d.x1 if r.box_2d else 0,
             )
         )

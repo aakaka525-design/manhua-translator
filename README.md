@@ -110,6 +110,28 @@ Features:
 - Built-in manga scraper
 - Side-by-side comparison view
 
+### Scraper Auth Browser (Docker)
+
+If you need to complete Cloudflare challenges from a phone, run a remote browser on the server and open it from mobile.
+
+1) Start the auth browser service:
+
+```bash
+docker compose -f docker-compose.auth.yml up -d
+```
+
+2) Open port `3000` on the server and set auth URL:
+
+```
+SCRAPER_AUTH_URL=http://<server-ip>:3000/
+```
+
+3) In the scraper page, click “打开认证页” to complete the challenge, then return and click “检测状态”.
+
+Notes:
+- The docker compose mounts `./data/toongod_profile` as the browser profile. Keep this path consistent with the scraper settings.
+- To use MangaForFree, change the volume to `./data/mangaforfree_profile:/config`.
+
 ## 📄 License
 
 MIT License

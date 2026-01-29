@@ -6,6 +6,7 @@ Replaces mock implementation with PaddleOCREngine.
 
 import asyncio
 import logging
+import os
 import time
 from typing import Optional
 
@@ -96,17 +97,31 @@ class OCRModule(BaseModule):
             context.regions = await self.engine.detect_and_recognize(
                 context.image_path,
             )
+        if os.getenv("DEBUG_OCR") == "1":
+            logger.info(
+                "[%s] OCR raw regions: %s",
+                context.task_id,
+                [
+                    {
+                        "text": r.source_text,
+                        "box": r.box_2d.model_dump() if r.box_2d else None,
+                        "conf": r.confidence,
+                    }
+                    for r in (context.regions or [])
+                ],
+            )
 
         # Post-process OCR text (normalize + SFX detection + locale fixes)
         OCRPostProcessor().process_regions(context.regions, lang=target_lang)
 
         # Detect watermark regions (skip translation, erase inpainting)
-        try:
-            with Image.open(context.image_path) as img:
-                image_shape = (img.height, img.width)
-        except Exception:
-            image_shape = (0, 0)
-        WatermarkDetector().detect(context.regions, image_shape=image_shape)
+        if os.getenv("DISABLE_WATERMARK") != "1":
+            try:
+                with Image.open(context.image_path) as img:
+                    image_shape = (img.height, img.width)
+            except Exception:
+                image_shape = (0, 0)
+            WatermarkDetector().detect(context.regions, image_shape=image_shape)
         
         duration_ms = (time.perf_counter() - start_time) * 1000
         

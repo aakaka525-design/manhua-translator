@@ -499,12 +499,7 @@ def _build_engine(
     storage_state_path = _ensure_storage_path(request.storage_state_path)
     user_data_dir = _ensure_storage_path(request.user_data_dir)
     if storage_state_path and not Path(storage_state_path).exists():
-        if request.http_mode:
-            storage_state_path = None
-        else:
-            raise HTTPException(
-                status_code=400, detail="状态文件不存在，请先 bootstrap"
-            )
+        storage_state_path = None
     output_root = _resolve_output_root(output_root)
     config = ScraperConfig(
         base_url=base_url,

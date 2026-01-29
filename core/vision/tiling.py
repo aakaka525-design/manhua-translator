@@ -40,6 +40,9 @@ class TilingManager:
         tile_height: int = 1024,  # 保守值，1920 会导致漏检
         overlap_ratio: float = 0.5,
         min_tile_height: int = 256,
+        edge_padding: int = 64,
+        edge_band_ratio: float = 0.15,
+        edge_band_min_height: int = 128,
     ):
         """
         Initialize tiling manager.
@@ -53,6 +56,9 @@ class TilingManager:
         self.overlap_ratio = min(0.5, max(0.15, overlap_ratio))  # 15-50%
         self.min_tile_height = min_tile_height
         self.overlap_pixels = int(tile_height * overlap_ratio)
+        self.edge_padding = max(0, edge_padding)
+        self.edge_band_ratio = max(0.05, min(0.5, edge_band_ratio))
+        self.edge_band_min_height = max(32, edge_band_min_height)
     
     def should_tile(self, image_height: int) -> bool:
         """Check if image needs tiling."""
@@ -92,14 +98,17 @@ class TilingManager:
             # Ensure last tile has minimum height
             if height - y_end < self.min_tile_height and y_end < height:
                 y_end = height
-            
-            tile_image = image[y:y_end, :].copy()
+
+            y_start = max(0, y - self.edge_padding)
+            y_end = min(height, y_end + self.edge_padding)
+
+            tile_image = image[y_start:y_end, :].copy()
             
             tiles.append(Tile(
                 index=index,
-                y_offset=y,
+                y_offset=y_start,
                 x_offset=0,
-                height=y_end - y,
+                height=y_end - y_start,
                 width=width,
                 image=tile_image,
             ))
@@ -111,6 +120,39 @@ class TilingManager:
             if y_end >= height:
                 break
         
+        return tiles
+
+    def create_edge_tiles(self, image: np.ndarray) -> list[Tile]:
+        """
+        Create top/bottom edge tiles for boundary OCR.
+
+        These tiles are used to catch text that gets cut by normal tiling.
+        """
+        height, width = image.shape[:2]
+        band_height = max(int(height * self.edge_band_ratio), self.edge_band_min_height)
+        band_height = min(band_height, height)
+
+        top_end = min(height, band_height + self.edge_padding)
+        bottom_start = max(0, height - band_height - self.edge_padding)
+
+        tiles = [
+            Tile(
+                index=0,
+                y_offset=0,
+                x_offset=0,
+                height=top_end,
+                width=width,
+                image=image[0:top_end, :].copy(),
+            ),
+            Tile(
+                index=1,
+                y_offset=bottom_start,
+                x_offset=0,
+                height=height - bottom_start,
+                width=width,
+                image=image[bottom_start:height, :].copy(),
+            ),
+        ]
         return tiles
     
     def remap_regions(

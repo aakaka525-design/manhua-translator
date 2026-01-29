@@ -157,10 +157,18 @@ onUnmounted(() => {
                 </span>
               </div>
             </div>
-            <button @click="scraper.setView('auth')"
-              class="w-full bg-bg-secondary border border-border-subtle text-text-secondary text-sm font-semibold py-2 rounded-lg hover:border-accent-1 hover:text-text-main transition">
-              去认证
-            </button>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <button @click="scraper.setView('auth')"
+                class="w-full bg-bg-secondary border border-border-subtle text-text-secondary text-sm font-semibold py-2 rounded-lg hover:border-accent-1 hover:text-text-main transition">
+                去认证
+              </button>
+              <a :href="scraper.authInfo.url || '/auth'" target="_blank"
+                class="w-full inline-flex items-center justify-center gap-2 bg-accent-1/20 text-accent-1 text-sm font-semibold py-2 rounded-lg hover:bg-accent-1 hover:text-white transition">
+                打开认证页
+                <i class="fas fa-external-link-alt text-[10px]"></i>
+              </a>
+            </div>
+            <p class="text-[10px] text-text-secondary opacity-70">认证页在新标签打开，完成挑战后回到此处检测</p>
             <div>
               <label class="text-xs text-text-secondary">持久化配置（推荐）</label>
               <div class="mt-1 flex items-center gap-2">

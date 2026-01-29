@@ -148,6 +148,76 @@ def remove_contained_regions(
     return kept
 
 
+def merge_adjacent_text_regions(
+    regions: list[RegionData],
+    max_gap_ratio: float = 0.6,
+    min_y_overlap: float = 0.7,
+) -> list[RegionData]:
+    """
+    Merge adjacent regions on the same line to reduce boundary splits.
+    """
+    if len(regions) <= 1:
+        return regions
+
+    def script_type(text: str) -> str:
+        if re.search(r"[\uac00-\ud7a3]", text):
+            return "ko"
+        if re.search(r"[\u3040-\u30ff]", text):
+            return "jp"
+        if re.search(r"[\u4e00-\u9fff]", text):
+            return "cn"
+        if text.isascii():
+            return "ascii"
+        return "other"
+
+    sorted_regions = sorted(
+        [r for r in regions if r.box_2d and r.source_text],
+        key=lambda r: (r.box_2d.y1, r.box_2d.x1),
+    )
+
+    merged: list[RegionData] = []
+    for region in sorted_regions:
+        if not merged:
+            merged.append(region)
+            continue
+
+        prev = merged[-1]
+        b1 = prev.box_2d
+        b2 = region.box_2d
+        if not b1 or not b2:
+            merged.append(region)
+            continue
+
+        # y overlap ratio
+        y_overlap = min(b1.y2, b2.y2) - max(b1.y1, b2.y1)
+        if y_overlap <= 0:
+            merged.append(region)
+            continue
+        y_overlap_ratio = y_overlap / max(min(b1.height, b2.height), 1)
+
+        gap = b2.x1 - b1.x2
+        max_gap = max(b1.height, b2.height) * max_gap_ratio
+
+        if y_overlap_ratio >= min_y_overlap and gap >= 0 and gap <= max_gap:
+            t1 = prev.source_text or ""
+            t2 = region.source_text or ""
+            if script_type(t1) == script_type(t2):
+                joiner = "" if script_type(t1) in {"ko", "cn", "jp"} else " "
+                prev.source_text = f"{t1}{joiner}{t2}"
+                prev.box_2d = Box2D(
+                    x1=min(b1.x1, b2.x1),
+                    y1=min(b1.y1, b2.y1),
+                    x2=max(b1.x2, b2.x2),
+                    y2=max(b1.y2, b2.y2),
+                )
+                prev.confidence = min(prev.confidence, region.confidence)
+                continue
+
+        merged.append(region)
+
+    return merged
+
+
 def geometric_cluster_dedup(regions: list[RegionData]) -> list[RegionData]:
     """Geometric clustering to deduplicate overlapping regions."""
     if len(regions) <= 1:

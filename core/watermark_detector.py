@@ -1,6 +1,10 @@
+import logging
+import os
 from typing import Iterable, List, Optional, Tuple
 
 from .models import RegionData
+
+logger = logging.getLogger(__name__)
 
 
 class WatermarkDetector:
@@ -40,9 +44,18 @@ class WatermarkDetector:
         return abs(box.x1 - prev_box.x1) < tol and abs(box.y1 - prev_box.y1) < tol
 
     def detect(self, regions: List[RegionData], image_shape: Tuple[int, int]):
+        debug = os.getenv("DEBUG_WATERMARK") == "1"
         for r in regions:
             text = (r.source_text or "").lower()
-            if any(k in text for k in self.keywords):
+            matched = any(k in text for k in self.keywords)
+            if debug:
+                logger.info(
+                    "[watermark] text=%s matched=%s box=%s",
+                    text,
+                    matched,
+                    r.box_2d.model_dump() if r.box_2d else None,
+                )
+            if matched:
                 r.is_watermark = True
                 r.inpaint_mode = "erase"
                 if r.box_2d:
