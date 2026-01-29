@@ -55,6 +55,11 @@ GEMINI_API_KEY=your_gemini_api_key
 # Translation settings
 SOURCE_LANGUAGE=korean
 TARGET_LANGUAGE=zh
+
+# Model auto-setup
+AUTO_SETUP_MODELS=on
+MODEL_WARMUP_TIMEOUT=300
+LAMA_DEVICE=cpu
 ```
 
 ### Usage
