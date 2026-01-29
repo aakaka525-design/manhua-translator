@@ -49,20 +49,26 @@ def get_cached_ocr(lang: str = "en"):
     """
     global _ocr_cache
 
+    lang_norm = (lang or "en").lower()
+    if lang_norm in {"ko", "kr"}:
+        lang_norm = "korean"
+    elif lang_norm in {"english"}:
+        lang_norm = "en"
+
     rec_model_map = {
         "en": "en_PP-OCRv5_mobile_rec",
         "korean": "korean_PP-OCRv5_mobile_rec",
     }
-    rec_model = rec_model_map.get(lang, "en_PP-OCRv5_mobile_rec")
+    rec_model = rec_model_map.get(lang_norm, "en_PP-OCRv5_mobile_rec")
 
-    if lang not in _ocr_cache:
+    if lang_norm not in _ocr_cache:
         with _ocr_lock:
-            if lang not in _ocr_cache:
+            if lang_norm not in _ocr_cache:
                 with suppress_native_stderr():
                     from paddleocr import PaddleOCR
 
-                    _ocr_cache[lang] = PaddleOCR(
-                        lang=lang,
+                    _ocr_cache[lang_norm] = PaddleOCR(
+                        lang=lang_norm,
                         use_doc_orientation_classify=False,
                         use_doc_unwarping=False,
                         use_textline_orientation=False,
@@ -70,5 +76,4 @@ def get_cached_ocr(lang: str = "en"):
                         text_recognition_model_name=rec_model,
                     )
 
-    return _ocr_cache[lang]
-
+    return _ocr_cache[lang_norm]

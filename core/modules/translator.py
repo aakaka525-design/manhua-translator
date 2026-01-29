@@ -61,6 +61,23 @@ def _should_skip_translation(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3]")
+
+
+def _has_cjk(text: str) -> bool:
+    if not text:
+        return False
+    # Failure marker should not block fallback
+    if text.strip().startswith("[翻译失败]"):
+        return False
+    return bool(_CJK_RE.search(text))
+
+
+def _has_hangul(text: str) -> bool:
+    return bool(_HANGUL_RE.search(text or ""))
+
+
 class TranslatorModule(BaseModule):
     """
     Translates source text to target language using Google Translate.
@@ -273,6 +290,39 @@ class TranslatorModule(BaseModule):
                         context.task_id,
                         list(zip(group_indexes, translations)),
                     )
+
+                if self.use_ai and (self.target_lang or "").startswith("zh"):
+                    ai_translator = self._get_ai_translator()
+                    if ai_translator:
+                        fixed_translations = []
+                        for src_text, translation in zip(texts_to_translate, translations):
+                            if not _has_cjk(translation):
+                                try:
+                                    translation = await ai_translator.translate(src_text)
+                                except Exception:
+                                    pass
+                                if not _has_cjk(translation):
+                                    gt_class = self._translator_class
+                                    if gt_class is None:
+                                        try:
+                                            from deep_translator import GoogleTranslator
+                                            gt_class = GoogleTranslator
+                                        except ImportError:
+                                            gt_class = None
+                                    if gt_class is not None:
+                                        loop = asyncio.get_event_loop()
+                                        translator = gt_class(
+                                            source=self.source_lang,
+                                            target=self.target_lang,
+                                        )
+                                        try:
+                                            translation = await loop.run_in_executor(
+                                                None, translator.translate, src_text
+                                            )
+                                        except Exception:
+                                            pass
+                            fixed_translations.append(translation)
+                        translations = fixed_translations
                 
                 # 4. 将翻译结果分配到原始区域
                 for group, translation, group_idx in zip(groups_to_translate, translations, group_indexes):

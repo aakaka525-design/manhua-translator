@@ -19,8 +19,24 @@ Automatically translate manga/manhwa text with OCR, AI translation, and smart in
 # Backend dependencies
 pip install -r requirements.txt
 
+# CPU-only OCR stack (Linux servers)
+pip install -r requirements-cpu.txt
+
 # Frontend (optional, for development)
 cd frontend && npm install
+```
+
+### Linux (CPU) system dependencies
+
+```bash
+# Debian/Ubuntu
+sudo apt-get update
+sudo apt-get install -y \
+  libgl1 \
+  libglib2.0-0 \
+  ffmpeg \
+  fonts-noto-cjk \
+  fonts-noto-cjk-extra
 ```
 
 ### Configuration
