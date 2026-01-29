@@ -260,6 +260,7 @@ class TextRenderer:
             # Linux
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             # Windows
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/simsun.ttc",
@@ -301,6 +302,14 @@ class TextRenderer:
         if not text:
             return []
 
+        def is_cjk(char: str) -> bool:
+            code = ord(char)
+            return (
+                0x3000 <= code <= 0x9FFF
+                or 0xF900 <= code <= 0xFAFF
+                or 0xFF00 <= code <= 0xFFEF
+            )
+
         lines = []
         current_line = ""
 
@@ -313,6 +322,16 @@ class TextRenderer:
                 width = bbox[2] - bbox[0]
             except Exception:
                 width = len(test_line) * 20  # Fallback estimate
+
+            if any(is_cjk(c) for c in test_line):
+                size = getattr(font, "size", self.default_font_size)
+                estimated_width = 0.0
+                for c in test_line:
+                    if is_cjk(c):
+                        estimated_width += size
+                    else:
+                        estimated_width += size * 0.6
+                width = max(width, estimated_width)
 
             if width <= max_width:
                 current_line = test_line
