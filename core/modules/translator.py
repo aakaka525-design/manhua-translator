@@ -176,6 +176,11 @@ class TranslatorModule(BaseModule):
         groups_to_translate = []
         
         for group in groups:
+            group = [
+                r for r in group if not (r.target_text and r.target_text.strip())
+            ]
+            if not group:
+                continue
             combined_text = " ".join(
                 r.source_text.strip() for r in group if r.source_text
             )
