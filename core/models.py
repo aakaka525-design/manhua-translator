@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TaskStatus(str, Enum):
@@ -83,8 +83,8 @@ class RegionData(BaseModel):
     font_size_source: Optional[str] = Field(default=None, description="Source of ref size: estimate/override/fallback")
     confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Detection/OCR confidence")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "region_id": "550e8400-e29b-41d4-a716-446655440000",
                 "box_2d": {"x1": 100, "y1": 50, "x2": 300, "y2": 150},
@@ -99,6 +99,7 @@ class RegionData(BaseModel):
                 "confidence": 0.95
             }
         }
+    )
 
 
 class TaskContext(BaseModel):
@@ -131,8 +132,8 @@ class TaskContext(BaseModel):
             self.error_message = error
         return self
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "task_id": "550e8400-e29b-41d4-a716-446655440000",
                 "image_path": "/path/to/manga.jpg",
@@ -143,6 +144,7 @@ class TaskContext(BaseModel):
                 "target_language": "zh"
             }
         }
+    )
 
 
 class PipelineResult(BaseModel):
@@ -153,8 +155,8 @@ class PipelineResult(BaseModel):
     stages_completed: list[str] = Field(default_factory=list, description="List of completed stages")
     metrics: Optional[dict] = Field(default=None, description="Performance metrics per stage")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "task": {},
@@ -162,6 +164,7 @@ class PipelineResult(BaseModel):
                 "stages_completed": ["ocr", "translator", "inpainter", "renderer"]
             }
         }
+    )
 
 
 # Request/Response models for API

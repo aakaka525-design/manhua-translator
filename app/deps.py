@@ -7,7 +7,7 @@ Provides shared resources and configuration across routes.
 from functools import lru_cache
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.pipeline import Pipeline
 from core.modules import OCRModule, TranslatorModule, InpainterModule, RendererModule
@@ -43,10 +43,11 @@ class Settings(BaseSettings):
     # Scraper auth
     scraper_auth_url: Optional[str] = None
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache()
