@@ -55,7 +55,25 @@ GEMINI_API_KEY=your_gemini_api_key
 # Translation settings
 SOURCE_LANGUAGE=korean
 TARGET_LANGUAGE=zh
+
+# Model auto-setup
+AUTO_SETUP_MODELS=on
+MODEL_WARMUP_TIMEOUT=300
+LAMA_DEVICE=cpu
 ```
+
+**Model selection notes**
+- All AI models are selected via `PPIO_MODEL`.
+- Use a PPIO model name (e.g. `zai-org/glm-4.7-flash`) for PPIO.
+- Use a Gemini model name (e.g. `gemini-2.5-flash`) to switch to Gemini (requires `GEMINI_API_KEY`).
+- If the model name contains `gemini-`, the system automatically routes requests to Gemini.
+
+**OCR & Inpainting models**
+- OCR detector: `PP-OCRv5_mobile_det`
+- OCR recognizer:
+  - English: `en_PP-OCRv5_mobile_rec`
+  - Korean: `korean_PP-OCRv5_mobile_rec`
+- Inpainting: LaMa (used by `core/modules/inpainter.py`)
 
 ### Usage
 

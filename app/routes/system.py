@@ -1,8 +1,20 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pathlib import Path
 from typing import List
 
 router = APIRouter(prefix="/system", tags=["system"])
+
+
+@router.get("/models")
+async def get_models_status(request: Request):
+    registry = getattr(request.app.state, "model_registry", None)
+    if registry is None:
+        return {
+            "ppocr_det": {"status": "missing"},
+            "ppocr_rec": {"status": "missing"},
+            "lama": {"status": "missing"},
+        }
+    return registry.snapshot()
 
 @router.get("/logs", response_model=List[str])
 async def get_system_logs(lines: int = 100):
