@@ -18,6 +18,7 @@ from typing import Optional
 from .models import PipelineResult, TaskContext, TaskStatus
 from .metrics import PipelineMetrics, StageMetrics, Timer, start_metrics
 from .quality_report import write_quality_report
+from .crosspage_processor import apply_crosspage_split
 from .modules import (
     BaseModule,
     InpainterModule,
@@ -228,6 +229,27 @@ class Pipeline:
 
         tasks = [process_with_semaphore(ctx) for ctx in contexts]
         return await asyncio.gather(*tasks)
+
+    async def process_batch_crosspage(
+        self,
+        contexts: list[TaskContext],
+        status_callback: Optional[callable] = None,
+    ) -> list[TaskContext]:
+        for ctx in contexts:
+            ctx = await self.ocr.process(ctx)
+
+        for i in range(len(contexts) - 1):
+            await apply_crosspage_split(self.translator, contexts[i], contexts[i + 1])
+
+        for ctx in contexts:
+            ctx = await self.translator.process(ctx)
+
+        results = []
+        for ctx in contexts:
+            ctx = await self.inpainter.process(ctx)
+            ctx = await self.renderer.process(ctx)
+            results.append(ctx)
+        return results
 
 
 # Convenience function
