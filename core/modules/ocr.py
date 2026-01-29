@@ -115,12 +115,14 @@ class OCRModule(BaseModule):
         OCRPostProcessor().process_regions(context.regions, lang=target_lang)
 
         # Detect watermark regions (skip translation, erase inpainting)
+        try:
+            with Image.open(context.image_path) as img:
+                context.image_height = img.height
+                context.image_width = img.width
+                image_shape = (img.height, img.width)
+        except Exception:
+            image_shape = (0, 0)
         if os.getenv("DISABLE_WATERMARK") != "1":
-            try:
-                with Image.open(context.image_path) as img:
-                    image_shape = (img.height, img.width)
-            except Exception:
-                image_shape = (0, 0)
             WatermarkDetector().detect(context.regions, image_shape=image_shape)
         
         duration_ms = (time.perf_counter() - start_time) * 1000

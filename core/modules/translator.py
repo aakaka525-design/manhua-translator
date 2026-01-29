@@ -183,8 +183,13 @@ class TranslatorModule(BaseModule):
         texts_to_translate = []
         groups_to_translate = []
         group_indexes = []
-        
+
         for idx, group in enumerate(groups):
+            group = [
+                r for r in group if not (r.target_text and r.target_text.strip())
+            ]
+            if not group:
+                continue
             skip_region_ids = set()
             texts = []
             for r in group:
@@ -207,7 +212,6 @@ class TranslatorModule(BaseModule):
                     [str(i)[:8] for i in skip_region_ids],
                     any(getattr(r, "is_watermark", False) for r in group),
                 )
-
             if not combined_text.strip():
                 # 全部是可跳过文本，保持不渲染
                 for region in group:
