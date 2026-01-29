@@ -103,6 +103,8 @@ class OCRModule(BaseModule):
         # Detect watermark regions (skip translation, erase inpainting)
         try:
             with Image.open(context.image_path) as img:
+                context.image_height = img.height
+                context.image_width = img.width
                 image_shape = (img.height, img.width)
         except Exception:
             image_shape = (0, 0)

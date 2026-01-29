@@ -120,6 +120,8 @@ class TaskContext(BaseModel):
     # Processing metadata
     source_language: str = Field(default="en", description="Source language code")
     target_language: str = Field(default="zh", description="Target language code")
+    image_width: int | None = Field(default=None, description="Image width in pixels")
+    image_height: int | None = Field(default=None, description="Image height in pixels")
 
     def update_status(self, status: TaskStatus, error: Optional[str] = None) -> "TaskContext":
         """Update task status and timestamp."""
