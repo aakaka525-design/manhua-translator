@@ -234,6 +234,13 @@ def _cover_cache_path(url: str) -> Path:
     return Path("data") / "cache" / "covers" / f"{digest}{ext}"
 
 
+def _cover_cache_path_for_manga(base_url: str, manga_id: str, ext: str) -> Path:
+    host = urlparse(base_url).hostname or "site"
+    prefix = safe_name(host)
+    safe_id = safe_name(manga_id)
+    return Path("data") / "cache" / "covers" / f"{prefix}__{safe_id}{ext}"
+
+
 async def _prefetch_cover_cache(
     items: Sequence[MangaPayload],
     base_url: str,
@@ -309,6 +316,18 @@ async def _prefetch_cover_cache(
                 continue
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_bytes(data)
+
+            manga_id = None
+            for item in items:
+                if item.cover_url == url:
+                    manga_id = item.id
+                    break
+            if manga_id:
+                id_cache_path = _cover_cache_path_for_manga(
+                    base_url, manga_id, cache_path.suffix
+                )
+                if not id_cache_path.exists():
+                    id_cache_path.write_bytes(data)
 
         await context.close()
         if browser:

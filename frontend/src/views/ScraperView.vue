@@ -89,150 +89,176 @@ onUnmounted(() => {
                   :class="mobileConfigOpen ? 'rotate-180' : ''"></i>
               </button>
             </div>
-            <div class="mt-3 space-y-4" :class="mobileConfigOpen ? 'block' : 'hidden xl:block'">
-            <div>
-              <label class="text-xs text-text-secondary">站点</label>
-              <select v-model="scraper.state.site" @change="scraper.setSite(scraper.state.site)"
-                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
-                <option value="toongod">ToonGod</option>
-                <option value="mangaforfree">MangaForFree</option>
-                <option value="custom">自定义</option>
-              </select>
-            </div>
-            <div>
-              <label class="text-xs text-text-secondary">基础地址</label>
-              <input v-model="scraper.state.baseUrl" placeholder="https://toongod.org"
-                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-            </div>
-            <div>
-              <label class="text-xs text-text-secondary">抓取模式</label>
-              <select v-model="scraper.state.mode" @change="scraper.setMode(scraper.state.mode)"
-                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
-                <option value="http">HTTP</option>
-                <option value="headless">无头浏览器</option>
-                <option value="headed">有头浏览器</option>
-              </select>
-              <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-if="scraper.state.mode === 'headed'">
-                有头模式会打开浏览器并需在终端回车继续
-              </p>
-              <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-else-if="scraper.state.mode === 'headless'">
-                无头模式不会弹窗，但需要有效状态文件
-              </p>
-            </div>
-            <div>
-              <label class="text-xs text-text-secondary">状态文件（可选）</label>
-              <div class="mt-1 flex gap-2">
-                <input v-model="scraper.state.storageStatePath" placeholder="data/toongod_state.json"
-                  class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                <button @click="scraper.checkStateInfo()"
-                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
-                  检测
+            <div class="mt-3 space-y-5" :class="mobileConfigOpen ? 'block' : 'hidden xl:block'">
+              <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">基础设置</p>
+              <div class="space-y-4">
+                <div>
+                  <label class="text-xs text-text-secondary">站点</label>
+                  <select v-model="scraper.state.site" @change="scraper.setSite(scraper.state.site)"
+                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
+                    <option value="toongod">ToonGod</option>
+                    <option value="mangaforfree">MangaForFree</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs text-text-secondary">基础地址</label>
+                  <input v-model="scraper.state.baseUrl" placeholder="https://toongod.org"
+                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                </div>
+                <div>
+                  <label class="text-xs text-text-secondary">抓取模式</label>
+                  <select v-model="scraper.state.mode" @change="scraper.setMode(scraper.state.mode)"
+                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
+                    <option value="http">HTTP</option>
+                    <option value="headless">无头浏览器</option>
+                    <option value="headed">有头浏览器</option>
+                  </select>
+                  <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-if="scraper.state.mode === 'headed'">
+                    有头模式会打开浏览器并需在终端回车继续
+                  </p>
+                  <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-else-if="scraper.state.mode === 'headless'">
+                    无头模式不会弹窗，但需要有效状态文件
+                  </p>
+                </div>
+              </div>
+
+              <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">认证与状态</p>
+              <div class="space-y-3 rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
+                <div>
+                  <label class="text-xs text-text-secondary">状态文件（可选）</label>
+                  <div class="mt-1 flex gap-2">
+                    <input v-model="scraper.state.storageStatePath" placeholder="data/toongod_state.json"
+                      class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                    <button @click="scraper.checkStateInfo()"
+                      class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
+                      检测
+                    </button>
+                  </div>
+                  <div class="mt-2 flex items-center gap-2">
+                    <label
+                      class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition cursor-pointer">
+                      上传状态文件
+                      <input type="file" accept=".json" class="hidden"
+                        @change="scraper.uploadStateFile($event.target.files[0])" />
+                    </label>
+                    <span v-if="scraper.uploadInfo.status !== 'idle'" class="text-[10px]"
+                      :class="scraper.uploadInfo.status === 'success' ? 'text-green-300' : (scraper.uploadInfo.status === 'error' ? 'text-red-300' : 'text-slate-300')">
+                      {{ scraper.uploadInfo.message }}
+                    </span>
+                  </div>
+                  <p class="text-[10px] text-text-secondary mt-1 opacity-70">无界面服务器可复用本地 bootstrap 文件</p>
+                  <p v-if="scraper.stateInfo.status !== 'idle'" class="text-[10px] mt-1"
+                    :class="scraper.stateInfoClass()">
+                    {{ scraper.stateInfoLabel() }}
+                  </p>
+                  <div class="mt-2 flex items-center gap-2">
+                    <button @click="scraper.checkAccess()"
+                      class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
+                      站点检测
+                    </button>
+                    <span v-if="scraper.accessInfo.status !== 'idle'" class="text-[10px]"
+                      :class="scraper.accessInfoClass()">
+                      {{ scraper.accessInfoLabel() }}
+                    </span>
+                  </div>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <button @click="scraper.setView('auth')"
+                    class="w-full bg-bg-secondary border border-border-subtle text-text-secondary text-sm font-semibold py-2 rounded-lg hover:border-accent-1 hover:text-text-main transition">
+                    去认证
+                  </button>
+                  <a :href="scraper.authInfo.url || '/auth'" target="_blank"
+                    class="w-full inline-flex items-center justify-center gap-2 bg-accent-1/20 text-accent-1 text-sm font-semibold py-2 rounded-lg hover:bg-accent-1 hover:text-white transition">
+                    打开认证页
+                    <i class="fas fa-external-link-alt text-[10px]"></i>
+                  </a>
+                </div>
+                <p class="text-[10px] text-text-secondary opacity-70">认证页在新标签打开，完成挑战后回到此处检测</p>
+              </div>
+
+              <details class="group rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
+                <summary class="cursor-pointer list-none text-xs font-semibold text-text-main">
+                  高级设置
+                  <span class="text-[10px] text-text-secondary opacity-70 ml-2">UA / 通道 / 并发</span>
+                </summary>
+                <div class="mt-3 space-y-4">
+                  <div>
+                    <label class="text-xs text-text-secondary">持久化配置（推荐）</label>
+                    <div class="mt-1 flex items-center gap-2">
+                      <input type="checkbox" v-model="scraper.state.useProfile" class="accent-accent-1" />
+                      <span class="text-[10px] text-text-secondary opacity-70">开启可减少重复挑战</span>
+                    </div>
+                    <input v-if="scraper.state.useProfile" v-model="scraper.state.userDataDir" placeholder="data/toongod_profile"
+                      class="mt-2 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="text-xs text-text-secondary">固定 UA（推荐）</label>
+                    <div class="mt-1 flex items-center gap-2">
+                      <input type="checkbox" v-model="scraper.state.lockUserAgent" class="accent-accent-1"
+                        @change="scraper.ensureUserAgent()" />
+                      <span class="text-[10px] text-text-secondary opacity-70">避免 UA 变化触发挑战</span>
+                    </div>
+                    <div v-if="scraper.state.lockUserAgent" class="mt-2 flex gap-2">
+                      <input v-model="scraper.state.userAgent" placeholder="浏览器 UA"
+                        class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                      <button @click="scraper.syncUserAgent()"
+                        class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
+                        使用当前浏览器 UA
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-xs text-text-secondary">浏览器通道（推荐）</label>
+                    <div class="mt-1 flex items-center gap-2">
+                      <input type="checkbox" v-model="scraper.state.useChromeChannel" class="accent-accent-1"
+                        :disabled="scraper.state.httpMode" />
+                      <span class="text-[10px] text-text-secondary opacity-70">仅有头模式生效，需已安装 Chrome</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-xs text-text-secondary">并发</label>
+                    <input type="number" min="1" max="12" v-model.number="scraper.state.concurrency"
+                      class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+                  </div>
+                </div>
+              </details>
+
+              <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">搜索与目录</p>
+              <div class="space-y-3">
+                <div v-if="scraper.state.view === 'search'">
+                  <label class="text-xs text-text-secondary">关键词 / 网址</label>
+                  <input v-model="scraper.state.keyword" placeholder="输入漫画关键词或完整网址"
+                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                    @keydown.enter="scraper.search()" />
+                </div>
+                <button v-if="scraper.state.view === 'search'" @click="scraper.search()" :disabled="scraper.loading"
+                  class="w-full bg-accent-1/80 hover:bg-accent-1 text-white text-sm font-semibold py-2 rounded-lg transition"
+                  :class="scraper.loading ? 'opacity-60 cursor-not-allowed' : ''">
+                  {{ scraper.loading ? '搜索中...' : '搜索' }}
+                </button>
+                <button v-if="scraper.state.view === 'catalog'" @click="scraper.loadCatalog(true)"
+                  :disabled="scraper.catalog.loading"
+                  class="w-full bg-accent-1/80 hover:bg-accent-1 text-white text-sm font-semibold py-2 rounded-lg transition"
+                  :class="scraper.catalog.loading ? 'opacity-60 cursor-not-allowed' : ''">
+                  {{ scraper.catalog.loading ? '加载中...' : '加载目录' }}
                 </button>
               </div>
-              <div class="mt-2 flex items-center gap-2">
-                <label
-                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition cursor-pointer">
-                  上传状态文件
-                  <input type="file" accept=".json" class="hidden"
-                    @change="scraper.uploadStateFile($event.target.files[0])" />
-                </label>
-                <span v-if="scraper.uploadInfo.status !== 'idle'" class="text-[10px]"
-                  :class="scraper.uploadInfo.status === 'success' ? 'text-green-300' : (scraper.uploadInfo.status === 'error' ? 'text-red-300' : 'text-slate-300')">
-                  {{ scraper.uploadInfo.message }}
-                </span>
-              </div>
-              <p class="text-[10px] text-text-secondary mt-1 opacity-70">无界面服务器可复用本地 bootstrap 文件</p>
-              <p v-if="scraper.stateInfo.status !== 'idle'" class="text-[10px] mt-1"
-                :class="scraper.stateInfoClass()">
-                {{ scraper.stateInfoLabel() }}
-              </p>
-              <div class="mt-2 flex items-center gap-2">
-                <button @click="scraper.checkAccess()"
-                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
-                  站点检测
-                </button>
-                <span v-if="scraper.accessInfo.status !== 'idle'" class="text-[10px]"
-                  :class="scraper.accessInfoClass()">
-                  {{ scraper.accessInfoLabel() }}
-                </span>
-              </div>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <button @click="scraper.setView('auth')"
-                class="w-full bg-bg-secondary border border-border-subtle text-text-secondary text-sm font-semibold py-2 rounded-lg hover:border-accent-1 hover:text-text-main transition">
-                去认证
-              </button>
-              <a :href="scraper.authInfo.url || '/auth'" target="_blank"
-                class="w-full inline-flex items-center justify-center gap-2 bg-accent-1/20 text-accent-1 text-sm font-semibold py-2 rounded-lg hover:bg-accent-1 hover:text-white transition">
-                打开认证页
-                <i class="fas fa-external-link-alt text-[10px]"></i>
-              </a>
-            </div>
-            <p class="text-[10px] text-text-secondary opacity-70">认证页在新标签打开，完成挑战后回到此处检测</p>
-            <div>
-              <label class="text-xs text-text-secondary">持久化配置（推荐）</label>
-              <div class="mt-1 flex items-center gap-2">
-                <input type="checkbox" v-model="scraper.state.useProfile" class="accent-accent-1" />
-                <span class="text-[10px] text-text-secondary opacity-70">开启可减少重复挑战</span>
-              </div>
-              <input v-if="scraper.state.useProfile" v-model="scraper.state.userDataDir" placeholder="data/toongod_profile"
-                class="mt-2 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-            </div>
-            <div>
-              <label class="text-xs text-text-secondary">固定 UA（推荐）</label>
-              <div class="mt-1 flex items-center gap-2">
-                <input type="checkbox" v-model="scraper.state.lockUserAgent" class="accent-accent-1"
-                  @change="scraper.ensureUserAgent()" />
-                <span class="text-[10px] text-text-secondary opacity-70">避免 UA 变化触发挑战</span>
-              </div>
-              <div v-if="scraper.state.lockUserAgent" class="mt-2 flex gap-2">
-                <input v-model="scraper.state.userAgent" placeholder="浏览器 UA"
-                  class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                <button @click="scraper.syncUserAgent()"
-                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
-                  使用当前浏览器 UA
-                </button>
-              </div>
-            </div>
-            <div>
-              <label class="text-xs text-text-secondary">浏览器通道（推荐）</label>
-              <div class="mt-1 flex items-center gap-2">
-                <input type="checkbox" v-model="scraper.state.useChromeChannel" class="accent-accent-1"
-                  :disabled="scraper.state.httpMode" />
-                <span class="text-[10px] text-text-secondary opacity-70">仅有头模式生效，需已安装 Chrome</span>
-              </div>
-            </div>
-            <div>
-              <label class="text-xs text-text-secondary">并发</label>
-              <input type="number" min="1" max="12" v-model.number="scraper.state.concurrency"
-                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-            </div>
-            <div v-if="scraper.state.view === 'search'">
-              <label class="text-xs text-text-secondary">关键词 / 网址</label>
-              <input v-model="scraper.state.keyword" placeholder="输入漫画关键词或完整网址"
-                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
-                @keydown.enter="scraper.search()" />
-            </div>
-            <button v-if="scraper.state.view === 'search'" @click="scraper.search()" :disabled="scraper.loading"
-              class="w-full bg-accent-1/80 hover:bg-accent-1 text-white text-sm font-semibold py-2 rounded-lg transition"
-              :class="scraper.loading ? 'opacity-60 cursor-not-allowed' : ''">
-              {{ scraper.loading ? '搜索中...' : '搜索' }}
-            </button>
-            <button v-if="scraper.state.view === 'catalog'" @click="scraper.loadCatalog(true)"
-              :disabled="scraper.catalog.loading"
-              class="w-full bg-accent-1/80 hover:bg-accent-1 text-white text-sm font-semibold py-2 rounded-lg transition"
-              :class="scraper.catalog.loading ? 'opacity-60 cursor-not-allowed' : ''">
-              {{ scraper.catalog.loading ? '加载中...' : '加载目录' }}
-            </button>
-            <p v-if="scraper.error" class="text-xs text-red-400">{{ scraper.error }}</p>
-            <div class="bg-bg-secondary/70 border border-border-subtle rounded-lg p-3 text-[10px] text-text-secondary">
-              <p class="font-semibold text-text-main">Cloudflare 指引</p>
-              <p class="mt-2">1) 有界面电脑运行 bootstrap 生成状态文件</p>
-              <p>2) 拷贝到服务器后填写上方路径</p>
-              <p>3) 建议开启“持久化配置”减少重复挑战</p>
-              <p class="mt-2">示例：</p>
-              <p class="font-mono text-[10px] text-text-secondary opacity-70">python scripts/scraper_cli.py bootstrap --base-url https://mangaforfree.com</p>
-            </div>
+
+              <p v-if="scraper.error" class="text-xs text-red-400">{{ scraper.error }}</p>
+
+              <details class="group rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
+                <summary class="cursor-pointer list-none text-xs font-semibold text-text-main">
+                  Cloudflare 指引
+                  <span class="text-[10px] text-text-secondary opacity-70 ml-2">点此查看</span>
+                </summary>
+                <div class="mt-3 text-[10px] text-text-secondary space-y-1">
+                  <p>1) 有界面电脑运行 bootstrap 生成状态文件</p>
+                  <p>2) 拷贝到服务器后填写上方路径</p>
+                  <p>3) 建议开启“持久化配置”减少重复挑战</p>
+                  <p class="mt-2 font-mono text-[10px] text-text-secondary opacity-70">python scripts/scraper_cli.py bootstrap --base-url https://mangaforfree.com</p>
+                </div>
+              </details>
             </div>
           </div>
 

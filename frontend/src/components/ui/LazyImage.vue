@@ -39,6 +39,12 @@ onMounted(() => {
   if (imgRef.value) {
     observer.observe(imgRef.value)
   }
+
+  const imgEl = imgRef.value?.querySelector('img')
+  if (imgEl && imgEl.complete) {
+    isVisible.value = true
+    isLoaded.value = true
+  }
 })
 
 onUnmounted(() => {
@@ -78,6 +84,7 @@ const onError = () => {
       :class="isLoaded ? 'opacity-100' : 'opacity-0'"
       @load="onLoad"
       @error="onError"
+      @loadstart="() => { if (isLoaded) isLoaded = false }"
     />
   </div>
 </template>

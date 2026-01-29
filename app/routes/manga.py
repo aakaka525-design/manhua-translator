@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from ..deps import get_settings
+from scraper.base import safe_name
 
 router = APIRouter(prefix="/manga", tags=["manga"])
 
@@ -66,6 +67,17 @@ async def list_manga(settings=Depends(get_settings)):
         # Check if any subdir contains images and pick a cover
         is_manga = False
         cover_url = None
+        cache_dir = data_dir / "cache" / "covers"
+        safe_id = safe_name(root_path.name)
+        candidates = []
+        for ext in (".jpg", ".jpeg", ".png", ".webp"):
+            candidate = cache_dir / f"{safe_id}{ext}"
+            if candidate.exists():
+                candidates.append(candidate)
+            candidates.extend(cache_dir.glob(f"*__{safe_id}{ext}"))
+        if candidates:
+            chosen = max(candidates, key=lambda p: p.stat().st_mtime)
+            cover_url = f"/data/{chosen.relative_to(data_dir).as_posix()}"
         image_extensions = {".jpg", ".jpeg", ".png", ".webp"}
         for s in sorted(subdirs, key=lambda p: p.name):
             images = [
