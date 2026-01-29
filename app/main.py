@@ -5,6 +5,8 @@ Main entry point for the web API.
 """
 
 from contextlib import asynccontextmanager
+import asyncio
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -19,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 # 初始化日志系统
 from core.logging_config import init_default_logging
+from core.model_setup import ModelRegistry, ModelWarmupService
 
 init_default_logging()
 
@@ -33,6 +36,13 @@ async def lifespan(app: FastAPI):
     Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
     Path(settings.temp_dir).mkdir(parents=True, exist_ok=True)
     Path(settings.static_dir).mkdir(parents=True, exist_ok=True)
+
+    registry = ModelRegistry()
+    app.state.model_registry = registry
+    auto_setup = os.getenv("AUTO_SETUP_MODELS", "on").lower() not in {"0", "false", "off"}
+    if auto_setup:
+        service = ModelWarmupService(registry)
+        app.state.model_warmup_task = asyncio.create_task(service.warmup())
 
     yield
 
