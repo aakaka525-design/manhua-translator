@@ -181,8 +181,11 @@ class TranslatorModule(BaseModule):
 
         # 使用分组翻译策略：分组获取上下文，批量翻译，按比例分割结果回原始区域
         from ..translator import group_adjacent_regions, split_translation_by_ratio
+        from ..text_merge.line_merger import merge_line_regions
         
         # 1. 将相邻区域分组（保持原始区域不变）
+        raw_groups = group_adjacent_regions(context.regions)
+        context.regions = merge_line_regions(raw_groups)
         groups = group_adjacent_regions(context.regions)
         logger.debug(f"[{context.task_id}] 区域分组: {len(context.regions)} 个区域 -> {len(groups)} 个分组")
         debug = os.getenv("DEBUG_TRANSLATOR") == "1"
