@@ -46,7 +46,7 @@ class Inpainter(ABC):
         regions: list[RegionData],
         output_path: str,
         temp_dir: str = "./temp",
-        dilation: int = 12,  # Increased to cover text edges and glow effects
+        dilation: int = 4,  # Reduced to avoid mask merging across bubbles
     ) -> tuple[str, str]:
         """
         Inpaint all regions in an image.
@@ -82,7 +82,7 @@ class Inpainter(ABC):
             # Expand box to cover full text area with generous margin
             # Increased to 25 to handle edge cases where original text
             # extends beyond detected OCR box boundaries (especially for Korean)
-            expand = 25  # Larger margin for text edges 및 anti-aliasing
+            expand = 10  # Smaller margin to reduce mask merging across bubbles
             y1 = max(0, box.y1 - expand)
             y2 = min(height, box.y2 + expand)
             x1 = max(0, box.x1 - expand)
@@ -145,7 +145,7 @@ class Inpainter(ABC):
         regions: list[RegionData],
         height: int,
         width: int,
-        max_gap: int = 400
+        max_gap: int = 0
     ) -> np.ndarray:
         """
         Fill vertical gaps between text regions that likely belong to same paragraph.
