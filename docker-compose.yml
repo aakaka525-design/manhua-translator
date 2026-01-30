@@ -1,0 +1,35 @@
+version: "3.8"
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    environment:
+      AUTO_SETUP_MODELS: "on"
+      MODEL_WARMUP_TIMEOUT: "300"
+      LAMA_DEVICE: "cpu"
+      FLAGS_use_mkldnn: "0"
+      FLAGS_use_pir_api: "0"
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./models:/root/.paddlex
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/system/models', timeout=5).raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
