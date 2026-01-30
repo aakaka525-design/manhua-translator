@@ -112,6 +112,7 @@ class TaskContext(BaseModel):
     image_path: str = Field(..., description="Path to source image")
     output_path: Optional[str] = Field(default=None, description="Path to output image")
     inpainted_path: Optional[str] = Field(default=None, description="Path to inpainted intermediate image")
+    mask_path: Optional[str] = Field(default=None, description="Path to combined inpaint mask")
     regions: list[RegionData] = Field(default_factory=list, description="Detected text regions")
     status: TaskStatus = Field(default=TaskStatus.PENDING, description="Current task status")
     error_message: Optional[str] = Field(default=None, description="Error message if failed")

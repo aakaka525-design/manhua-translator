@@ -106,7 +106,7 @@ class InpainterModule(BaseModule):
         inpainted_path = self.output_dir / f"inpainted_{context.task_id}.png"
 
         # Run inpainting - 只处理有翻译的区域
-        await self.inpainter.inpaint_regions(
+        _, mask_path = await self.inpainter.inpaint_regions(
             context.image_path,
             regions_to_inpaint,
             str(inpainted_path),
@@ -119,4 +119,5 @@ class InpainterModule(BaseModule):
 
         # 设置中间文件路径供 renderer 使用，但保留原始 output_path
         context.inpainted_path = str(inpainted_path)
+        context.mask_path = mask_path
         return context

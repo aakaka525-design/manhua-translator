@@ -47,7 +47,7 @@ class Inpainter(ABC):
         output_path: str,
         temp_dir: str = "./temp",
         dilation: int = 12,  # Increased to cover text edges and glow effects
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Inpaint all regions in an image.
         
@@ -136,7 +136,8 @@ class Inpainter(ABC):
         cv2.imwrite(str(mask_path), combined_mask)
 
         # Inpaint
-        return await self.inpaint(image_path, str(mask_path), output_path)
+        result_path = await self.inpaint(image_path, str(mask_path), output_path)
+        return result_path, str(mask_path)
     
     def _fill_vertical_gaps(
         self, 
