@@ -1,14 +1,17 @@
-version: "3.8"
 services:
   api:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: docker/Dockerfile.api
       args:
         INSTALL_LAMA: "0"
+    env_file:
+      - .env
     environment:
       AUTO_SETUP_MODELS: "on"
       MODEL_WARMUP_TIMEOUT: "300"
+      OCR_WARMUP_LANGS: "korean"
       LAMA_DEVICE: "cpu"
       FLAGS_use_mkldnn: "0"
       FLAGS_use_pir_api: "0"
@@ -27,6 +30,7 @@ services:
       retries: 12
 
   web:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: docker/Dockerfile.web

@@ -72,3 +72,10 @@ Bind mounts:
 
 ## 11. Open Questions
 - None for CPU-only; HTTPS can be added later via reverse proxy.
+
+## 12. Troubleshooting Notes (from tests)
+- **AI translator init failed (`No module named 'openai'`)**: ensure `openai` is included in Docker requirements and rebuild.
+- **OCR returns zero regions**: confirm `SOURCE_LANGUAGE` and `OCR_WARMUP_LANGS` are set to `korean`, enable `DEBUG_OCR=1` for raw OCR logs.
+- **Paddle PIR/OneDNN errors**: keep `FLAGS_use_mkldnn=0` and `FLAGS_use_pir_api=0`.
+- **Frontend CORS/MIME errors**: use same-origin web container at `http://<host>/` or add HTTPS via reverse proxy.
+- **API unhealthy on first run**: model download warmup can take time; check logs and wait for health check to pass.

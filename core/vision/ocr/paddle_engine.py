@@ -49,6 +49,18 @@ class PaddleOCREngine(OCREngine):
             return 1
         return 2
 
+    def _coerce_score(self, score):
+        if score is None:
+            return None
+        if isinstance(score, (list, tuple, np.ndarray)):
+            if len(score) == 0:
+                return None
+            score = score[0]
+        try:
+            return float(score)
+        except (TypeError, ValueError):
+            return None
+
     def _box_from_any(self, box, y_offset: int):
         """Build Box2D from list/array of coords or points."""
         if box is None:
@@ -116,8 +128,10 @@ class PaddleOCREngine(OCREngine):
                             rec_scores = item.get("rec_scores", [])
                             for text, score in zip(rec_texts, rec_scores):
                                 if text and text.strip():
+                                    score_value = self._coerce_score(score)
                                     texts.append(text.strip())
-                                    confidences.append(score)
+                                    if score_value is not None:
+                                        confidences.append(score_value)
                     if texts:
                         region.source_text = " ".join(texts)
                         avg_conf = (
@@ -333,9 +347,10 @@ class PaddleOCREngine(OCREngine):
             if not text or not str(text).strip():
                 return
             clean = str(text).strip()
-            if score is None:
+            score_value = self._coerce_score(score)
+            if score_value is None:
                 return
-            if score < min_score:
+            if score_value < min_score:
                 return
             if len(clean) < min_len:
                 return
@@ -351,7 +366,7 @@ class PaddleOCREngine(OCREngine):
                     region_id=uuid4(),
                     box_2d=box_2d,
                     source_text=clean,
-                    confidence=float(score),
+                    confidence=score_value,
                 )
             )
 
@@ -399,6 +414,18 @@ class PaddleOCREngine(OCREngine):
 
         if not legacy:
             return regions
+
+        # PaddleOCR may return a list containing a single list of detections.
+        # Normalize to a flat list of detections for downstream parsing.
+        if (
+            len(legacy) == 1
+            and isinstance(legacy[0], (list, tuple))
+            and legacy[0]
+            and isinstance(legacy[0][0], (list, tuple))
+            and len(legacy[0][0]) == 2
+            and isinstance(legacy[0][0][0], (list, tuple))
+        ):
+            legacy = legacy[0]
 
         for item in legacy:
             if not isinstance(item, (list, tuple)) or len(item) < 2:

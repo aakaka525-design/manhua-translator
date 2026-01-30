@@ -30,3 +30,25 @@ async def test_model_warmup_marks_ready(monkeypatch):
     assert snapshot["ppocr_det"]["status"] == "ready"
     assert snapshot["ppocr_rec"]["status"] == "ready"
     assert snapshot["lama"]["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_model_warmup_respects_ocr_warmup_langs(monkeypatch):
+    registry = ModelRegistry()
+    calls = []
+
+    async def fake_get_cached_ocr(lang="en"):
+        calls.append(lang)
+        return object()
+
+    def fake_create_inpainter(prefer_lama=True, device="cpu"):
+        return object()
+
+    monkeypatch.setenv("OCR_WARMUP_LANGS", "korean")
+    monkeypatch.setattr("core.model_setup.get_cached_ocr", fake_get_cached_ocr)
+    monkeypatch.setattr("core.model_setup.create_inpainter", fake_create_inpainter)
+
+    service = ModelWarmupService(registry)
+    await service.warmup()
+
+    assert calls == ["korean"]

@@ -1,55 +1,80 @@
-# Manga Translator
+# 漫画翻译器
 
-Automatically translate manga/manhwa text with OCR, AI translation, and smart inpainting.
+使用 OCR、AI 翻译与智能修复，自动翻译漫画/条漫文本。
 
-## ✨ Features
+## ✨ 功能特性
 
-- **Multi-language OCR** - PaddleOCR v5 with Korean, Japanese, English, Chinese support
-- **AI Translation** - PPIO GLM / Google Gemini for high-quality translations
-- **Smart Inpainting** - LaMa model removes original text seamlessly
-- **Auto Typography** - Dynamic font sizing to fit speech bubbles
-- **Web Scraper** - Built-in manga/manhwa downloader
-- **Web UI** - Modern Vue 3 interface for easy operation
+- **多语言 OCR** - PaddleOCR v5，支持韩语/日语/英语/中文
+- **AI 翻译** - PPIO GLM / Google Gemini 高质量翻译
+- **智能擦除** - LaMa 模型无痕去除原文
+- **自动排版** - 动态字体大小适配气泡
+- **网页爬虫** - 内置漫画下载器
+- **Web 界面** - Vue 3 现代化前端
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
-### Docker (CPU, recommended for servers)
+### Docker（CPU，服务器推荐）
 
 ```bash
-# Build and start
+# 构建并启动
 docker compose up -d --build
 
-# Health check
+# 健康检查
 curl http://localhost:8000/api/v1/system/models
+
+# 首次启动需要下载模型，等待 API 健康后再启动前端：
+docker compose up -d web
 ```
 
-Open the UI at:
+前端访问地址：
 
 ```
 http://<host>/
 ```
 
-Notes:
-- Models and outputs are persisted via bind mounts: `./models`, `./data`, `./output`, `./logs`.
-- CPU-only defaults are set in `docker-compose.yml` (OneDNN/PIR disabled).
-- LaMa is optional in Docker (Pillow version conflicts with PaddleOCR). To enable:
-  - Edit `docker-compose.yml` and set `INSTALL_LAMA: "1"` under `api.build.args`
-  - Rebuild: `docker compose up -d --build`
+注意事项：
+- 模型与输出通过 bind mount 持久化：`./models`、`./data`、`./output`、`./logs`。
+- CPU-only 默认参数在 `docker-compose.yml` 中已设置（禁用 OneDNN/PIR）。
+- web 容器会反向代理 `/api`、`/data`、`/output` 到 API 服务。
+- Apple Silicon / ARM 主机：PaddlePaddle 可能在 arm64 崩溃，请使用 amd64：
+  - `DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose up -d --build`
+  - 或在 `docker-compose.yml` 中保留 `platform: linux/amd64`
+- LaMa 在 Docker 内为可选项（Pillow 与 PaddleOCR 版本有冲突时需关闭）。开启方式：
+  - 编辑 `docker-compose.yml`，在 `api.build.args` 下设置 `INSTALL_LAMA: "1"`
+  - 重新构建：`docker compose up -d --build`
 
-### Installation
+**常用 Docker 命令（排错用）**
+```bash
+# 查看容器状态
+docker compose ps
+
+# 查看 API 日志（最近 200 行）
+docker compose logs api --tail 200
+
+# 进入 API 容器查看环境变量
+docker compose exec api env | grep -E 'PPIO|GEMINI'
+
+# 仅重建 API 镜像并重启
+docker compose up -d --build api
+
+# 停止并清理（保留数据卷）
+docker compose down
+```
+
+### 安装
 
 ```bash
-# Backend dependencies
+# 后端依赖
 pip install -r requirements.txt
 
-# CPU-only OCR stack (Linux servers)
+# CPU-only OCR 依赖（Linux 服务器）
 pip install -r requirements-cpu.txt
 
-# Frontend (optional, for development)
+# 前端依赖（可选，仅开发用）
 cd frontend && npm install
 ```
 
-### Linux (CPU) system dependencies
+### Linux（CPU）系统依赖
 
 ```bash
 # Debian/Ubuntu
@@ -62,133 +87,187 @@ sudo apt-get install -y \
   fonts-noto-cjk-extra
 ```
 
-### Configuration
+### 配置
 
-Copy `.env.example` to `.env` and fill in your API keys:
+复制 `.env.example` 到 `.env` 并填写 API Key：
 
 ```env
-# PPIO GLM API (primary)
+# PPIO GLM API（主选）
 PPIO_API_KEY=your_ppio_api_key
 PPIO_BASE_URL=https://api.ppio.com/openai
 PPIO_MODEL=zai-org/glm-4.7-flash
 
-# Google Gemini API (alternative)
+# Google Gemini API（备选）
 GEMINI_API_KEY=your_gemini_api_key
 
-# Translation settings
+# 翻译设置
 SOURCE_LANGUAGE=korean
 TARGET_LANGUAGE=zh
 
-# Model auto-setup
+# 模型自动初始化
 AUTO_SETUP_MODELS=on
 MODEL_WARMUP_TIMEOUT=300
+OCR_WARMUP_LANGS=korean
 LAMA_DEVICE=cpu
 ```
 
-**Model selection notes**
-- All AI models are selected via `PPIO_MODEL`.
-- Use a PPIO model name (e.g. `zai-org/glm-4.7-flash`) for PPIO.
-- Use a Gemini model name (e.g. `gemini-2.5-flash`) to switch to Gemini (requires `GEMINI_API_KEY`).
-- If the model name contains `gemini-`, the system automatically routes requests to Gemini.
+**模型选择说明**
+- 所有 AI 模型通过 `PPIO_MODEL` 选择。
+- 使用 PPIO 模型名（如 `zai-org/glm-4.7-flash`）走 PPIO。
+- 使用 Gemini 模型名（如 `gemini-2.5-flash`）走 Gemini（需要 `GEMINI_API_KEY`）。
+- 模型名包含 `gemini-` 会自动切换到 Gemini。
 
-**OCR & Inpainting models**
-- OCR detector: `PP-OCRv5_mobile_det`
-- OCR recognizer:
-  - English: `en_PP-OCRv5_mobile_rec`
-  - Korean: `korean_PP-OCRv5_mobile_rec`
-- Inpainting: LaMa (used by `core/modules/inpainter.py`)
+**OCR & 擦除模型**
+- OCR 检测模型：`PP-OCRv5_mobile_det`
+- OCR 识别模型：
+  - 英文：`en_PP-OCRv5_mobile_rec`
+  - 韩文：`korean_PP-OCRv5_mobile_rec`
+- 擦除模型：LaMa（由 `core/modules/inpainter.py` 使用）
 
-### Usage
+### 使用方式
 
 ```bash
-# Start web server (recommended)
+# 启动服务（推荐）
 python main.py server --port 8000
 
-# Translate single image
+# 翻译单张图片
 python main.py image test.jpg -o output/
 
-# Translate chapter (parallel processing)
+# 翻译整章（并行）
 python main.py chapter input/ output/ -w 3
 ```
 
-## 📊 Performance
+## 🧰 常见问题（Troubleshooting）
 
-| Metric | Value |
+**1) 翻译全部失败 / `[翻译失败]`**
+- 现象：质量报告里 `target_text` 以 `[翻译失败]` 开头，或翻译接口耗时极短。
+- 原因：容器内缺少 `openai` 依赖，AI Translator 初始化失败。
+- 修复：
+  - 确保已安装 `openai`（Docker 已集成到 `docker/requirements-docker-cpu.txt`）
+  - 重新构建镜像：`docker compose up -d --build`
+  - 查看日志：`docker compose logs api --tail 200`
+
+**2) `AI translator init failed: No module named 'openai'`**
+- 现象：API 日志中出现上述错误。
+- 修复：同上，重建镜像或手动安装 `openai`。
+
+**3) OCR 返回空结果（`regions_count: 0`）**
+- 现象：质量报告 `regions: []`，但图片有文字。
+- 排查：
+  - 确认 OCR 语言：`SOURCE_LANGUAGE=korean`、`OCR_WARMUP_LANGS=korean`
+  - 查看 OCR 原始输出：`DEBUG_OCR=1` 并查看 `logs/*_app.log`
+  - 检查 PaddlePaddle 兼容性（见下一条）
+
+**4) Paddle 运行报错 / PIR / OneDNN 相关**
+- 现象：`NotImplementedError: ConvertPirAttribute2RuntimeAttribute...`
+- 修复：使用 CPU 兼容环境变量（默认已在 `docker-compose.yml` 中设置）：
+  - `FLAGS_enable_pir_api=0`
+  - `FLAGS_use_pir=0`
+  - `FLAGS_use_pir_backend=0`
+
+**5) Docker API 容器健康检查失败**
+- 现象：`manhua-api-1 is unhealthy`
+- 原因：首次启动模型下载较慢，健康检查未通过。
+- 修复：等待模型下载完成后再启动 `web`，或查看日志：
+  - `docker compose logs api --tail 200`
+
+**6) 前端页面字体/图标加载失败（CORS / HTTPS）**
+- 现象：浏览器报 `CORS policy: The request client is not a secure context...`
+- 原因：公网 IP 通过 HTTP 访问时，Google Fonts / CDN 资源被浏览器限制。
+- 修复：
+  - 用 HTTPS 访问（推荐放在 Nginx/Caddy 反代上）
+  - 或改为本地托管字体/图标资源
+
+**7) 前端脚本 MIME 错误**
+- 现象：`Failed to load module script: MIME type "text/html"`
+- 原因：访问了错误的服务/端口（API 返回了 HTML）。
+- 修复：
+  - Docker 部署访问 `http://<host>/`（由 web 容器提供）
+  - 开发模式访问 `http://<host>:5173`
+
+**8) Vite CLI 报 `Unknown option --https`**
+- 现象：`vite --https` 启动失败
+- 原因：Vite CLI 不支持该参数
+- 修复：在 `vite.config` 中配置 `server.https`，或移除 `--https` 改用反向代理提供 HTTPS。
+
+## 📊 性能参考
+
+| 指标 | 数值 |
 |--------|-------|
-| Single image | ~25s |
-| Parallel processing | ~11s/image |
-| OCR detection | ~8s |
-| AI translation | ~2s (batch) |
-| Inpainting + Render | ~15s |
+| 单图 | ~25s |
+| 并行处理 | ~11s/张 |
+| OCR 检测 | ~8s |
+| AI 翻译 | ~2s（批量） |
+| 擦除 + 渲染 | ~15s |
 
-## 🏗️ Project Structure
+## 🏗️ 项目结构
 
 ```
 manhua/
-├── main.py                 # CLI entry point
+├── main.py                 # CLI 入口
 ├── app/
-│   ├── main.py             # FastAPI server
-│   └── routes/             # API routes
+│   ├── main.py             # FastAPI 服务
+│   └── routes/             # API 路由
 ├── core/
-│   ├── pipeline.py         # Processing pipeline
-│   ├── ai_translator.py    # AI translator (PPIO/Gemini)
-│   ├── modules/            # Pipeline modules
-│   │   ├── ocr.py          # OCR module
-│   │   ├── translator.py   # Translation module
-│   │   ├── inpainter.py    # Inpainting module
-│   │   └── renderer.py     # Text rendering
+│   ├── pipeline.py         # 处理管线
+│   ├── ai_translator.py    # AI 翻译器（PPIO/Gemini）
+│   ├── modules/            # 处理模块
+│   │   ├── ocr.py          # OCR 模块
+│   │   ├── translator.py   # 翻译模块
+│   │   ├── inpainter.py    # 擦除模块
+│   │   └── renderer.py     # 渲染模块
 │   └── vision/
-│       ├── ocr/            # PaddleOCR engine
-│       └── inpainter.py    # LaMa inpainter
-├── scraper/                # Manga/manhwa downloader
-├── frontend/               # Vue 3 web UI
+│       ├── ocr/            # PaddleOCR 引擎
+│       └── inpainter.py    # LaMa 擦除器
+├── scraper/                # 漫画下载器
+├── frontend/               # Vue 3 Web UI
 └── requirements.txt
 ```
 
-## 🔧 Pipeline
+## 🔧 处理流程
 
 ```
 Image → OCR → Region Grouping → Translation → Inpainting → Rendering → Output
 ```
 
-1. **OCR** - Detect text regions with PaddleOCR
-2. **Grouping** - Merge adjacent text lines
-3. **Translation** - Batch translate with AI
-4. **Inpainting** - Remove original text with LaMa
-5. **Rendering** - Render translated text with proper styling
+1. **OCR** - 使用 PaddleOCR 检测文本区域
+2. **分组** - 合并相邻文本行
+3. **翻译** - AI 批量翻译
+4. **擦除** - LaMa 去除原文
+5. **渲染** - 绘制译文并适配样式
 
-## 🌐 Web Interface
+## 🌐 Web 界面
 
-Access at `http://localhost:8000` after starting the server.
+服务启动后访问：`http://localhost:8000`
 
-Features:
-- Manga library management
-- Chapter translation with progress tracking
-- Built-in manga scraper
-- Side-by-side comparison view
+功能：
+- 漫画库管理
+- 章节翻译与进度
+- 内置爬虫
+- 左右对比视图
 
-### Scraper Auth Browser (Docker)
+### Scraper 认证浏览器（Docker）
 
-If you need to complete Cloudflare challenges from a phone, run a remote browser on the server and open it from mobile.
+如需在手机上通过 Cloudflare 验证，可在服务器上运行远程浏览器，然后手机访问。
 
-1) Start the auth browser service:
+1) 启动认证浏览器服务：
 
 ```bash
 docker compose -f docker-compose.auth.yml up -d
 ```
 
-2) Open port `3000` on the server and set auth URL:
+2) 打开服务器 `3000` 端口并设置认证地址：
 
 ```
 SCRAPER_AUTH_URL=http://<server-ip>:3000/
 ```
 
-3) In the scraper page, click “打开认证页” to complete the challenge, then return and click “检测状态”.
+3) 在爬虫页点击“打开认证页”完成验证，然后返回点击“检测状态”。
 
-Notes:
-- The docker compose mounts `./data/toongod_profile` as the browser profile. Keep this path consistent with the scraper settings.
-- To use MangaForFree, change the volume to `./data/mangaforfree_profile:/config`.
+注意事项：
+- docker compose 会将 `./data/toongod_profile` 挂载为浏览器 profile，请保持与爬虫设置一致。
+- 如果使用 MangaForFree，请将卷改为 `./data/mangaforfree_profile:/config`。
 
-## 📄 License
+## 📄 许可证
 
 MIT License

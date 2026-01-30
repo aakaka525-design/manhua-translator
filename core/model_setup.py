@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from inspect import isawaitable
 from typing import Dict, Optional
+import re
 import os
 
 from core.vision.ocr.cache import get_cached_ocr
@@ -48,8 +49,17 @@ class ModelWarmupService:
 
     async def warmup(self):
         try:
-            await _maybe_await(get_cached_ocr("en"))
-            await _maybe_await(get_cached_ocr("korean"))
+            langs_raw = os.getenv("OCR_WARMUP_LANGS", "en,korean")
+            langs = [
+                part.strip().lower()
+                for part in re.split(r"[,\s;]+", langs_raw or "")
+                if part.strip()
+            ]
+            if not langs:
+                langs = ["en", "korean"]
+
+            for lang in langs:
+                await _maybe_await(get_cached_ocr(lang))
             self.registry.set_status("ppocr_det", "ready")
             self.registry.set_status("ppocr_rec", "ready")
         except Exception as exc:
