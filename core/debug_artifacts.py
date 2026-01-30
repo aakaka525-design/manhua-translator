@@ -63,3 +63,15 @@ class DebugArtifactWriter:
 
         self._draw_regions(image_path, context.regions, label, "#00A0FF", out_path)
         return out_path
+
+    def write_translation(self, context, image_path: str):
+        if not self.enabled:
+            return None
+        task_dir = self._ensure_dir(context.task_id)
+        out_path = task_dir / "04_translate.png"
+
+        def label(region):
+            return region.target_text or ""
+
+        self._draw_regions(image_path, context.regions, label, "#FF8C00", out_path)
+        return out_path
