@@ -15,6 +15,7 @@ from ..modules.base import BaseModule
 from ..vision import OCREngine, PaddleOCREngine, MockOCREngine
 from ..ocr_postprocessor import OCRPostProcessor
 from ..watermark_detector import WatermarkDetector
+from ..debug_artifacts import DebugArtifactWriter
 from PIL import Image
 
 # 配置日志
@@ -124,6 +125,10 @@ class OCRModule(BaseModule):
             image_shape = (0, 0)
         if os.getenv("DISABLE_WATERMARK") != "1":
             WatermarkDetector().detect(context.regions, image_shape=image_shape)
+        try:
+            DebugArtifactWriter().write_ocr(context, context.image_path)
+        except Exception as exc:
+            logger.debug(f"[{context.task_id}] Debug artifacts (OCR) skipped: {exc}")
         
         duration_ms = (time.perf_counter() - start_time) * 1000
         

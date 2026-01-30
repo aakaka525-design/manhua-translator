@@ -14,6 +14,7 @@ from typing import Optional
 
 from ..models import TaskContext, Box2D
 from .base import BaseModule
+from ..debug_artifacts import DebugArtifactWriter
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -392,5 +393,12 @@ class TranslatorModule(BaseModule):
             "avg_ms": round(total_translate_ms / len(texts_to_translate), 2) if texts_to_translate else 0,
             "sfx_skipped": sfx_count,
         }
+
+        try:
+            writer = DebugArtifactWriter()
+            writer.write_grouping(context, context.image_path)
+            writer.write_translation(context, context.image_path)
+        except Exception as exc:
+            logger.debug(f"[{context.task_id}] Debug artifacts (Translator) skipped: {exc}")
 
         return context

@@ -45,3 +45,10 @@ def test_debug_writer_outputs_translation_boxes(tmp_path: Path):
     out_path = writer.write_translation(ctx, image_path=str(img_path))
 
     assert out_path.exists()
+
+
+def test_debug_writer_disabled_no_output(tmp_path: Path):
+    from core.debug_artifacts import DebugArtifactWriter
+
+    writer = DebugArtifactWriter(output_dir=tmp_path, enabled=False)
+    assert writer.write_ocr(TaskContext(image_path="x"), "x") is None

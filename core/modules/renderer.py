@@ -16,6 +16,7 @@ from typing import Optional
 from ..models import TaskContext
 from ..renderer import TextRenderer
 from .base import BaseModule
+from ..debug_artifacts import DebugArtifactWriter
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -140,4 +141,10 @@ class RendererModule(BaseModule):
         logger.info(f"[{context.task_id}] Renderer 完成: 输出 {final_path.name}, 耗时 {duration_ms:.0f}ms")
 
         context.output_path = str(final_path)
+        try:
+            writer = DebugArtifactWriter()
+            writer.write_layout(context, source_image)
+            writer.write_final(context)
+        except Exception as exc:
+            logger.debug(f"[{context.task_id}] Debug artifacts (Renderer) skipped: {exc}")
         return context

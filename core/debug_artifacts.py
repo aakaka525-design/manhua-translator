@@ -32,14 +32,22 @@ class DebugArtifactWriter:
             return text
         return text[: max_len - 1] + "…"
 
-    def _draw_regions(self, image_path: str, regions, label_getter, color: str, out_path: Path):
+    def _draw_regions(
+        self,
+        image_path: str,
+        regions,
+        label_getter,
+        color: str,
+        out_path: Path,
+        box_getter=None,
+    ):
         img = Image.open(image_path).convert("RGB")
         draw = ImageDraw.Draw(img)
         font = self._font()
         for region in regions:
-            if not region.box_2d:
+            box = box_getter(region) if box_getter else region.box_2d
+            if not box:
                 continue
-            box = region.box_2d
             draw.rectangle([box.x1, box.y1, box.x2, box.y2], outline=color, width=2)
             label = self._truncate(label_getter(region) or "")
             if label:
@@ -64,6 +72,21 @@ class DebugArtifactWriter:
         self._draw_regions(image_path, context.regions, label, "#00A0FF", out_path)
         return out_path
 
+    def write_grouping(self, context, image_path: str):
+        if not self.enabled:
+            return None
+        task_dir = self._ensure_dir(context.task_id)
+        out_path = task_dir / "02_grouping.png"
+
+        def label(region):
+            return str(region.region_id)[:8]
+
+        def box_getter(region):
+            return region.render_box_2d or region.box_2d
+
+        self._draw_regions(image_path, context.regions, label, "#7B61FF", out_path, box_getter=box_getter)
+        return out_path
+
     def write_translation(self, context, image_path: str):
         if not self.enabled:
             return None
@@ -74,4 +97,49 @@ class DebugArtifactWriter:
             return region.target_text or ""
 
         self._draw_regions(image_path, context.regions, label, "#FF8C00", out_path)
+        return out_path
+
+    def write_mask(self, context):
+        if not self.enabled:
+            return None
+        if not getattr(context, "mask_path", None):
+            return None
+        task_dir = self._ensure_dir(context.task_id)
+        out_path = task_dir / "05_inpaint_mask.png"
+        Image.open(context.mask_path).save(out_path)
+        return out_path
+
+    def write_inpainted(self, context):
+        if not self.enabled:
+            return None
+        if not getattr(context, "inpainted_path", None):
+            return None
+        task_dir = self._ensure_dir(context.task_id)
+        out_path = task_dir / "06_inpainted.png"
+        Image.open(context.inpainted_path).save(out_path)
+        return out_path
+
+    def write_layout(self, context, image_path: str):
+        if not self.enabled:
+            return None
+        task_dir = self._ensure_dir(context.task_id)
+        out_path = task_dir / "07_layout.png"
+
+        def label(region):
+            return self._truncate(region.target_text or "")
+
+        def box_getter(region):
+            return region.render_box_2d or region.box_2d
+
+        self._draw_regions(image_path, context.regions, label, "#00C48C", out_path, box_getter=box_getter)
+        return out_path
+
+    def write_final(self, context):
+        if not self.enabled:
+            return None
+        if not getattr(context, "output_path", None):
+            return None
+        task_dir = self._ensure_dir(context.task_id)
+        out_path = task_dir / "08_final.png"
+        Image.open(context.output_path).save(out_path)
         return out_path

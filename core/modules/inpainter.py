@@ -11,6 +11,7 @@ from typing import Optional
 from ..models import TaskContext
 from ..modules.base import BaseModule
 from ..vision import Inpainter, create_inpainter
+from ..debug_artifacts import DebugArtifactWriter
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -120,4 +121,10 @@ class InpainterModule(BaseModule):
         # 设置中间文件路径供 renderer 使用，但保留原始 output_path
         context.inpainted_path = str(inpainted_path)
         context.mask_path = mask_path
+        try:
+            writer = DebugArtifactWriter()
+            writer.write_mask(context)
+            writer.write_inpainted(context)
+        except Exception as exc:
+            logger.debug(f"[{context.task_id}] Debug artifacts (Inpainter) skipped: {exc}")
         return context
