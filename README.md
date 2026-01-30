@@ -32,6 +32,9 @@ http://<host>/
 Notes:
 - Models and outputs are persisted via bind mounts: `./models`, `./data`, `./output`, `./logs`.
 - CPU-only defaults are set in `docker-compose.yml` (OneDNN/PIR disabled).
+- LaMa is optional in Docker (Pillow version conflicts with PaddleOCR). To enable:
+  - Edit `docker-compose.yml` and set `INSTALL_LAMA: "1"` under `api.build.args`
+  - Rebuild: `docker compose up -d --build`
 
 ### Installation
 

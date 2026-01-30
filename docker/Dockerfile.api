@@ -9,6 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+ARG INSTALL_LAMA=0
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -20,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY docker/requirements-docker-cpu.txt /app/docker/requirements-docker-cpu.txt
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/docker/requirements-docker-cpu.txt
+RUN if [ "$INSTALL_LAMA" = "1" ]; then pip install --no-deps simple-lama-inpainting==0.1.2; fi
 
 COPY . /app
 
