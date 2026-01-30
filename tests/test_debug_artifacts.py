@@ -1,0 +1,27 @@
+from pathlib import Path
+
+from PIL import Image
+
+from core.models import Box2D, RegionData, TaskContext
+
+
+def test_debug_writer_outputs_ocr_boxes(tmp_path: Path):
+    img_path = tmp_path / "blank.png"
+    Image.new("RGB", (200, 100), "white").save(img_path)
+
+    ctx = TaskContext(image_path=str(img_path))
+    ctx.regions = [
+        RegionData(
+            box_2d=Box2D(x1=10, y1=10, x2=80, y2=40),
+            source_text="HELLO",
+            normalized_text="Hello",
+            confidence=0.9,
+        )
+    ]
+
+    from core.debug_artifacts import DebugArtifactWriter
+
+    writer = DebugArtifactWriter(output_dir=tmp_path, enabled=True)
+    output = writer.write_ocr(ctx, image_path=str(img_path))
+
+    assert output.exists()

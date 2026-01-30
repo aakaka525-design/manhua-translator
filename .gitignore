@@ -63,6 +63,7 @@ frontend/dist/
 
 # Debug files
 debug_*.py
+!core/debug_artifacts.py
 *_report.txt
 *.resolved
 
