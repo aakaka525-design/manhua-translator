@@ -13,6 +13,26 @@ Automatically translate manga/manhwa text with OCR, AI translation, and smart in
 
 ## 🚀 Quick Start
 
+### Docker (CPU, recommended for servers)
+
+```bash
+# Build and start
+docker compose up -d --build
+
+# Health check
+curl http://localhost:8000/api/v1/system/models
+```
+
+Open the UI at:
+
+```
+http://<host>/
+```
+
+Notes:
+- Models and outputs are persisted via bind mounts: `./models`, `./data`, `./output`, `./logs`.
+- CPU-only defaults are set in `docker-compose.yml` (OneDNN/PIR disabled).
+
 ### Installation
 
 ```bash
