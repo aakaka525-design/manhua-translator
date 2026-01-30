@@ -107,20 +107,25 @@ class InpainterModule(BaseModule):
         inpainted_path = self.output_dir / f"inpainted_{context.task_id}.png"
 
         # Run inpainting - 只处理有翻译的区域
-        _, mask_path = await self.inpainter.inpaint_regions(
+        result = await self.inpainter.inpaint_regions(
             context.image_path,
             regions_to_inpaint,
             str(inpainted_path),
             str(self.output_dir),
             dilation=self.dilation,
         )
+        if isinstance(result, tuple):
+            _, mask_path = result
+        else:
+            mask_path = None
 
         duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(f"[{context.task_id}] Inpainter 完成: 输出 {inpainted_path.name}, 耗时 {duration_ms:.0f}ms")
 
         # 设置中间文件路径供 renderer 使用，但保留原始 output_path
         context.inpainted_path = str(inpainted_path)
-        context.mask_path = mask_path
+        if mask_path:
+            context.mask_path = mask_path
         try:
             writer = DebugArtifactWriter()
             writer.write_mask(context)
