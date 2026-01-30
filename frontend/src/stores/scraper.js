@@ -76,6 +76,18 @@ const api = {
     }
 }
 
+const parserApi = {
+    async parse(url, mode) {
+        const res = await fetch('/api/v1/parser/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, mode })
+        })
+        if (!res.ok) throw new Error((await res.json()).detail || 'Parse failed')
+        return res.json()
+    }
+}
+
 export const useScraperStore = defineStore('scraper', () => {
     const state = reactive({
         site: 'toongod',
@@ -134,6 +146,14 @@ export const useScraperStore = defineStore('scraper', () => {
     const uploadInfo = reactive({
         status: 'idle',
         message: ''
+    })
+    const parser = reactive({
+        url: '',
+        mode: 'http',
+        loading: false,
+        error: '',
+        result: null,
+        showAll: false
     })
     const downloadSummary = computed(() => {
         const total = chapters.value.length
@@ -462,6 +482,26 @@ export const useScraperStore = defineStore('scraper', () => {
         }
     }
 
+    async function parseUrl() {
+        const url = (parser.url || '').trim()
+        if (!url) {
+            parser.error = '请输入 URL'
+            parser.result = null
+            return
+        }
+        parser.loading = true
+        parser.error = ''
+        parser.result = null
+        parser.showAll = false
+        try {
+            parser.result = await parserApi.parse(url, parser.mode)
+        } catch (e) {
+            parser.error = e.message || '解析失败'
+        } finally {
+            parser.loading = false
+        }
+    }
+
     function defaultAuthUrl() {
         if (typeof window === 'undefined') return '/auth'
         return new URL('/auth', window.location.origin).toString()
@@ -568,7 +608,9 @@ export const useScraperStore = defineStore('scraper', () => {
             error.value = e.message
             task.message = '下载任务提交失败'
             task.status = 'error'
+            task.id = null
             updateTask(chapter.id, { status: 'error', message: task.message })
+            processQueue()
         }
     }
 
@@ -630,6 +672,13 @@ export const useScraperStore = defineStore('scraper', () => {
             }
         } catch (e) {
             task.message = '任务状态获取失败'
+            task.status = 'error'
+            task.id = null
+            if (task.chapterId) {
+                updateTask(task.chapterId, { status: 'error', message: task.message })
+            }
+            stopPolling()
+            processQueue()
         }
     }
 
@@ -699,6 +748,7 @@ export const useScraperStore = defineStore('scraper', () => {
         accessInfo,
         uploadInfo,
         authInfo,
+        parser,
         downloadSummary,
         task,
         setSite,
@@ -715,6 +765,7 @@ export const useScraperStore = defineStore('scraper', () => {
         checkStateInfo,
         checkAccess,
         uploadStateFile,
+        parseUrl,
         resolveAuthUrl,
         stateInfoLabel,
         stateInfoClass,

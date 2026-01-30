@@ -25,9 +25,10 @@ services:
       - "8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/system/models', timeout=5).read()"]
+      start_period: 60s
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 24
 
   web:
     platform: linux/amd64

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .deps import get_settings
-from .routes import translate, manga, scraper
+from .routes import translate, manga, scraper, parser
 from .routes import settings as settings_router
 from .routes import system
 from fastapi.staticfiles import StaticFiles
@@ -39,7 +39,11 @@ async def lifespan(app: FastAPI):
 
     registry = ModelRegistry()
     app.state.model_registry = registry
-    auto_setup = os.getenv("AUTO_SETUP_MODELS", "on").lower() not in {"0", "false", "off"}
+    auto_setup = os.getenv("AUTO_SETUP_MODELS", "on").lower() not in {
+        "0",
+        "false",
+        "off",
+    }
     if auto_setup:
         service = ModelWarmupService(registry)
         app.state.model_warmup_task = asyncio.create_task(service.warmup())
@@ -69,14 +73,19 @@ app.add_middleware(
 app.include_router(translate.router, prefix="/api/v1")
 app.include_router(manga.router, prefix="/api/v1")
 app.include_router(scraper.router, prefix="/api/v1")
+app.include_router(parser.router, prefix="/api/v1")
 app.include_router(settings_router.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 
 # Mount static files
 settings = get_settings()
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
-app.mount("/data", StaticFiles(directory=Path(settings.data_dir).resolve()), name="data")
-app.mount("/output", StaticFiles(directory=Path(settings.output_dir).resolve()), name="output")
+app.mount(
+    "/data", StaticFiles(directory=Path(settings.data_dir).resolve()), name="data"
+)
+app.mount(
+    "/output", StaticFiles(directory=Path(settings.output_dir).resolve()), name="output"
+)
 
 from fastapi.responses import FileResponse, HTMLResponse
 
@@ -84,6 +93,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 dist_dir = Path("app/static/dist")
 if (dist_dir / "assets").exists():
     app.mount("/assets", StaticFiles(directory=dist_dir / "assets"), name="assets")
+
 
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 async def catch_all(request: Request, full_path: str):
@@ -93,17 +103,23 @@ async def catch_all(request: Request, full_path: str):
     # Actually, FastAPI matches specific routes first.
     # We just need to ensure we don't capture /api/ if it wasn't matched?
     # No, API routers are included above. If they don't match, it falls here (if this is last).
-    
+
     # We should exclude /data and /output explicitly just in case, though they are mounted.
-    if full_path.startswith("api") or full_path.startswith("data") or full_path.startswith("output"):
+    if (
+        full_path.startswith("api")
+        or full_path.startswith("data")
+        or full_path.startswith("output")
+    ):
         # Let default 404 handler take it (or return 404 manually)
         # But since we are IN a route handler, we return response.
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
-        
+
     index_file = dist_dir / "index.html"
     if not index_file.exists():
-         return HTMLResponse("Frontend build not found. Please run 'npm run build'.", status_code=500)
-         
+        return HTMLResponse(
+            "Frontend build not found. Please run 'npm run build'.", status_code=500
+        )
+
     return FileResponse(index_file)
 
 

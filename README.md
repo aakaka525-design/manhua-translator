@@ -137,6 +137,16 @@ python main.py image test.jpg -o output/
 python main.py chapter input/ output/ -w 3
 ```
 
+### URL 解析
+
+提供 URL 解析接口，用于解析漫画页面并返回结构化信息。
+
+```bash
+curl -X POST http://localhost:8000/api/v1/parser/parse \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/comic/1","mode":"http"}'
+```
+
 ## 🧰 常见问题（Troubleshooting）
 
 **1) 翻译全部失败 / `[翻译失败]`**

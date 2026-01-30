@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, onMounted, ref } from 'vue'
+import { onUnmounted, onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScraperStore } from '@/stores/scraper'
 import ComicBackground from '@/components/ui/ComicBackground.vue'
@@ -9,6 +9,60 @@ const router = useRouter()
 const scraper = useScraperStore()
 const mobileTab = ref('browse')
 const mobileConfigOpen = ref(true)
+const parserParagraphs = computed(() => {
+  const paragraphs = scraper.parser?.result?.paragraphs || []
+  if (scraper.parser?.showAll) return paragraphs
+  return paragraphs.slice(0, 6)
+})
+const hasMoreParagraphs = computed(() => {
+  const paragraphs = scraper.parser?.result?.paragraphs || []
+  return paragraphs.length > 6
+})
+const parserListItems = computed(() => scraper.parser?.listResult?.items || [])
+const parserListAvailable = computed(() => scraper.parser?.listResult?.page_type === 'list' && parserListItems.value.length > 0)
+const parserListRecognized = computed(() => scraper.parser?.listResult?.recognized === true)
+const parserListDownloadable = computed(() => scraper.parser?.listResult?.downloadable === true)
+
+async function copyText(text) {
+  if (!text) {
+    alert('没有可复制内容')
+    return
+  }
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch (e) {
+      // fallback below
+    }
+  }
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'absolute'
+    textarea.style.left = '-9999px'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (!ok) {
+      alert('复制失败，请手动复制')
+    }
+  } catch (e) {
+    alert('复制失败，请手动复制')
+  }
+}
+
+function copyParserJson() {
+  const payload = scraper.parser?.result ? JSON.stringify(scraper.parser.result, null, 2) : ''
+  copyText(payload)
+}
+
+function copyParserText() {
+  const paragraphs = scraper.parser?.result?.paragraphs || []
+  copyText(paragraphs.join('\n\n'))
+}
 
 onMounted(() => {
     scraper.ensureUserAgent()
@@ -52,6 +106,13 @@ onUnmounted(() => {
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
             : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
           认证
+        </button>
+        <button @click="scraper.setView('parser')"
+          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
+          :class="scraper.state.view === 'parser'
+            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
+            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
+          URL 解析
         </button>
       </div>
       <div class="flex flex-wrap gap-2 mb-4 xl:hidden">
@@ -383,6 +444,134 @@ onUnmounted(() => {
                   class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 hover:text-text-main transition">
                   站点检测
                 </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Parser -->
+          <div v-if="scraper.state.view === 'parser'" class="bg-surface border border-main rounded-xl p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-text-main">URL 解析</h3>
+                <p class="text-xs text-text-secondary opacity-70 mt-1">解析网页正文并提取结构化字段</p>
+              </div>
+              <span v-if="scraper.parser.loading" class="text-xs text-text-secondary animate-pulse">解析中...</span>
+            </div>
+            <div class="mt-4 space-y-3">
+              <div>
+                <label class="text-xs text-text-secondary">解析 URL</label>
+                <input v-model="scraper.parser.url" placeholder="https://example.com/article"
+                  class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                  @keydown.enter="scraper.parseUrl()" />
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-2 text-xs text-text-secondary">
+                  <span>解析模式</span>
+                  <select v-model="scraper.parser.mode"
+                    class="bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-2 py-1 text-xs">
+                    <option value="http">http</option>
+                    <option value="playwright">playwright</option>
+                  </select>
+                </div>
+                <button @click="scraper.parseUrl()" :disabled="scraper.parser.loading"
+                  class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
+                  :class="scraper.parser.loading ? 'opacity-60 cursor-not-allowed' : ''">
+                  {{ scraper.parser.loading ? '解析中...' : '解析' }}
+                </button>
+              </div>
+              <p v-if="scraper.parser.error" class="text-xs text-red-400">{{ scraper.parser.error }}</p>
+              <div v-if="scraper.parser.result" class="space-y-4">
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">title</p>
+                    <p class="text-sm text-text-main">{{ scraper.parser.result.title || '—' }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">author</p>
+                    <p class="text-sm text-text-main">{{ scraper.parser.result.author || '—' }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">date</p>
+                    <p class="text-sm text-text-main">{{ scraper.parser.result.date || '—' }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">summary</p>
+                    <p class="text-sm text-text-main">{{ scraper.parser.result.summary || '—' }}</p>
+                  </div>
+                </div>
+                <div v-if="scraper.parser.result.cover" class="flex items-start gap-3">
+                  <div class="w-20 h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
+                    <img :src="scraper.parser.result.cover" alt="cover" class="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">cover</p>
+                    <p class="text-xs text-text-secondary break-all">{{ scraper.parser.result.cover }}</p>
+                  </div>
+                </div>
+                <div v-if="parserListAvailable" class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">list</p>
+                      <span class="text-[10px] font-semibold px-2 py-1 rounded-full border"
+                        :class="parserListRecognized
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                          : 'bg-amber-500/20 text-amber-300 border-amber-400/40'">
+                        {{ parserListRecognized ? '已识别' : '未识别' }}
+                      </span>
+                    </div>
+                    <span class="text-xs text-text-secondary opacity-70">{{ parserListItems.length }} 项</span>
+                  </div>
+                  <p v-if="!parserListDownloadable" class="text-xs text-text-secondary opacity-70">仅列表展示，暂不支持下载</p>
+                  <div class="space-y-3">
+                    <div v-for="item in parserListItems" :key="item.id || item.url"
+                      class="flex items-center justify-between rounded-xl px-4 py-3 border transition"
+                      :class="parserListDownloadable
+                        ? 'bg-bg-secondary/50 border-border-subtle hover:border-accent-1/40'
+                        : 'bg-bg-secondary/30 border-border-subtle'">
+                      <div class="flex items-center gap-4">
+                        <div class="w-16 h-24 sm:w-20 sm:h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
+                          <img v-if="item.cover_url" :src="scraper.proxyImageUrl(item.cover_url)" alt="cover"
+                            class="w-full h-full object-cover" loading="lazy" />
+                        </div>
+                        <div>
+                          <p class="text-sm font-semibold text-text-main">{{ item.title || item.id }}</p>
+                          <p class="text-[11px] text-text-secondary truncate">{{ item.url }}</p>
+                        </div>
+                      </div>
+                      <button @click="parserListDownloadable && scraper.selectManga(item)"
+                        :disabled="!parserListDownloadable || scraper.loading"
+                        class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
+                        :class="(!parserListDownloadable || scraper.loading) ? 'opacity-60 cursor-not-allowed' : ''">
+                        查看章节
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
+                  <div class="flex items-center justify-between">
+                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">paragraphs</p>
+                    <button v-if="hasMoreParagraphs" @click="scraper.parser.showAll = !scraper.parser.showAll"
+                      class="text-xs text-text-secondary hover:text-text-main transition">
+                      {{ scraper.parser.showAll ? '收起' : '展开' }}
+                    </button>
+                  </div>
+                  <div class="mt-3 space-y-2 text-sm text-text-main">
+                    <p v-if="parserParagraphs.length === 0" class="text-xs text-text-secondary opacity-70">暂无正文</p>
+                    <p v-for="(paragraph, idx) in parserParagraphs" :key="idx" class="leading-relaxed">
+                      {{ paragraph }}
+                    </p>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button @click="copyParserJson()"
+                    class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
+                    复制 JSON
+                  </button>
+                  <button @click="copyParserText()"
+                    class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
+                    复制正文
+                  </button>
+                </div>
               </div>
             </div>
           </div>
