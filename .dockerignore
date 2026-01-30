@@ -1,0 +1,11 @@
+.git
+.worktrees
+__pycache__
+.venv
+node_modules
+frontend/node_modules
+frontend/dist
+output
+data
+logs
+models
