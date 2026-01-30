@@ -1,0 +1,27 @@
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    FLAGS_use_mkldnn=0 \
+    FLAGS_use_pir_api=0 \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    ffmpeg \
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY docker/requirements-docker-cpu.txt /app/docker/requirements-docker-cpu.txt
+COPY requirements.txt /app/requirements.txt
+RUN pip install -r /app/docker/requirements-docker-cpu.txt
+
+COPY . /app
+
+EXPOSE 8000
+CMD ["python", "main.py", "server", "--host", "0.0.0.0", "--port", "8000"]
