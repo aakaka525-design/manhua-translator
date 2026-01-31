@@ -13,8 +13,18 @@ from typing import Optional
 
 # 日志目录（可通过环境变量覆盖）
 _env_log_dir = os.getenv("MANHUA_LOG_DIR")
-LOG_DIR = Path(_env_log_dir).expanduser() if _env_log_dir else Path(__file__).parent.parent / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR = (
+    Path(_env_log_dir).expanduser()
+    if _env_log_dir
+    else Path(__file__).parent.parent / "logs"
+)
+
+
+def _ensure_log_dir() -> None:
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(f"Failed to create log directory: {LOG_DIR}") from exc
 
 
 def setup_logging(
@@ -35,6 +45,8 @@ def setup_logging(
         fmt="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    _ensure_log_dir()
 
     # 根 logger
     root_logger = logging.getLogger()
@@ -89,6 +101,9 @@ def setup_module_logger(
     )
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    logger.propagate = False
+
+    _ensure_log_dir()
 
     date_str = datetime.now().strftime("%Y%m%d")
     log_path = LOG_DIR / f"{date_str}_{log_file}"
@@ -132,6 +147,7 @@ def init_default_logging():
             log_file="app.log",
             console=True,
         )
+        setup_module_logger("parser", "parser.log")
         _initialized = True
 
 
