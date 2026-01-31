@@ -122,6 +122,8 @@ def write_quality_report(result) -> str:
         "timings_ms": _timings_from_metrics(result.metrics),
         "regions": [],
     }
+    if getattr(ctx, "crosspage_debug", None):
+        data["crosspage_debug"] = ctx.crosspage_debug
     for region in ctx.regions or []:
         quality = _evaluate_region_quality(region)
         data["regions"].append(
@@ -131,6 +133,14 @@ def write_quality_report(result) -> str:
                 "target_text": region.target_text,
                 "confidence": region.confidence,
                 "box_2d": region.box_2d.model_dump() if region.box_2d else None,
+                "edge_role": getattr(region, "edge_role", None),
+                "edge_box_2d": region.edge_box_2d.model_dump() if getattr(region, "edge_box_2d", None) else None,
+                "skip_translation": getattr(region, "skip_translation", False),
+                "is_watermark": getattr(region, "is_watermark", False),
+                "inpaint_mode": getattr(region, "inpaint_mode", None),
+                "crosspage_texts": getattr(region, "crosspage_texts", None),
+                "crosspage_pair_id": getattr(region, "crosspage_pair_id", None),
+                "crosspage_role": getattr(region, "crosspage_role", None),
                 "font_size_ref": getattr(region, "font_size_ref", None),
                 "font_size_used": getattr(region, "font_size_used", None),
                 "font_size_relaxed": getattr(region, "font_size_relaxed", None),

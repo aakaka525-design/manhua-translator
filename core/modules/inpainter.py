@@ -8,8 +8,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..models import TaskContext
+from ..models import Box2D, RegionData, TaskContext
 from ..modules.base import BaseModule
+from ..translator import group_adjacent_regions
 from ..vision import Inpainter, create_inpainter
 from ..debug_artifacts import DebugArtifactWriter
 
@@ -74,6 +75,15 @@ class InpainterModule(BaseModule):
         import time
         start_time = time.perf_counter()
 
+        image_height = None
+        try:
+            from PIL import Image
+
+            with Image.open(context.image_path) as img:
+                image_height = img.height
+        except Exception:
+            image_height = None
+
         def _should_inpaint(region) -> bool:
             if getattr(region, "inpaint_mode", "replace") == "erase":
                 return True
@@ -86,13 +96,13 @@ class InpainterModule(BaseModule):
         # 过滤掉不需要擦除的区域
         regions_to_inpaint = []
         for r in context.regions:
-            if getattr(r, "inpaint_mode", "replace") == "erase":
-                regions_to_inpaint.append(r)
+            if not _should_inpaint(r) or not r.box_2d:
                 continue
-            # 普通区域：有翻译文本且非 SFX 标记才擦除
-            if r.target_text and not (r.target_text.startswith("[SFX:") and r.target_text.endswith("]")):
-                regions_to_inpaint.append(r)
-
+            region = r.model_copy(deep=True)
+            if image_height and getattr(region, "crosspage_role", None) == "current_bottom":
+                pad = max(12, int(region.box_2d.height * 0.6))
+                region.box_2d.y2 = min(image_height, region.box_2d.y2 + pad)
+            regions_to_inpaint.append(region)
         skipped_count = len(context.regions) - len(regions_to_inpaint)
         
         if skipped_count > 0:
@@ -102,6 +112,38 @@ class InpainterModule(BaseModule):
             logger.debug(f"[{context.task_id}] 所有区域无需擦除，跳过擦除")
             context.inpainted_path = context.image_path
             return context
+
+        # 合并同一气泡内的多段文本框，避免擦除不连续
+        merged_regions: list[RegionData] = []
+        groups = group_adjacent_regions(regions_to_inpaint)
+        for group in groups:
+            if not group:
+                continue
+            if len(group) == 1:
+                merged_regions.append(group[0])
+                continue
+
+            boxes = [r.box_2d for r in group if r.box_2d]
+            if not boxes:
+                continue
+            merged_box = Box2D(
+                x1=min(b.x1 for b in boxes),
+                y1=min(b.y1 for b in boxes),
+                x2=max(b.x2 for b in boxes),
+                y2=max(b.y2 for b in boxes),
+            )
+            merged_mode = "erase" if any(r.inpaint_mode == "erase" for r in group) else "replace"
+            merged_regions.append(
+                RegionData(
+                    box_2d=merged_box,
+                    source_text=" ".join(r.source_text for r in group if r.source_text),
+                    target_text=" ".join(r.target_text for r in group if r.target_text),
+                    inpaint_mode=merged_mode,
+                )
+            )
+
+        if merged_regions:
+            regions_to_inpaint = merged_regions
 
         # 生成中间文件路径（擦除后的图片）
         inpainted_path = self.output_dir / f"inpainted_{context.task_id}.png"

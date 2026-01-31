@@ -199,6 +199,40 @@ def test_quality_report_skips_glossary_for_sfx(tmp_path, monkeypatch):
     assert "review_glossary" in non_sfx_recs
 
 
+def test_quality_report_includes_watermark_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    ctx = TaskContext(
+        image_path="/tmp/input.png",
+        target_language="zh-CN",
+        regions=[
+            RegionData(
+                box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+                source_text="mangaforfree",
+                target_text="",
+                is_watermark=True,
+                inpaint_mode="erase",
+            )
+        ],
+    )
+    metrics = PipelineMetrics(total_duration_ms=100)
+    result = PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=100,
+        stages_completed=["ocr", "translator"],
+        metrics=metrics.to_dict(),
+    )
+
+    from core.quality_report import write_quality_report
+
+    report_path = write_quality_report(result)
+    data = json.loads(Path(report_path).read_text())
+    region = data["regions"][0]
+
+    assert region["is_watermark"] is True
+    assert region["inpaint_mode"] == "erase"
+
+
 def test_quality_report_includes_font_size_fields(tmp_path, monkeypatch):
     monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
     region = RegionData(
@@ -218,6 +252,23 @@ def test_quality_report_includes_font_size_fields(tmp_path, monkeypatch):
     assert r["font_size_ref"] == 20
     assert r["font_size_used"] == 18
     assert r["font_size_source"] == "estimate"
+
+
+def test_quality_report_includes_crosspage_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text="당했던",
+        target_text="受过的",
+        crosspage_pair_id="pair-1",
+        crosspage_role="next_top",
+    )
+    result = _make_result(tmp_path, monkeypatch, region)
+    from core.quality_report import write_quality_report
+    data = json.loads(Path(write_quality_report(result)).read_text())
+    r = data["regions"][0]
+    assert r["crosspage_pair_id"] == "pair-1"
+    assert r["crosspage_role"] == "next_top"
 
 
 def test_quality_report_filename_includes_source(tmp_path, monkeypatch):

@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import contextlib
+from pathlib import Path
 from typing import Optional
 
 from .models import PipelineResult, TaskContext, TaskStatus
@@ -26,6 +27,7 @@ from .modules import (
     RendererModule,
     TranslatorModule,
 )
+from .crosspage_carryover import CrosspageCarryOverStore
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -80,6 +82,12 @@ class Pipeline:
         self.translator = translator or TranslatorModule()
         self.inpainter = inpainter or InpainterModule()
         self.renderer = renderer or RendererModule()
+
+        carry_path = os.getenv("CROSSPAGE_CARRYOVER_PATH")
+        if not carry_path:
+            base = Path(os.getenv("QUALITY_REPORT_DIR", "output/quality_reports"))
+            carry_path = str(base / "_carryover.jsonl")
+        self.translator._carryover_store = CrosspageCarryOverStore(Path(carry_path))
 
         self.stages = [
             ("ocr", self.ocr),

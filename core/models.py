@@ -73,6 +73,12 @@ class RegionData(BaseModel):
     is_sfx: bool = Field(default=False, description="Whether region is SFX")
     is_watermark: bool = Field(default=False, description="Whether region is watermark")
     inpaint_mode: str = Field(default="replace", description="Inpaint mode: erase or replace")
+    edge_role: Optional[str] = Field(default=None, description="Edge role for crosspage context")
+    edge_box_2d: Optional[Box2D] = Field(default=None, description="Edge-relative box for crosspage matching")
+    crosspage_pair_id: Optional[str] = Field(default=None, description="Crosspage pair identifier")
+    crosspage_role: Optional[str] = Field(default=None, description="Crosspage role: current_bottom/next_top")
+    skip_translation: bool = Field(default=False, description="Skip translation for this region")
+    crosspage_texts: Optional[list[str]] = Field(default=None, description="Appended texts from neighbor page")
     font_style_params: FontStyleParams = Field(
         default_factory=FontStyleParams,
         description="Font styling for rendering"
@@ -124,6 +130,7 @@ class TaskContext(BaseModel):
     target_language: str = Field(default="zh", description="Target language code")
     image_width: int | None = Field(default=None, description="Image width in pixels")
     image_height: int | None = Field(default=None, description="Image height in pixels")
+    crosspage_debug: Optional[dict] = Field(default=None, description="Debug info for cross-page OCR matching")
 
     def update_status(self, status: TaskStatus, error: Optional[str] = None) -> "TaskContext":
         """Update task status and timestamp."""

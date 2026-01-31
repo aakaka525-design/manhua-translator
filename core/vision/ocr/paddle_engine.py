@@ -234,6 +234,17 @@ class PaddleOCREngine(OCREngine):
             None, self._detect_and_recognize_sync, image_path
         )
 
+    async def detect_and_recognize_band(
+        self,
+        image_path: str,
+        edge: str,
+        band_height: int,
+    ) -> list[RegionData]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._detect_and_recognize_band_sync, image_path, edge, band_height
+        )
+
     def _detect_and_recognize_sync(self, image_path: str) -> list[RegionData]:
         ocr = self._init_ocr()
         image = cv2.imread(image_path)
@@ -332,6 +343,29 @@ class PaddleOCREngine(OCREngine):
             )
         )
         return all_regions
+
+    def _detect_and_recognize_band_sync(
+        self,
+        image_path: str,
+        edge: str,
+        band_height: int,
+    ) -> list[RegionData]:
+        ocr = self._init_ocr()
+        image = cv2.imread(image_path)
+        if image is None:
+            raise FileNotFoundError(f"Cannot read image: {image_path}")
+
+        height, width = image.shape[:2]
+        band_height = max(1, min(band_height, height))
+
+        if edge == "top":
+            band = image[:band_height, :width]
+        elif edge == "bottom":
+            band = image[height - band_height : height, :width]
+        else:
+            raise ValueError(f"Unsupported edge: {edge}")
+
+        return self._process_chunk(ocr, band, 0, min_score=0.3, min_len=1)
 
     def _process_chunk(
         self,

@@ -107,3 +107,77 @@ def test_translator_skips_watermark_region():
     result = asyncio.run(module.process(ctx))
 
     assert result.regions[0].target_text == ""
+
+
+def test_watermark_detector_logs_summary(caplog):
+    import logging
+    from core.watermark_detector import WatermarkDetector
+
+    caplog.set_level(logging.DEBUG)
+    regions = [
+        RegionData(box_2d=Box2D(x1=0, y1=0, x2=100, y2=50), source_text="mangaforfree.com"),
+        RegionData(box_2d=Box2D(x1=10, y1=10, x2=120, y2=60), source_text="Hello"),
+    ]
+    WatermarkDetector().detect(regions, image_shape=(1000, 800))
+
+    assert any("watermark" in record.message.lower() for record in caplog.records)
+
+
+def test_watermark_detector_marks_newtoki_domain():
+    from core.watermark_detector import WatermarkDetector
+
+    regions = [
+        RegionData(
+            box_2d=Box2D(x1=0, y1=0, x2=100, y2=50),
+            source_text="NEWTOKIJGOCOM",
+        )
+    ]
+    WatermarkDetector().detect(regions, image_shape=(1000, 800))
+
+    assert regions[0].is_watermark is True
+    assert regions[0].inpaint_mode == "erase"
+
+
+def test_watermark_detector_compact_keyword():
+    from core.watermark_detector import WatermarkDetector
+
+    regions = [
+        RegionData(
+            box_2d=Box2D(x1=0, y1=0, x2=120, y2=40),
+            source_text="뉴 토끼 469",
+        )
+    ]
+    WatermarkDetector().detect(regions, image_shape=(1000, 800))
+
+    assert regions[0].is_watermark is True
+    assert regions[0].inpaint_mode == "erase"
+
+
+def test_watermark_detector_marks_newtok_typo():
+    from core.watermark_detector import WatermarkDetector
+
+    regions = [
+        RegionData(
+            box_2d=Box2D(x1=0, y1=0, x2=120, y2=40),
+            source_text="NEWTOKOE",
+        )
+    ]
+    WatermarkDetector().detect(regions, image_shape=(1000, 800))
+
+    assert regions[0].is_watermark is True
+    assert regions[0].inpaint_mode == "erase"
+
+
+def test_watermark_detector_marks_edge_short_numeric_text():
+    from core.watermark_detector import WatermarkDetector
+
+    regions = [
+        RegionData(
+            box_2d=Box2D(x1=2, y1=980, x2=80, y2=995),
+            source_text="양국469",
+        )
+    ]
+    WatermarkDetector().detect(regions, image_shape=(1000, 800))
+
+    assert regions[0].is_watermark is True
+    assert regions[0].inpaint_mode == "erase"

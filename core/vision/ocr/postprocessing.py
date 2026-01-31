@@ -18,6 +18,62 @@ def _box(region: RegionData) -> Box2D:
     return box
 
 
+def build_edge_box(
+    region: RegionData,
+    band_height: int,
+    image_height: int,
+    edge: str,
+) -> Box2D | None:
+    """Build edge-relative box for top/bottom band matching."""
+    if region.box_2d is None:
+        return None
+
+    box = region.box_2d
+    if edge == "bottom":
+        y_offset = image_height
+        return Box2D(
+            x1=box.x1,
+            y1=box.y1 - y_offset,
+            x2=box.x2,
+            y2=box.y2 - y_offset,
+        )
+    if edge == "top":
+        return Box2D(
+            x1=box.x1,
+            y1=box.y1,
+            x2=box.x2,
+            y2=box.y2,
+        )
+    return None
+
+
+def match_crosspage_regions(
+    bottom_region: RegionData,
+    top_region: RegionData,
+    x_overlap: float = 0.5,
+    y_gap: int = 5,
+) -> bool:
+    """Heuristic match between bottom-band and top-band regions."""
+    if bottom_region.edge_box_2d is None or top_region.edge_box_2d is None:
+        return False
+
+    a = bottom_region.edge_box_2d
+    b = top_region.edge_box_2d
+
+    ix = min(a.x2, b.x2) - max(a.x1, b.x1)
+    if ix <= 0:
+        return False
+    overlap = ix / max(min(a.width, b.width), 1)
+    if overlap < x_overlap:
+        return False
+
+    gap = b.y1 - a.y2
+    if abs(gap) > y_gap:
+        return False
+
+    return True
+
+
 def filter_noise_regions(
     regions: list[RegionData],
     image_height: int = 0,

@@ -106,7 +106,12 @@ def setup_module_logger(
     _ensure_log_dir()
 
     date_str = datetime.now().strftime("%Y%m%d")
-    log_path = LOG_DIR / f"{date_str}_{log_file}"
+    log_path = LOG_DIR / log_file
+    if log_path.parent != LOG_DIR:
+        log_path = log_path.parent / date_str / log_path.name
+    else:
+        log_path = LOG_DIR / f"{date_str}_{log_file}"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     for handler in logger.handlers:
         if (
             isinstance(handler, logging.FileHandler)
@@ -134,6 +139,23 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+def get_log_level(env_var: str, default: int = logging.INFO) -> int:
+    """
+    从环境变量读取日志级别，默认 INFO。
+
+    Args:
+        env_var: 环境变量名
+        default: 默认日志级别
+
+    Returns:
+        日志级别（logging.INFO 等）
+    """
+    value = os.getenv(env_var, "").upper().strip()
+    if not value:
+        return default
+    return getattr(logging, value, default)
+
+
 # 默认初始化
 _initialized = False
 
@@ -156,6 +178,7 @@ __all__ = [
     "setup_logging",
     "setup_module_logger",
     "get_logger",
+    "get_log_level",
     "LOG_DIR",
     "init_default_logging",
 ]

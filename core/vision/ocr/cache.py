@@ -17,6 +17,18 @@ _ocr_cache: dict = {}
 _ocr_lock = threading.Lock()
 
 
+def normalize_ocr_lang(lang: str) -> str:
+    if not lang:
+        return "en"
+    value = str(lang).strip().lower()
+    alias_map = {
+        "ko": "korean",
+        "kr": "korean",
+        "kor": "korean",
+    }
+    return alias_map.get(value, value)
+
+
 @contextlib.contextmanager
 def suppress_native_stderr():
     """Suppress native stderr (NSLog) for OCR init."""
@@ -49,12 +61,7 @@ def get_cached_ocr(lang: str = "en"):
     """
     global _ocr_cache
 
-    lang_norm = (lang or "en").lower()
-    if lang_norm in {"ko", "kr"}:
-        lang_norm = "korean"
-    elif lang_norm in {"english"}:
-        lang_norm = "en"
-
+    lang_norm = normalize_ocr_lang(lang)
     rec_model_map = {
         "en": "en_PP-OCRv5_mobile_rec",
         "korean": "korean_PP-OCRv5_mobile_rec",
