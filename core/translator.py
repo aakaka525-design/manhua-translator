@@ -152,7 +152,7 @@ def _should_merge_vertical(
     # 中心点 X 接近也可以合并
     center_x1 = (b1.x1 + b1.x2) / 2
     center_x2 = (b2.x1 + b2.x2) / 2
-    if abs(center_x1 - center_x2) < avg_height * 2:
+    if abs(center_x1 - center_x2) <= avg_height * 2:
         return True
     
     return False
