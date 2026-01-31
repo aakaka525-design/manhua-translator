@@ -63,12 +63,13 @@ def filter_noise_regions(
         if re.match(r"^[0OoSs]+$", text):
             continue
 
-        # Domain/watermark
-        if re.search(r"\.(com|net|org|io|cn)$", text, re.IGNORECASE):
-            continue
+        if not relaxed:
+            # Domain/watermark
+            if re.search(r"\.(com|net|org|io|cn)$", text, re.IGNORECASE):
+                continue
 
-        if re.match(r"^[A-Z]+SCANS?$", text) or re.match(r"^[A-Z]+COMICS?$", text):
-            continue
+            if re.match(r"^[A-Z]+SCANS?$", text) or re.match(r"^[A-Z]+COMICS?$", text):
+                continue
 
         if not relaxed:
             if (
@@ -305,7 +306,21 @@ def geometric_cluster_dedup(regions: list[RegionData]) -> list[RegionData]:
             if best_text in other_text and get_score(other) * 0.8 > get_score(best):
                 best = other
                 break
-        result.append(best)
+
+        texts = [r.source_text.strip() for r in cluster if r.source_text]
+        unique_texts = list(dict.fromkeys([t for t in texts if t]))
+        if len(unique_texts) <= 1:
+            result.append(best)
+            continue
+
+        is_containment = any(
+            a in b for a in unique_texts for b in unique_texts if a != b
+        )
+        if is_containment:
+            result.append(best)
+            continue
+
+        result.append(merge_group(sorted(cluster, key=lambda r: _box(r).x1)))
 
     return result
 
