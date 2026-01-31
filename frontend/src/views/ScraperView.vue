@@ -1,27 +1,37 @@
 <script setup>
-import { onUnmounted, onMounted, ref, computed } from 'vue'
+import { onUnmounted, onMounted, ref, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useScraperStore } from '@/stores/scraper'
 import ComicBackground from '@/components/ui/ComicBackground.vue'
 import GlassNav from '@/components/layout/GlassNav.vue'
+import ScraperConfig from '@/views/scraper/ScraperConfig.vue'
+import MangaListItem from '@/views/scraper/MangaListItem.vue'
+import ChapterListItem from '@/views/scraper/ChapterListItem.vue'
+import SkeletonCard from '@/views/scraper/SkeletonCard.vue'
+import gsap from 'gsap'
+import { useVirtualList } from '@vueuse/core'
 
 const router = useRouter()
 const scraper = useScraperStore()
 const mobileTab = ref('browse')
 const mobileConfigOpen = ref(true)
+
 const parserParagraphs = computed(() => {
   const paragraphs = scraper.parser?.result?.paragraphs || []
   if (scraper.parser?.showAll) return paragraphs
   return paragraphs.slice(0, 6)
 })
+
 const hasMoreParagraphs = computed(() => {
   const paragraphs = scraper.parser?.result?.paragraphs || []
   return paragraphs.length > 6
 })
+
 const parserListItems = computed(() => scraper.parser?.listResult?.items || [])
 const parserListAvailable = computed(() => scraper.parser?.listResult?.page_type === 'list' && parserListItems.value.length > 0)
 const parserListRecognized = computed(() => scraper.parser?.listResult?.recognized === true)
 const parserListDownloadable = computed(() => scraper.parser?.listResult?.downloadable === true)
+const parserSiteHost = computed(() => scraper.parser?.context?.host || '')
 
 async function copyText(text) {
   if (!text) {
@@ -54,22 +64,91 @@ async function copyText(text) {
   }
 }
 
-function copyParserJson() {
-  const payload = scraper.parser?.result ? JSON.stringify(scraper.parser.result, null, 2) : ''
-  copyText(payload)
+const copyParserJson = () => copyText(scraper.parser?.result ? JSON.stringify(scraper.parser.result, null, 2) : '')
+const copyParserText = () => copyText((scraper.parser?.result?.paragraphs || []).join('\n\n'))
+
+const animateList = () => {
+  nextTick(() => {
+    gsap.fromTo(
+      '.manga-item',
+      { opacity: 0, y: 20 },
+      { opacity: 1, y: 0, duration: 0.4, stagger: 0.05, ease: 'power2.out' }
+    )
+  })
 }
 
-function copyParserText() {
-  const paragraphs = scraper.parser?.result?.paragraphs || []
-  copyText(paragraphs.join('\n\n'))
+watch(() => scraper.results, animateList)
+watch(() => scraper.catalog.items, animateList)
+
+const sentinel = ref(null)
+const observer = ref(null)
+
+const setupIntersectionObserver = () => {
+  if (observer.value) observer.value.disconnect()
+
+  observer.value = new IntersectionObserver((entries) => {
+    const entry = entries[0]
+    if (entry.isIntersecting && scraper.catalog.hasMore && !scraper.catalog.loading) {
+      scraper.loadMoreCatalog()
+    }
+  }, { rootMargin: '200px' })
+
+  if (sentinel.value) observer.value.observe(sentinel.value)
 }
 
-onMounted(() => {
-    scraper.ensureUserAgent()
+watch(sentinel, (el) => {
+  if (el) setupIntersectionObserver()
 })
 
+watch(() => scraper.catalog.hasMore, (hasMore) => {
+  if (hasMore) nextTick(setupIntersectionObserver)
+})
+
+watch(() => scraper.state.view, (view) => {
+  if (view === 'catalog') nextTick(setupIntersectionObserver)
+})
+
+watch(() => scraper.selectedManga, (manga) => {
+  if (manga) {
+    mobileTab.value = 'chapters'
+  }
+})
+
+const lastSelectedIndex = ref(-1)
+
+const handleToggle = (id, index, event) => {
+  if (event && event.shiftKey && lastSelectedIndex.value !== -1) {
+    const start = Math.min(lastSelectedIndex.value, index)
+    const end = Math.max(lastSelectedIndex.value, index)
+
+    const subset = scraper.chapters.slice(start, end + 1)
+    const allSelected = subset.every(ch => scraper.selectedIds.includes(ch.id))
+
+    subset.forEach(ch => {
+      if (allSelected) {
+        if (scraper.selectedIds.includes(ch.id)) scraper.toggleSelection(ch.id)
+      } else {
+        if (!scraper.selectedIds.includes(ch.id)) scraper.toggleSelection(ch.id)
+      }
+    })
+  } else {
+    scraper.toggleSelection(id)
+  }
+  lastSelectedIndex.value = index
+}
+
+const { list: virtualChapters, containerProps, wrapperProps } = useVirtualList(
+  computed(() => scraper.chapters),
+  {
+    itemHeight: 76,
+    overscan: 10
+  }
+)
+
+onMounted(() => scraper.ensureUserAgent())
 onUnmounted(() => {
-    scraper.stopPolling()
+  scraper.stopPolling()
+  if (observer.value) observer.value.disconnect()
 })
 </script>
 
@@ -85,607 +164,388 @@ onUnmounted(() => {
     </GlassNav>
 
     <main class="container mx-auto px-4 py-6">
-      <div class="flex flex-wrap gap-2 mb-4" :class="mobileTab !== 'browse' ? 'hidden xl:flex' : ''">
-        <button @click="scraper.setView('search')"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="scraper.state.view === 'search'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
+      <div class="hidden xl:flex items-center justify-between mb-4">
+        <div class="flex flex-wrap gap-2">
+          <button v-for="tab in [{k:'search',l:'搜索漫画'}, {k:'catalog',l:'站点目录'}, {k:'auth',l:'认证'}, {k:'parser',l:'URL 解析'}]" :key="tab.k"
+            @click="scraper.setView(tab.k)"
+            class="px-4 py-1.5 text-xs font-bold rounded-full border transition-all duration-300 backdrop-blur-md"
+            :class="scraper.state.view === tab.k
+              ? 'bg-accent-1/20 text-accent-1 border-accent-1/50 shadow-lg shadow-accent-1/10 scale-105'
+              : 'bg-bg-secondary/40 text-text-secondary border-border-subtle hover:border-accent-1 hover:text-text-main'">
+            {{ tab.l }}
+          </button>
+        </div>
+      </div>
+
+      <div class="flex xl:hidden flex-wrap gap-2 mb-4">
+        <button v-for="tab in [{k:'browse',l:'浏览'}, {k:'chapters',l:'章节'}, {k:'settings',l:'设置'}]" :key="tab.k"
+          @click="mobileTab = tab.k"
+          class="px-3 py-1 text-xs font-semibold rounded-full border transition-all duration-300"
+          :class="mobileTab === tab.k
+            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50 shadow-sm scale-105'
             : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          搜索漫画
-        </button>
-        <button @click="scraper.setView('catalog')"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="scraper.state.view === 'catalog'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          站点目录
-        </button>
-        <button @click="scraper.setView('auth')"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="scraper.state.view === 'auth'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          认证
-        </button>
-        <button @click="scraper.setView('parser')"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="scraper.state.view === 'parser'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          URL 解析
+          {{ tab.l }}
         </button>
       </div>
-      <div class="flex flex-wrap gap-2 mb-4 xl:hidden">
-        <button @click="mobileTab = 'browse'"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="mobileTab === 'browse'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          浏览
-        </button>
-        <button @click="mobileTab = 'chapters'"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="mobileTab === 'chapters'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          章节
-        </button>
-        <button @click="mobileTab = 'settings'"
-          class="px-3 py-1 text-xs font-semibold rounded-full border transition"
-          :class="mobileTab === 'settings'
-            ? 'bg-accent-1/20 text-accent-1 border-accent-1/50'
-            : 'bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main'">
-          设置
-        </button>
-      </div>
-      <div class="grid gap-6 xl:grid-cols-12">
-        <!-- Config Panel -->
-        <div class="space-y-4 xl:col-span-3" :class="mobileTab === 'settings' ? 'block' : 'hidden xl:block'">
-          <div class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-semibold text-text-main">站点设置</h3>
-              <button class="text-xs text-text-secondary xl:hidden" @click="mobileConfigOpen = !mobileConfigOpen">
-                <span>{{ mobileConfigOpen ? '收起' : '展开' }}</span>
-                <i class="fas fa-chevron-down ml-1 transition"
-                  :class="mobileConfigOpen ? 'rotate-180' : ''"></i>
-              </button>
-            </div>
-            <div class="mt-3 space-y-5" :class="mobileConfigOpen ? 'block' : 'hidden xl:block'">
-              <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">基础设置</p>
-              <div class="space-y-4">
-                <div>
-                  <label class="text-xs text-text-secondary">站点</label>
-                  <select v-model="scraper.state.site" @change="scraper.setSite(scraper.state.site)"
-                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
-                    <option value="toongod">ToonGod</option>
-                    <option value="mangaforfree">MangaForFree</option>
-                    <option value="custom">自定义</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="text-xs text-text-secondary">基础地址</label>
-                  <input v-model="scraper.state.baseUrl" placeholder="https://toongod.org"
-                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                </div>
-                <div>
-                  <label class="text-xs text-text-secondary">抓取模式</label>
-                  <select v-model="scraper.state.mode" @change="scraper.setMode(scraper.state.mode)"
-                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none">
-                    <option value="http">HTTP</option>
-                    <option value="headless">无头浏览器</option>
-                    <option value="headed">有头浏览器</option>
-                  </select>
-                  <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-if="scraper.state.mode === 'headed'">
-                    有头模式会打开浏览器并需在终端回车继续
-                  </p>
-                  <p class="text-[10px] text-text-secondary mt-1 opacity-70" v-else-if="scraper.state.mode === 'headless'">
-                    无头模式不会弹窗，但需要有效状态文件
-                  </p>
-                </div>
-              </div>
 
-              <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">认证与状态</p>
-              <div class="space-y-3 rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
-                <div>
-                  <label class="text-xs text-text-secondary">状态文件（可选）</label>
-                  <div class="mt-1 flex gap-2">
-                    <input v-model="scraper.state.storageStatePath" placeholder="data/toongod_state.json"
-                      class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                    <button @click="scraper.checkStateInfo()"
-                      class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
-                      检测
-                    </button>
-                  </div>
-                  <div class="mt-2 flex items-center gap-2">
-                    <label
-                      class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition cursor-pointer">
-                      上传状态文件
-                      <input type="file" accept=".json" class="hidden"
-                        @change="scraper.uploadStateFile($event.target.files[0])" />
-                    </label>
-                    <span v-if="scraper.uploadInfo.status !== 'idle'" class="text-[10px]"
-                      :class="scraper.uploadInfo.status === 'success' ? 'text-green-300' : (scraper.uploadInfo.status === 'error' ? 'text-red-300' : 'text-slate-300')">
-                      {{ scraper.uploadInfo.message }}
-                    </span>
-                  </div>
-                  <p class="text-[10px] text-text-secondary mt-1 opacity-70">无界面服务器可复用本地 bootstrap 文件</p>
-                  <p v-if="scraper.stateInfo.status !== 'idle'" class="text-[10px] mt-1"
-                    :class="scraper.stateInfoClass()">
-                    {{ scraper.stateInfoLabel() }}
-                  </p>
-                  <div class="mt-2 flex items-center gap-2">
-                    <button @click="scraper.checkAccess()"
-                      class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
-                      站点检测
-                    </button>
-                    <span v-if="scraper.accessInfo.status !== 'idle'" class="text-[10px]"
-                      :class="scraper.accessInfoClass()">
-                      {{ scraper.accessInfoLabel() }}
-                    </span>
-                  </div>
-                </div>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <button @click="scraper.setView('auth')"
-                    class="w-full bg-bg-secondary border border-border-subtle text-text-secondary text-sm font-semibold py-2 rounded-lg hover:border-accent-1 hover:text-text-main transition">
-                    去认证
-                  </button>
-                  <a :href="scraper.authInfo.url || '/auth'" target="_blank"
-                    class="w-full inline-flex items-center justify-center gap-2 bg-accent-1/20 text-accent-1 text-sm font-semibold py-2 rounded-lg hover:bg-accent-1 hover:text-white transition">
-                    打开认证页
-                    <i class="fas fa-external-link-alt text-[10px]"></i>
-                  </a>
-                </div>
-                <p class="text-[10px] text-text-secondary opacity-70">认证页在新标签打开，完成挑战后回到此处检测</p>
-              </div>
-
-              <details class="group rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
-                <summary class="cursor-pointer list-none text-xs font-semibold text-text-main">
-                  高级设置
-                  <span class="text-[10px] text-text-secondary opacity-70 ml-2">UA / 通道 / 并发</span>
-                </summary>
-                <div class="mt-3 space-y-4">
-                  <div>
-                    <label class="text-xs text-text-secondary">持久化配置（推荐）</label>
-                    <div class="mt-1 flex items-center gap-2">
-                      <input type="checkbox" v-model="scraper.state.useProfile" class="accent-accent-1" />
-                      <span class="text-[10px] text-text-secondary opacity-70">开启可减少重复挑战</span>
-                    </div>
-                    <input v-if="scraper.state.useProfile" v-model="scraper.state.userDataDir" placeholder="data/toongod_profile"
-                      class="mt-2 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary">固定 UA（推荐）</label>
-                    <div class="mt-1 flex items-center gap-2">
-                      <input type="checkbox" v-model="scraper.state.lockUserAgent" class="accent-accent-1"
-                        @change="scraper.ensureUserAgent()" />
-                      <span class="text-[10px] text-text-secondary opacity-70">避免 UA 变化触发挑战</span>
-                    </div>
-                    <div v-if="scraper.state.lockUserAgent" class="mt-2 flex gap-2">
-                      <input v-model="scraper.state.userAgent" placeholder="浏览器 UA"
-                        class="flex-1 bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                      <button @click="scraper.syncUserAgent()"
-                        class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 transition">
-                        使用当前浏览器 UA
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary">浏览器通道（推荐）</label>
-                    <div class="mt-1 flex items-center gap-2">
-                      <input type="checkbox" v-model="scraper.state.useChromeChannel" class="accent-accent-1"
-                        :disabled="scraper.state.httpMode" />
-                      <span class="text-[10px] text-text-secondary opacity-70">仅有头模式生效，需已安装 Chrome</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary">并发</label>
-                    <input type="number" min="1" max="12" v-model.number="scraper.state.concurrency"
-                      class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
-                  </div>
-                </div>
-              </details>
-
-              <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">搜索与目录</p>
-              <div class="space-y-3">
-                <div v-if="scraper.state.view === 'search'">
-                  <label class="text-xs text-text-secondary">关键词 / 网址</label>
-                  <input v-model="scraper.state.keyword" placeholder="输入漫画关键词或完整网址"
-                    class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
-                    @keydown.enter="scraper.search()" />
-                </div>
-                <button v-if="scraper.state.view === 'search'" @click="scraper.search()" :disabled="scraper.loading"
-                  class="w-full bg-accent-1/80 hover:bg-accent-1 text-white text-sm font-semibold py-2 rounded-lg transition"
-                  :class="scraper.loading ? 'opacity-60 cursor-not-allowed' : ''">
-                  {{ scraper.loading ? '搜索中...' : '搜索' }}
-                </button>
-                <button v-if="scraper.state.view === 'catalog'" @click="scraper.loadCatalog(true)"
-                  :disabled="scraper.catalog.loading"
-                  class="w-full bg-accent-1/80 hover:bg-accent-1 text-white text-sm font-semibold py-2 rounded-lg transition"
-                  :class="scraper.catalog.loading ? 'opacity-60 cursor-not-allowed' : ''">
-                  {{ scraper.catalog.loading ? '加载中...' : '加载目录' }}
-                </button>
-              </div>
-
-              <p v-if="scraper.error" class="text-xs text-red-400">{{ scraper.error }}</p>
-
-              <details class="group rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
-                <summary class="cursor-pointer list-none text-xs font-semibold text-text-main">
-                  Cloudflare 指引
-                  <span class="text-[10px] text-text-secondary opacity-70 ml-2">点此查看</span>
-                </summary>
-                <div class="mt-3 text-[10px] text-text-secondary space-y-1">
-                  <p>1) 有界面电脑运行 bootstrap 生成状态文件</p>
-                  <p>2) 拷贝到服务器后填写上方路径</p>
-                  <p>3) 建议开启“持久化配置”减少重复挑战</p>
-                  <p class="mt-2 font-mono text-[10px] text-text-secondary opacity-70">python scripts/scraper_cli.py bootstrap --base-url https://mangaforfree.com</p>
-                </div>
-              </details>
-            </div>
-          </div>
-
+      <div class="grid gap-6 xl:grid-cols-12 transition-all duration-500 ease-in-out">
+        <div class="space-y-4 transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)] overflow-hidden"
+          :class="mobileTab === 'settings' ? 'block' : 'hidden xl:block xl:col-span-3'">
+          <ScraperConfig
+            :mobileConfigOpen="mobileConfigOpen"
+            @toggle-mobile="mobileConfigOpen = !mobileConfigOpen"
+          />
         </div>
 
-        <!-- Results -->
-        <div class="space-y-4 xl:col-span-5" :class="mobileTab === 'browse' ? 'block' : 'hidden xl:block'">
-          <!-- Search Results -->
-          <div v-if="scraper.state.view === 'search'" class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <h3 class="font-semibold text-text-main">搜索结果</h3>
-                <p class="text-xs text-text-secondary opacity-70 mt-1">输入关键词或 URL 搜索漫画</p>
+        <div class="space-y-4 transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]"
+          :class="[
+            mobileTab === 'browse' ? 'block' : 'hidden xl:block',
+            scraper.selectedManga ? 'xl:col-span-5' : 'xl:col-span-9'
+          ]">
+
+          <div v-if="scraper.state.view === 'search'" class="bg-surface border border-main rounded-xl p-4 min-h-[500px] relative overflow-hidden flex flex-col">
+            <div v-if="!scraper.loading && scraper.results.length === 0" class="flex-1 flex flex-col items-center justify-center py-20 animate-fade-in">
+              <div class="text-center mb-8">
+                <h2 class="text-2xl font-bold text-text-main mb-2">探索无限漫画</h2>
+                <p class="text-text-secondary opacity-70">输入关键词或粘贴网址开始</p>
               </div>
-              <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
-            </div>
-            <div class="mt-4 space-y-3">
-              <p v-if="!scraper.loading && scraper.results.length === 0" class="text-xs text-text-secondary opacity-70">暂无结果</p>
-              <div v-for="manga in scraper.results" :key="manga.id"
-                class="flex items-center justify-between rounded-xl px-4 py-3 border transition"
-                :class="manga.id === scraper.selectedManga?.id ? 'bg-accent-1/10 border-accent-1/60' : 'bg-bg-secondary/50 border-border-subtle hover:border-accent-1/40'">
-                <div class="flex items-center gap-4">
-                  <div class="w-16 h-24 sm:w-20 sm:h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
-                    <img v-if="manga.cover_url" :src="scraper.proxyImageUrl(manga.cover_url)" alt="cover"
-                      class="w-full h-full object-cover" loading="lazy" />
-                  </div>
-                  <div>
-                    <p class="text-sm font-semibold text-text-main">{{ manga.title || manga.id }}</p>
-                    <p class="text-[11px] text-text-secondary truncate">{{ manga.url }}</p>
-                  </div>
+
+              <div class="w-full max-w-lg relative group">
+                <div class="absolute inset-0 bg-accent-1/20 blur-xl rounded-full transition-all duration-500 group-hover:bg-accent-1/30"></div>
+                <div class="relative flex items-center bg-bg-secondary border border-border-subtle rounded-full overflow-hidden shadow-lg transition-all group-focus-within:border-accent-1 group-focus-within:ring-2 ring-accent-1/20">
+                  <i class="fas fa-search px-4 text-text-secondary"></i>
+                  <input v-model="scraper.state.keyword"
+                    @keydown.enter="scraper.search()"
+                    placeholder="试试 'One Piece' 或 'ToonGod'..."
+                    class="flex-1 bg-transparent py-4 text-text-main placeholder:text-text-secondary/50 focus:outline-none" />
+                  <button @click="scraper.search()"
+                    class="px-6 py-4 bg-accent-1 text-white font-bold hover:bg-accent-1/90 transition-colors">
+                    搜索
+                  </button>
                 </div>
-                <button @click="scraper.selectManga(manga)" :disabled="scraper.loading"
-                  class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
-                  :class="scraper.loading ? 'opacity-60 cursor-not-allowed' : ''">
-                  查看章节
+              </div>
+
+              <div class="mt-8 flex gap-2 flex-wrap justify-center opacity-60">
+                <span v-for="tag in ['Solo Leveling', 'Omniscient Reader', 'Magic Emperor']" :key="tag"
+                  @click="scraper.state.keyword = tag; scraper.search()"
+                  class="px-3 py-1 bg-bg-secondary rounded-full text-xs text-text-secondary cursor-pointer hover:bg-accent-1/10 hover:text-accent-1 transition">
+                  {{ tag }}
+                </span>
+              </div>
+            </div>
+
+            <div v-else class="flex flex-col h-full">
+              <div class="flex items-center gap-3 mb-4 p-2 bg-bg-secondary/30 rounded-xl border border-white/5 backdrop-blur-sm sticky top-0 z-10">
+                <div class="flex-1 relative">
+                  <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50 text-xs"></i>
+                  <input v-model="scraper.state.keyword"
+                    @keydown.enter="scraper.search()"
+                    class="w-full bg-black/20 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-text-main focus:border-accent-1 focus:outline-none" />
+                </div>
+                <button @click="scraper.search()" :disabled="scraper.loading"
+                  class="px-4 py-1.5 bg-accent-1 rounded-lg text-white text-xs font-bold hover:bg-accent-1/90 transition-opacity"
+                  :class="scraper.loading ? 'opacity-50' : ''">
+                  {{ scraper.loading ? '...' : 'Go' }}
                 </button>
+              </div>
+
+              <div class="grid gap-3 transition-all duration-500 overflow-y-auto custom-scrollbar flex-1 content-start"
+                :class="scraper.selectedManga ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'">
+                <MangaListItem
+                  v-for="manga in scraper.results"
+                  :key="manga.id"
+                  :manga="manga"
+                  :cover="scraper.proxyImageUrl(manga.cover_url)"
+                  class="manga-item"
+                  variant="grid"
+                  :isSelected="manga.id === scraper.selectedManga?.id"
+                  :loading="scraper.loading && manga.id === scraper.selectedManga?.id"
+                  @select="scraper.selectManga"
+                />
               </div>
             </div>
           </div>
 
-          <!-- Catalog List -->
-          <div v-if="scraper.state.view === 'catalog'" class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex flex-wrap items-start justify-between gap-3">
+          <div v-if="scraper.state.view === 'catalog'" class="bg-surface border border-main rounded-xl p-4 min-h-[500px]">
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
               <div>
                 <h3 class="font-semibold text-text-main">站点目录</h3>
-                <p class="text-xs text-text-secondary opacity-70 mt-1">按站点排序浏览全部漫画</p>
               </div>
               <div class="flex items-center gap-2 text-xs text-text-secondary">
-                <span>目录</span>
                 <select v-model="scraper.catalog.mode" @change="scraper.setCatalogMode(scraper.catalog.mode)"
-                  class="bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-2 py-1 text-xs">
+                  class="bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-2 py-1 text-xs focus:border-accent-1 outline-none cursor-pointer">
                   <option value="all">全部</option>
-                  <option value="views">浏览量</option>
+                  <option value="views">热度</option>
                   <option value="new">最新</option>
-                  <option value="genre-manga">分类: Manga</option>
-                  <option value="genre-webtoon">分类: Webtoon</option>
+                  <option value="genre-manga">Manga</option>
+                  <option value="genre-webtoon">Webtoon</option>
                 </select>
               </div>
             </div>
-            <div class="mt-4 space-y-3">
-              <p v-if="!scraper.catalog.loading && scraper.catalog.items.length === 0" class="text-xs text-text-secondary opacity-70">暂无目录数据</p>
-              <div v-for="manga in scraper.catalog.items" :key="manga.id"
-                class="flex items-center justify-between rounded-xl px-4 py-3 border transition"
-                :class="manga.id === scraper.selectedManga?.id ? 'bg-accent-1/10 border-accent-1/60' : 'bg-bg-secondary/50 border-border-subtle hover:border-accent-1/40'">
-                <div class="flex items-center gap-4">
-                  <div class="w-16 h-24 sm:w-20 sm:h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
-                    <img v-if="manga.cover_url" :src="scraper.proxyImageUrl(manga.cover_url)" alt="cover"
-                      class="w-full h-full object-cover" loading="lazy" />
-                  </div>
-                  <div>
-                    <p class="text-sm font-semibold text-text-main">{{ manga.title || manga.id }}</p>
-                    <p class="text-[11px] text-text-secondary truncate">{{ manga.url }}</p>
-                  </div>
-                </div>
-                <button @click="scraper.selectManga(manga)" :disabled="scraper.catalog.loading || scraper.loading"
-                  class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
-                  :class="(scraper.catalog.loading || scraper.loading) ? 'opacity-60 cursor-not-allowed' : ''">
-                  查看章节
-                </button>
-              </div>
+
+            <div v-if="!scraper.catalog.loading && scraper.catalog.items.length === 0" class="flex flex-col items-center justify-center py-20 text-text-secondary opacity-50">
+              <i class="fas fa-book-open text-4xl mb-4 opacity-50"></i>
+              <p class="text-xs">暂无数据</p>
             </div>
-            <div class="mt-3 flex items-center justify-between">
-              <span class="text-xs text-text-secondary opacity-70">第 {{ scraper.catalog.page }} 页</span>
-              <button @click="scraper.loadMoreCatalog()" :disabled="!scraper.catalog.hasMore || scraper.catalog.loading"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition"
-                :class="(!scraper.catalog.hasMore || scraper.catalog.loading) ? 'opacity-60 cursor-not-allowed' : ''">
-                {{ scraper.catalog.loading ? '加载中...' : (scraper.catalog.hasMore ? '加载更多' : '没有更多') }}
+
+            <div class="grid gap-3 transition-all duration-500"
+              :class="scraper.selectedManga ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'">
+              <template v-if="scraper.catalog.loading && scraper.catalog.page === 1">
+                <SkeletonCard v-for="i in (scraper.selectedManga ? 6 : 10)" :key="i" />
+              </template>
+
+              <MangaListItem
+                v-for="manga in scraper.catalog.items"
+                :key="manga.id"
+                :manga="manga"
+                :cover="scraper.proxyImageUrl(manga.cover_url)"
+                class="manga-item"
+                variant="grid"
+                :isSelected="manga.id === scraper.selectedManga?.id"
+                :loading="scraper.loading && manga.id === scraper.selectedManga?.id"
+                @select="scraper.selectManga"
+              />
+
+              <template v-if="scraper.catalog.loading && scraper.catalog.page > 1">
+                <SkeletonCard v-for="i in (scraper.selectedManga ? 3 : 5)" :key="`more-${i}`" />
+              </template>
+            </div>
+
+            <div ref="sentinel" class="mt-6 flex items-center justify-center min-h-[50px]">
+              <span v-if="scraper.catalog.loading" class="text-xs text-text-secondary animate-pulse">
+                加载中...
+              </span>
+              <span v-else-if="!scraper.catalog.hasMore && scraper.catalog.items.length > 0" class="text-xs text-text-secondary opacity-50">
+                - End -
+              </span>
+              <button v-else-if="!scraper.catalog.loading && scraper.catalog.hasMore" @click="scraper.loadMoreCatalog()"
+                class="text-xs text-accent-1 hover:underline">
+                点击加载更多 (若未自动触发)
               </button>
             </div>
           </div>
 
-          <!-- Auth -->
           <div v-if="scraper.state.view === 'auth'" class="bg-surface border border-main rounded-xl p-4">
             <div class="flex items-start justify-between gap-3">
-              <div>
-                <h3 class="font-semibold text-text-main">站点认证</h3>
-                <p class="text-xs text-text-secondary opacity-70 mt-1">在服务器浏览器中完成 Cloudflare 验证</p>
-              </div>
+              <div><h3 class="font-semibold text-text-main">站点认证</h3></div>
             </div>
-            <div class="mt-4 space-y-3 text-sm">
-              <div>
-                <p class="text-xs text-text-secondary opacity-70">认证地址</p>
-                <p class="text-sm text-text-main break-all">
-                  {{ scraper.authInfo.url || '加载中...' }}
-                </p>
-              </div>
+            <div class="mt-4 space-y-4 text-sm bg-bg-secondary/20 p-4 rounded-xl">
+              <p class="text-sm text-text-main break-all font-mono bg-black/20 p-2 rounded">{{ scraper.authInfo.url || '加载中...' }}</p>
               <a :href="scraper.authInfo.url || '/auth'" target="_blank"
-                class="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition">
-                打开认证页
-                <i class="fas fa-external-link-alt text-[10px]"></i>
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-accent-1 hover:bg-accent-1/90 text-white transition-colors">
+                前往认证 <i class="fas fa-external-link-alt text-xs"></i>
               </a>
-              <div class="text-xs text-text-secondary space-y-1">
-                <p>1) 打开认证页完成验证</p>
-                <p>2) 回到此页点击“检测 / 上传状态文件”</p>
-              </div>
-              <div class="flex items-center gap-2">
-                <button @click="scraper.checkStateInfo()"
-                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 hover:text-text-main transition">
-                  检测状态
-                </button>
-                <button @click="scraper.checkAccess()"
-                  class="px-3 py-2 text-xs font-semibold rounded-lg bg-bg-secondary border border-border-subtle text-text-secondary hover:border-accent-1 hover:text-text-main transition">
-                  站点检测
-                </button>
-              </div>
             </div>
           </div>
 
-          <!-- Parser -->
-          <div v-if="scraper.state.view === 'parser'" class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <h3 class="font-semibold text-text-main">URL 解析</h3>
-                <p class="text-xs text-text-secondary opacity-70 mt-1">解析网页正文并提取结构化字段</p>
-              </div>
-              <span v-if="scraper.parser.loading" class="text-xs text-text-secondary animate-pulse">解析中...</span>
+          <div v-if="scraper.state.view === 'parser'" class="bg-surface border border-main rounded-xl p-6 min-h-[600px] flex flex-col">
+            <div class="text-center mb-8">
+              <h3 class="text-2xl font-bold text-text-main mb-2">URL 智能解析</h3>
+              <p class="text-xs text-text-secondary opacity-70">提取网页正文、漫画列表及元数据</p>
             </div>
-            <div class="mt-4 space-y-3">
-              <div>
-                <label class="text-xs text-text-secondary">解析 URL</label>
-                <input v-model="scraper.parser.url" placeholder="https://example.com/article"
-                  class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
-                  @keydown.enter="scraper.parseUrl()" />
+
+            <div class="w-full max-w-2xl mx-auto space-y-4 mb-6">
+              <div class="relative group">
+                <div class="absolute inset-0 bg-accent-1/20 blur-xl rounded-xl transition-all duration-500 group-hover:bg-accent-1/30"></div>
+                <div class="relative bg-bg-secondary border border-border-subtle rounded-xl shadow-lg transition-all focus-within:border-accent-1 focus-within:ring-2 ring-accent-1/20 flex flex-col sm:flex-row overflow-hidden">
+                  <input v-model="scraper.parser.url" placeholder="粘贴网页链接 (例如: https://example.com/chapter-1)"
+                    class="flex-1 bg-transparent px-5 py-4 text-text-main placeholder:text-text-secondary/50 focus:outline-none"
+                    @keydown.enter="scraper.parseUrl()" />
+
+                  <div class="flex items-center border-t sm:border-t-0 sm:border-l border-border-subtle bg-bg-secondary/50 px-2">
+                    <select v-model="scraper.parser.mode" class="bg-transparent text-xs font-bold text-text-secondary focus:outline-none cursor-pointer py-3 px-2 hover:text-text-main transition-colors">
+                      <option value="http">Fast (HTTP)</option>
+                      <option value="playwright">Full (Browser)</option>
+                    </select>
+                    <button @click="scraper.parseUrl()" :disabled="scraper.parser.loading"
+                      class="ml-2 px-6 py-2 rounded-lg bg-accent-1 text-white font-bold text-sm hover:bg-accent-1/90 transition-all disabled:opacity-50 whitespace-nowrap shadow-lg shadow-accent-1/20">
+                      {{ scraper.parser.loading ? '解析中...' : '开始解析' }}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <div class="flex items-center gap-2 text-xs text-text-secondary">
-                  <span>解析模式</span>
-                  <select v-model="scraper.parser.mode"
-                    class="bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-2 py-1 text-xs">
-                    <option value="http">http</option>
-                    <option value="playwright">playwright</option>
-                  </select>
-                </div>
-                <button @click="scraper.parseUrl()" :disabled="scraper.parser.loading"
-                  class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
-                  :class="scraper.parser.loading ? 'opacity-60 cursor-not-allowed' : ''">
-                  {{ scraper.parser.loading ? '解析中...' : '解析' }}
-                </button>
+              <p v-if="scraper.parser.error" class="text-xs text-red-400 text-center">{{ scraper.parser.error }}</p>
+            </div>
+
+            <div v-if="parserListAvailable || scraper.parser.result" class="animate-fade-in-up space-y-6">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
+                <span>解析站点：<span class="font-mono text-text-main">{{ parserSiteHost || '—' }}</span></span>
+                <span v-if="parserListAvailable" class="text-[10px] px-2 py-0.5 rounded border"
+                  :class="parserListRecognized ? 'text-green-400 border-green-400/30' : 'text-amber-400 border-amber-400/30'">
+                  {{ parserListRecognized ? '已识别' : '未识别' }}
+                </span>
               </div>
-              <p v-if="scraper.parser.error" class="text-xs text-red-400">{{ scraper.parser.error }}</p>
-              <div v-if="scraper.parser.result" class="space-y-4">
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">title</p>
-                    <p class="text-sm text-text-main">{{ scraper.parser.result.title || '—' }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">author</p>
-                    <p class="text-sm text-text-main">{{ scraper.parser.result.author || '—' }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">date</p>
-                    <p class="text-sm text-text-main">{{ scraper.parser.result.date || '—' }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">summary</p>
-                    <p class="text-sm text-text-main">{{ scraper.parser.result.summary || '—' }}</p>
-                  </div>
-                </div>
-                <div v-if="scraper.parser.result.cover" class="flex items-start gap-3">
-                  <div class="w-20 h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
-                    <img :src="scraper.parser.result.cover" alt="cover" class="w-full h-full object-cover" loading="lazy" />
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">cover</p>
-                    <p class="text-xs text-text-secondary break-all">{{ scraper.parser.result.cover }}</p>
-                  </div>
-                </div>
-                <div v-if="parserListAvailable" class="space-y-3">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">list</p>
-                      <span class="text-[10px] font-semibold px-2 py-1 rounded-full border"
-                        :class="parserListRecognized
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
-                          : 'bg-amber-500/20 text-amber-300 border-amber-400/40'">
-                        {{ parserListRecognized ? '已识别' : '未识别' }}
-                      </span>
+
+              <div v-if="scraper.parser.result" class="grid gap-4 md:grid-cols-12">
+                <div class="md:col-span-4 bg-bg-secondary/30 rounded-xl p-4 border border-border-subtle flex flex-col gap-3">
+                  <div class="flex items-center gap-3 pb-3 border-b border-border-subtle/50">
+                    <div class="w-10 h-10 rounded-full bg-accent-1/10 flex items-center justify-center text-accent-1">
+                      <i class="fas fa-info-circle text-lg"></i>
                     </div>
-                    <span class="text-xs text-text-secondary opacity-70">{{ parserListItems.length }} 项</span>
+                    <div>
+                      <h4 class="font-bold text-text-main text-sm">元数据</h4>
+                      <p class="text-[10px] text-text-secondary opacity-70">网页基本信息</p>
+                    </div>
                   </div>
-                  <p v-if="!parserListDownloadable" class="text-xs text-text-secondary opacity-70">仅列表展示，暂不支持下载</p>
-                  <div class="space-y-3">
-                    <div v-for="item in parserListItems" :key="item.id || item.url"
-                      class="flex items-center justify-between rounded-xl px-4 py-3 border transition"
-                      :class="parserListDownloadable
-                        ? 'bg-bg-secondary/50 border-border-subtle hover:border-accent-1/40'
-                        : 'bg-bg-secondary/30 border-border-subtle'">
-                      <div class="flex items-center gap-4">
-                        <div class="w-16 h-24 sm:w-20 sm:h-28 rounded-lg bg-bg-secondary border border-border-subtle overflow-hidden">
-                          <img v-if="item.cover_url" :src="scraper.proxyImageUrl(item.cover_url)" alt="cover"
-                            class="w-full h-full object-cover" loading="lazy" />
-                        </div>
-                        <div>
-                          <p class="text-sm font-semibold text-text-main">{{ item.title || item.id }}</p>
-                          <p class="text-[11px] text-text-secondary truncate">{{ item.url }}</p>
-                        </div>
-                      </div>
-                      <button @click="parserListDownloadable && scraper.selectManga(item)"
-                        :disabled="!parserListDownloadable || scraper.loading"
-                        class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
-                        :class="(!parserListDownloadable || scraper.loading) ? 'opacity-60 cursor-not-allowed' : ''">
-                        查看章节
+                  <div class="space-y-2 text-sm mt-1">
+                    <div>
+                      <p class="text-[10px] uppercase text-text-secondary opacity-70">Title</p>
+                      <p class="text-text-main font-medium line-clamp-2 select-text">{{ scraper.parser.result.title || '-' }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[10px] uppercase text-text-secondary opacity-70">Author</p>
+                      <p class="text-text-main font-medium select-text">{{ scraper.parser.result.author || '-' }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[10px] uppercase text-text-secondary opacity-70">Date</p>
+                      <p class="text-text-main font-medium select-text">{{ scraper.parser.result.date || '-' }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[10px] uppercase text-text-secondary opacity-70">Summary</p>
+                      <p class="text-text-main font-medium line-clamp-3 select-text">{{ scraper.parser.result.summary || '-' }}</p>
+                    </div>
+                    <div v-if="scraper.parser.result.cover" class="pt-2">
+                      <img :src="scraper.proxyParserImageUrl(scraper.parser.result.cover)" alt="cover" class="w-20 h-28 object-cover rounded-lg border border-border-subtle" />
+                    </div>
+                    <div class="pt-2 mt-auto">
+                      <button @click="copyParserJson()" class="w-full py-2 rounded-lg bg-bg-secondary hover:bg-bg-secondary/80 text-xs font-semibold text-text-secondary hover:text-text-main transition-colors border border-border-subtle">
+                        <i class="fas fa-code mr-1"></i> 复制 JSON
                       </button>
                     </div>
                   </div>
                 </div>
-                <div class="rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
-                  <div class="flex items-center justify-between">
-                    <p class="text-[10px] uppercase tracking-widest text-text-secondary opacity-70">paragraphs</p>
-                    <button v-if="hasMoreParagraphs" @click="scraper.parser.showAll = !scraper.parser.showAll"
-                      class="text-xs text-text-secondary hover:text-text-main transition">
-                      {{ scraper.parser.showAll ? '收起' : '展开' }}
+
+                <div class="md:col-span-8 bg-bg-secondary/20 rounded-xl border border-border-subtle overflow-hidden flex flex-col">
+                  <div class="flex items-center justify-between px-4 py-3 bg-bg-secondary/40 border-b border-border-subtle/50">
+                    <div class="flex items-center gap-2">
+                      <i class="fas fa-align-left text-text-secondary text-xs"></i>
+                      <span class="text-xs font-bold text-text-main">正文预览</span>
+                    </div>
+                    <button @click="copyParserText()" class="text-[10px] hover:bg-accent-1/10 hover:text-accent-1 px-2 py-1 rounded transition-colors text-text-secondary">
+                      <i class="fas fa-copy mr-1"></i> 复制全文
                     </button>
                   </div>
-                  <div class="mt-3 space-y-2 text-sm text-text-main">
-                    <p v-if="parserParagraphs.length === 0" class="text-xs text-text-secondary opacity-70">暂无正文</p>
-                    <p v-for="(paragraph, idx) in parserParagraphs" :key="idx" class="leading-relaxed">
-                      {{ paragraph }}
-                    </p>
+                  <div class="p-4 overflow-y-auto max-h-[250px] custom-scrollbar bg-slate-50/5 dark:bg-black/20 text-sm leading-relaxed text-text-main/90 font-serif">
+                    <template v-if="parserParagraphs.length > 0">
+                      <p v-for="(p, i) in parserParagraphs" :key="i" class="mb-3 last:mb-0">{{ p }}</p>
+                    </template>
+                    <div v-else class="h-full flex flex-col items-center justify-center text-text-secondary opacity-40 min-h-[100px]">
+                      <i class="fas fa-paragraph mb-2"></i>
+                      <span>无正文内容</span>
+                    </div>
+                  </div>
+                  <div v-if="hasMoreParagraphs" class="p-2 bg-bg-secondary/30 border-t border-border-subtle/50 text-center">
+                    <button @click="scraper.parser.showAll = !scraper.parser.showAll" class="text-xs text-accent-1 hover:underline font-medium">
+                      {{ scraper.parser.showAll ? '收起' : `展开剩余 ${scraper.parser.result.paragraphs.length - 6} 段` }}
+                    </button>
                   </div>
                 </div>
-                <div class="flex flex-wrap gap-2">
-                  <button @click="copyParserJson()"
-                    class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
-                    复制 JSON
-                  </button>
-                  <button @click="copyParserText()"
-                    class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
-                    复制正文
-                  </button>
-                </div>
               </div>
-            </div>
-          </div>
 
-        </div>
-
-        <!-- Chapters -->
-        <div class="space-y-4 xl:col-span-4" :class="mobileTab === 'chapters' ? 'block' : 'hidden xl:block'">
-          <div class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <h3 class="font-semibold text-text-main">下载状态</h3>
-                <p class="text-xs text-text-secondary opacity-70 mt-1">当前任务与队列摘要</p>
-              </div>
-              <span v-if="scraper.task.status" class="text-[10px] font-semibold px-2 py-1 rounded-full"
-                :class="scraper.statusClass(scraper.task.status)">
-                {{ scraper.statusLabel(scraper.task.status) }}
-              </span>
-            </div>
-            <div class="mt-3 space-y-2 text-xs">
-              <p class="text-text-secondary">{{ scraper.task.message || '暂无任务' }}</p>
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] text-text-secondary opacity-70">队列中 {{ scraper.queue.length }} 项</span>
-              </div>
-              <div v-if="scraper.task.report" class="text-text-secondary space-y-1">
-                <p>成功 {{ scraper.task.report.success_count }} / 失败 {{ scraper.task.report.failed_count }}</p>
-                <p class="break-all">输出目录: {{ scraper.task.report.output_dir }}</p>
-              </div>
-            </div>
-          </div>
-          <div class="bg-surface border border-main rounded-xl p-4">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <h3 class="font-semibold text-text-main">章节下载</h3>
-                <p class="text-xs text-text-secondary opacity-70 mt-1">选择章节加入队列，支持批量下载</p>
-              </div>
-              <div class="flex flex-col items-end gap-2">
-                <span v-if="scraper.loading" class="text-xs text-text-secondary animate-pulse">加载中...</span>
-                <div v-if="scraper.selectedManga" class="text-xs text-text-secondary flex items-center gap-2">
-                  <span>{{ scraper.selectedManga.title || scraper.selectedManga.id }}</span>
-                  <span v-if="scraper.downloadSummary.total > 0"
-                    class="px-2 py-1 text-[10px] rounded-full bg-bg-secondary border border-border-subtle text-text-secondary">
-                    已下载 {{ scraper.downloadSummary.done }}/{{ scraper.downloadSummary.total }} 章
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 flex flex-wrap gap-2 hidden xl:flex">
-              <button @click="scraper.selectAll()"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
-                全选
-              </button>
-              <button @click="scraper.clearSelection()"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle hover:border-accent-1 hover:text-text-main transition">
-                清空
-              </button>
-              <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0"
-                class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
-                :class="scraper.selectedIds.length === 0 ? 'opacity-60 cursor-not-allowed' : ''">
-                批量下载 ({{ scraper.selectedIds.length }})
-              </button>
-            </div>
-            <div class="mt-4 space-y-3 max-h-[64vh] xl:max-h-[520px] overflow-y-auto custom-scrollbar">
-              <p v-if="scraper.chapters.length === 0" class="text-xs text-text-secondary opacity-70">请选择漫画查看章节</p>
-              <div v-for="chapter in scraper.chapters" :key="chapter.id"
-                class="flex items-start justify-between bg-bg-secondary/50 border border-border-subtle rounded-xl px-4 py-3">
-                <div class="flex items-center gap-3">
-                  <input type="checkbox" :checked="scraper.selectedIds.includes(chapter.id)"
-                    @change="scraper.toggleSelection(chapter.id)" class="accent-accent-1" />
-                  <div>
-                    <p class="text-sm font-semibold text-text-main">{{ chapter.title || chapter.id }}</p>
-                    <p class="text-[11px] text-text-secondary truncate">{{ chapter.url }}</p>
+              <div v-if="parserListAvailable" class="space-y-4 pt-4 border-t border-border-subtle/30">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold text-text-main">
+                      <i class="fas fa-list-ul mr-1 text-accent-1"></i> 列表结果
+                      <span class="bg-accent-1/10 text-accent-1 text-[10px] px-2 py-0.5 rounded-full ml-2">{{ parserListItems.length }}</span>
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-[10px] px-2 py-0.5 rounded border flex items-center gap-1"
+                      :class="parserListRecognized ? 'text-green-400 border-green-400/30' : 'text-amber-400 border-amber-400/30'">
+                      <i class="fas" :class="parserListRecognized ? 'fa-check-circle' : 'fa-exclamation-circle'"></i>
+                      {{ parserListRecognized ? '已识别' : '未识别' }}
+                    </span>
                   </div>
                 </div>
-                <div class="flex items-center gap-2">
-                  <span v-if="chapter.downloaded_count"
-                    class="text-[10px] font-semibold px-2 py-1 rounded-full"
-                    :class="scraper.downloadedClass(chapter)">
-                    {{ scraper.downloadedLabel(chapter) }}
-                  </span>
-                  <span v-if="scraper.chapterStatus(chapter.id)"
-                    class="text-[10px] font-semibold px-2 py-1 rounded-full"
-                    :class="scraper.statusClass(scraper.chapterStatus(chapter.id))">
-                    {{ scraper.statusLabel(scraper.chapterStatus(chapter.id)) }}
-                  </span>
-                  <button @click="scraper.download(chapter)"
-                    :disabled="scraper.loading || scraper.isChapterBusy(chapter.id)"
-                    class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white transition"
-                    :class="(scraper.loading || scraper.isChapterBusy(chapter.id)) ? 'opacity-60 cursor-not-allowed' : ''">
-                    加入队列
-                  </button>
+
+                <p v-if="!parserListDownloadable" class="text-xs text-text-secondary opacity-70">仅列表展示，暂不支持下载</p>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  <MangaListItem
+                    v-for="item in parserListItems"
+                    :key="item.id || item.url"
+                    :manga="item"
+                    :cover="scraper.proxyParserImageUrl(item.cover_url)"
+                    class="manga-item"
+                    variant="grid"
+                    :actionLabel="'查看章节'"
+                    :disabled="!parserListDownloadable"
+                    @select="scraper.selectMangaFromParser"
+                  />
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <div v-if="mobileTab === 'chapters'" class="fixed bottom-4 left-4 right-4 z-30 xl:hidden">
-        <div class="bg-surface/95 border border-main rounded-full px-3 py-2 flex items-center justify-between gap-2">
-          <button @click="scraper.selectAll()"
-            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle">
-            全选
-          </button>
-          <button @click="scraper.clearSelection()"
-            class="px-3 py-1 text-xs font-semibold rounded-full bg-bg-secondary text-text-secondary border border-border-subtle">
-            清空
-          </button>
-          <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0"
-            class="px-3 py-1 text-xs font-semibold rounded-full bg-accent-1/20 text-accent-1 border border-accent-1/30"
-            :class="scraper.selectedIds.length === 0 ? 'opacity-60 cursor-not-allowed' : ''">
-            下载 {{ scraper.selectedIds.length }}
-          </button>
+
+        <div class="space-y-4 transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]"
+          :class="[
+            mobileTab === 'chapters' ? 'block' : 'hidden xl:block',
+            scraper.selectedManga ? 'xl:col-span-4 translate-x-0 opacity-100' : 'xl:col-span-0 w-0 overflow-hidden opacity-0 translate-x-20'
+          ]">
+          <div class="bg-surface border border-main rounded-xl p-4 min-h-[500px] flex flex-col">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h3 class="font-semibold text-text-main">章节列表</h3>
+                <div v-if="scraper.selectedManga" class="text-xs text-text-secondary mt-1 flex items-center gap-2">
+                  <span class="truncate max-w-[150px]">{{ scraper.selectedManga.title }}</span>
+                  <span v-if="scraper.downloadSummary.total > 0" class="px-1.5 py-0.5 rounded bg-bg-secondary">{{ scraper.downloadSummary.done }}/{{ scraper.downloadSummary.total }}</span>
+                </div>
+              </div>
+              <div class="flex gap-1">
+                <button @click="scraper.selectAll()" title="全选" class="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-text-secondary hover:text-white transition-colors">
+                  <i class="fas fa-check-double text-xs"></i>
+                </button>
+                <button @click="scraper.clearSelection()" title="清空"
+                  class="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-text-secondary hover:text-white transition-colors">
+                  <i class="fas fa-eraser text-xs"></i>
+                </button>
+                <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0" title="下载选中"
+                  class="w-8 h-8 rounded-full bg-accent-1/20 flex items-center justify-center text-accent-1 hover:bg-accent-1 hover:text-white transition-colors disabled:opacity-50">
+                  <i class="fas fa-download text-xs"></i>
+                </button>
+              </div>
+            </div>
+
+            <div v-bind="containerProps" class="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+              <div v-bind="wrapperProps" class="space-y-2">
+                <div v-if="scraper.chapters.length === 0" class="flex flex-col items-center justify-center h-40 text-text-secondary opacity-50">
+                  <p class="text-xs text-center">请在列表选择漫画<br>查看章节</p>
+                </div>
+
+                <ChapterListItem
+                  v-for="{ data, index } in virtualChapters"
+                  :key="data.id"
+                  :chapter="data"
+                  :isSelected="scraper.selectedIds.includes(data.id)"
+                  :status="scraper.chapterStatus(data.id)"
+                  :isBusy="scraper.isChapterBusy(data.id)"
+                  :loading="scraper.loading"
+                  @toggle="(id, event) => handleToggle(id, index, event)"
+                  @download="scraper.download"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
   </div>
 </template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+</style>
