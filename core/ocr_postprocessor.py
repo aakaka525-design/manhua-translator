@@ -47,8 +47,9 @@ class OCRPostProcessor:
         "후",
         "휙",
     }
-    _SFX_KO_EXCL_RE = re.compile(r"^[\uac00-\ud7a3]{1,4}[!！]+$")
-    _SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,2})\\1+$")
+    # Removed: _SFX_KO_EXCL_RE = re.compile(r"^[\uac00-\ud7a3]{1,4}[!！]+$")
+    # This was too broad and matched names like 이수희!!
+    _SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,2})\1+$")
 
     def _normalize(self, text: str) -> str:
         if not text:
@@ -67,8 +68,7 @@ class OCRPostProcessor:
             return True
         if t in self._SFX_KO_WORDS:
             return True
-        if self._SFX_KO_EXCL_RE.match(t):
-            return True
+        # Removed _SFX_KO_EXCL_RE check - was too broad
         if self._SFX_KO_REPEAT_RE.match(t):
             return True
         return False
