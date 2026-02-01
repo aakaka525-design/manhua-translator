@@ -199,6 +199,41 @@ def test_quality_report_skips_glossary_for_sfx(tmp_path, monkeypatch):
     assert "review_glossary" in non_sfx_recs
 
 
+def test_quality_report_debug_includes_sfx_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("QUALITY_REPORT_DEBUG", "1")
+
+    ctx = TaskContext(
+        image_path="/tmp/input.png",
+        target_language="zh-CN",
+        regions=[
+            RegionData(
+                box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+                source_text="부들",
+                normalized_text="부들",
+                is_sfx=True,
+                confidence=0.9,
+            )
+        ],
+    )
+    metrics = PipelineMetrics(total_duration_ms=100)
+    result = PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=100,
+        stages_completed=["ocr"],
+        metrics=metrics.to_dict(),
+    )
+
+    from core.quality_report import write_quality_report
+
+    report_path = write_quality_report(result)
+    data = json.loads(Path(report_path).read_text())
+    debug = data["regions"][0]["debug"]
+    assert debug["normalized_text"] == "부들"
+    assert debug["is_sfx"] is True
+
+
 def test_quality_report_includes_watermark_fields(tmp_path, monkeypatch):
     monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
     ctx = TaskContext(

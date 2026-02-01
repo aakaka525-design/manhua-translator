@@ -127,6 +127,12 @@ def write_quality_report(result) -> str:
         data["crosspage_debug"] = ctx.crosspage_debug
     for region in ctx.regions or []:
         quality = _evaluate_region_quality(region)
+        debug_data = None
+        if quality_debug:
+            debug_data = dict(getattr(region, "debug", None) or {})
+            debug_data["normalized_text"] = getattr(region, "normalized_text", None)
+            debug_data["is_sfx"] = getattr(region, "is_sfx", False)
+
         data["regions"].append(
             {
                 "region_id": str(region.region_id),
@@ -146,7 +152,7 @@ def write_quality_report(result) -> str:
                 "font_size_used": getattr(region, "font_size_used", None),
                 "font_size_relaxed": getattr(region, "font_size_relaxed", None),
                 "font_size_source": getattr(region, "font_size_source", None),
-                **({"debug": getattr(region, "debug", None)} if quality_debug else {}),
+                **({"debug": debug_data} if quality_debug else {}),
                 **quality,
             }
         )
