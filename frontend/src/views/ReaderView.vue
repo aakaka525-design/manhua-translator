@@ -7,6 +7,7 @@ import { mangaApi, translateApi } from '@/api'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useReadingHistory } from '@/composables/useReadingHistory'
 import CompareSlider from '@/components/ui/CompareSlider.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ContextMenu from '@/components/ui/ContextMenu.vue'
 
 const route = useRoute()
@@ -143,6 +144,13 @@ const contextMenuItems = [
             :original="page.original_url" 
             :translated="page.translated_url || page.original_url" 
             :active="compareMode"
+          />
+
+          <StatusBadge
+            class="absolute top-2 right-12 z-20"
+            :status="page.status"
+            :reason="page.status_reason"
+            :warning-counts="page.warning_counts"
           />
           
           <!-- Quick Action Button -->
