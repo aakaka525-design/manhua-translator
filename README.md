@@ -43,6 +43,18 @@ http://<host>/
   - 编辑 `docker-compose.yml`，在 `api.build.args` 下设置 `INSTALL_LAMA: "1"`
   - 重新构建：`docker compose up -d --build`
 
+**Docker 公网部署安全提示**
+- 默认 `api` 仅绑定本机 `127.0.0.1:8000`，请通过 `web` 访问，不建议暴露 API 端口。
+- `/`、`/api/`、`/data/`、`/output/` 已加 BasicAuth（前端静态资源也会要求登录）。
+  - 如需公开前端，请移除 `docker/nginx.conf` 中 `location /` 的认证配置。
+- 需先生成 `.htpasswd`（推荐容器方式）：
+  ```bash
+  docker run --rm -v "$PWD/.htpasswd:/etc/nginx/.htpasswd" httpd:2.4-alpine htpasswd -Bbc /etc/nginx/.htpasswd <user> <password>
+  ```
+- 如果本机已有 `htpasswd`，也可：`htpasswd -Bbc .htpasswd <user> <password>`
+- BasicAuth 在 HTTP 下明文传输，生产环境必须配合 HTTPS（建议在外层反代/Caddy/Nginx/云平台 TLS 终止）。
+- 若使用 `docker-compose.auth.yml` 的认证浏览器，请只对你的 IP 开放 `3000` 端口。
+
 **常用 Docker 命令（排错用）**
 ```bash
 # 查看容器状态

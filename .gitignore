@@ -29,6 +29,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+.htpasswd
 
 # Project specific - Data & Output
 data/

@@ -85,6 +85,19 @@ def test_ocr_postprocessor_does_not_mark_korean_phrase_as_sfx():
     assert processed[0].is_sfx is False
 
 
+def test_ocr_postprocessor_caps_dialogue_not_sfx():
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text="OLAINKEI!",
+        confidence=0.9,
+    )
+
+    from core.ocr_postprocessor import OCRPostProcessor
+    processed = OCRPostProcessor().process_regions([region], lang="en")
+
+    assert processed[0].is_sfx is False
+
+
 @pytest.mark.parametrize(
     "text, expected_norm, expected_sfx",
     [

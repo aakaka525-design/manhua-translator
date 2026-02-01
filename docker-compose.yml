@@ -20,13 +20,32 @@ services:
       DEBUG_TRANSLATOR: "${DEBUG_TRANSLATOR:-0}"
       DEBUG_WATERMARK: "${DEBUG_WATERMARK:-0}"
       DEBUG_ARTIFACTS: "${DEBUG_ARTIFACTS:-0}"
+      QUALITY_REPORT_DEBUG: "${QUALITY_REPORT_DEBUG:-0}"
+      INPAINT_GAP_FILL_PX: "${INPAINT_GAP_FILL_PX:-0}"
+      BUBBLE_GROUPING: "${BUBBLE_GROUPING:-1}"
+      BUBBLE_MIN_AREA: "${BUBBLE_MIN_AREA:-1000}"
+      BUBBLE_MAX_AREA: "${BUBBLE_MAX_AREA:-500000}"
+      BUBBLE_PADDING: "${BUBBLE_PADDING:-5}"
+      BUBBLE_BINARY_THRESHOLD: "${BUBBLE_BINARY_THRESHOLD:-240}"
+      BUBBLE_MIN_RELATIVE_AREA: "${BUBBLE_MIN_RELATIVE_AREA:-1.6}"
+      BUBBLE_MIN_OVERLAP: "${BUBBLE_MIN_OVERLAP:-0.35}"
+      BUBBLE_MIN_RELATIVE_AREA_FALLBACK: "${BUBBLE_MIN_RELATIVE_AREA_FALLBACK:-0.9}"
+      BUBBLE_MIN_OVERLAP_FALLBACK: "${BUBBLE_MIN_OVERLAP_FALLBACK:-0.18}"
+      OCR_CLUSTER_GROUPING: "${OCR_CLUSTER_GROUPING:-1}"
+      OCR_CLUSTER_PAD_X_RATIO: "${OCR_CLUSTER_PAD_X_RATIO:-0.15}"
+      OCR_CLUSTER_PAD_Y_RATIO: "${OCR_CLUSTER_PAD_Y_RATIO:-0.6}"
+      OCR_CLUSTER_PAD_MIN: "${OCR_CLUSTER_PAD_MIN:-4}"
+      OCR_CLUSTER_PAD_MAX: "${OCR_CLUSTER_PAD_MAX:-120}"
+      OCR_CLUSTER_MAX_DX_RATIO: "${OCR_CLUSTER_MAX_DX_RATIO:-2.2}"
+      OCR_CLUSTER_MAX_DY_RATIO: "${OCR_CLUSTER_MAX_DY_RATIO:-2.8}"
+      OCR_CLUSTER_MIN_X_OVERLAP: "${OCR_CLUSTER_MIN_X_OVERLAP:-0.12}"
     volumes:
       - ./data:/app/data
       - ./output:/app/output
       - ./logs:/app/logs
       - ./models:/root/.paddlex
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/system/models', timeout=5).read()"]
       start_period: 60s
@@ -42,5 +61,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    volumes:
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
     ports:
       - "80:80"

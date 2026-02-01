@@ -14,9 +14,13 @@ import time
 from typing import Optional
 
 from ..models import TaskContext, Box2D
+from ..vision import PaddleOCREngine
+from ..vision.text_detector import ContourDetector
+from ..vision.ocr.post_recognition import post_recognize_groups
 from core.logging_config import setup_module_logger, get_log_level
 from .base import BaseModule
 from ..debug_artifacts import DebugArtifactWriter
+from ..sfx_dict import translate_sfx
 
 # 配置日志
 logger = setup_module_logger(
@@ -35,16 +39,38 @@ SFX_PATTERNS = [
     r'^(HA)+$',  # Laughter
     r'^(HE)+$',
     r'^(HO)+$',
-    r'^[A-Z]{2,}!+$',  # CAPS with exclamation like "BOOM!"
+    r'^[A-Z]{2,4}!+$',  # CAPS with exclamation like "BOOM!"
 ]
 
 
 def _is_sfx(text: str) -> bool:
     """Check if text is likely a sound effect."""
-    text = text.strip().upper()
+    from ..sfx_dict import KO_SFX_MAP, EN_SFX_MAP
+    
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    
+    # Remove trailing punctuation for matching
+    import re as _re
+    base = _re.sub(r'[!！?？….,。]+$', '', raw).strip()
+    if not base:
+        return False
+    
+    # Check Korean SFX dictionary
+    if base in KO_SFX_MAP:
+        return True
+    
+    # Check English SFX dictionary
+    if base.upper() in EN_SFX_MAP:
+        return True
+    
+    # Check regex patterns (short caps, etc.)
+    upper = raw.upper()
     for pattern in SFX_PATTERNS:
-        if re.match(pattern, text, re.IGNORECASE):
+        if _re.match(pattern, upper, _re.IGNORECASE):
             return True
+    
     return False
 
 
@@ -64,6 +90,10 @@ def _should_skip_translation(text: str) -> tuple[bool, str]:
     import re
     if re.match(r'^[\d\W]+$', text):
         return True, "纯数字/符号"
+
+    # 罗马数字（多为边界/噪声，不翻译）
+    if re.match(r'^[\u2160-\u2188]+$', text):
+        return True, "罗马数字"
     
     return False, ""
 
@@ -89,6 +119,222 @@ def _snippet(text: Optional[str], limit: int = 20) -> str:
     if not text:
         return ""
     return text[:limit] + ("…" if len(text) > limit else "")
+
+
+async def _detect_bubble_boxes(image_path: str) -> list[Box2D] | None:
+    if os.getenv("BUBBLE_GROUPING", "1") != "1":
+        return None
+    try:
+        detector = ContourDetector(
+            min_area=int(os.getenv("BUBBLE_MIN_AREA", "1000")),
+            max_area=int(os.getenv("BUBBLE_MAX_AREA", "500000")),
+            padding=int(os.getenv("BUBBLE_PADDING", "5")),
+            binary_threshold=int(os.getenv("BUBBLE_BINARY_THRESHOLD", "240")),
+        )
+        regions = await detector.detect(image_path)
+        boxes = [r.box_2d for r in regions if r.box_2d]
+        return boxes or None
+    except Exception as exc:
+        logger.debug("bubble detect skipped: %s", exc)
+        return None
+
+
+def _assign_bubble_ids(
+    regions: list,
+    bubble_boxes: list[Box2D] | None,
+    attach_debug: bool = False,
+) -> dict | None:
+    if not bubble_boxes:
+        return None
+
+    def _assign(min_relative: float, min_overlap: float) -> dict:
+        mapping: dict = {}
+        for region in regions:
+            if not region.box_2d:
+                continue
+            region_area = max(1, region.box_2d.width * region.box_2d.height)
+            best_id = None
+            best_area = None
+            best_overlap = 0.0
+            for idx, box in enumerate(bubble_boxes):
+                box_area = max(1, (box.x2 - box.x1) * (box.y2 - box.y1))
+                # Skip small contours that look like text boxes rather than bubbles
+                if box_area < region_area * min_relative:
+                    continue
+                ix1 = max(box.x1, region.box_2d.x1)
+                iy1 = max(box.y1, region.box_2d.y1)
+                ix2 = min(box.x2, region.box_2d.x2)
+                iy2 = min(box.y2, region.box_2d.y2)
+                inter_w = max(0, ix2 - ix1)
+                inter_h = max(0, iy2 - iy1)
+                inter_area = inter_w * inter_h
+                if inter_area <= 0:
+                    continue
+                overlap_ratio = inter_area / region_area
+                if overlap_ratio < min_overlap:
+                    continue
+                if overlap_ratio > best_overlap or (
+                    overlap_ratio == best_overlap and (best_area is None or box_area < best_area)
+                ):
+                    best_overlap = overlap_ratio
+                    best_area = box_area
+                    best_id = idx
+            if best_id is not None:
+                mapping[region.region_id] = best_id
+                if attach_debug:
+                    if region.debug is None:
+                        region.debug = {}
+                    region.debug["bubble_id"] = best_id
+                    region.debug["bubble_overlap"] = round(best_overlap, 3)
+                    region.debug["bubble_min_overlap"] = min_overlap
+        return mapping
+
+    # First pass with configured threshold
+    min_relative = float(os.getenv("BUBBLE_MIN_RELATIVE_AREA", "1.6"))
+    min_overlap = float(os.getenv("BUBBLE_MIN_OVERLAP", "0.35"))
+    mapping = _assign(min_relative, min_overlap)
+    if mapping:
+        return mapping
+
+    # Fallback: relax threshold when nothing matched
+    relaxed = float(os.getenv("BUBBLE_MIN_RELATIVE_AREA_FALLBACK", "0.9"))
+    if relaxed >= min_relative:
+        relaxed = max(0.5, min_relative * 0.6)
+    relaxed_overlap = float(os.getenv("BUBBLE_MIN_OVERLAP_FALLBACK", "0.18"))
+    if relaxed_overlap >= min_overlap:
+        relaxed_overlap = max(0.05, min_overlap * 0.5)
+    mapping = _assign(relaxed, relaxed_overlap)
+    if mapping and attach_debug:
+        for region in regions:
+            if region.region_id in mapping:
+                if region.debug is None:
+                    region.debug = {}
+                region.debug["bubble_fallback"] = True
+                region.debug["bubble_min_relative"] = relaxed
+                region.debug["bubble_min_overlap"] = relaxed_overlap
+    return mapping or None
+
+
+def _script_bucket(text: str) -> str | None:
+    """粗略判断文本脚本类型，用于避免跨语言聚类。"""
+    if not text:
+        return None
+    counts = {"hangul": 0, "latin": 0, "cjk": 0}
+    for ch in text:
+        code = ord(ch)
+        if 0xAC00 <= code <= 0xD7A3:
+            counts["hangul"] += 1
+        elif 0x0041 <= code <= 0x005A or 0x0061 <= code <= 0x007A:
+            counts["latin"] += 1
+        elif 0x4E00 <= code <= 0x9FFF:
+            counts["cjk"] += 1
+    nonzero = [k for k, v in counts.items() if v > 0]
+    if not nonzero:
+        return None
+    if len(nonzero) > 1:
+        return "mixed"
+    return nonzero[0]
+
+
+def _assign_ocr_cluster_ids(
+    regions: list,
+    attach_debug: bool = False,
+) -> dict | None:
+    if not regions:
+        return None
+
+    pad_x_ratio = float(os.getenv("OCR_CLUSTER_PAD_X_RATIO", "0.15"))
+    pad_y_ratio = float(os.getenv("OCR_CLUSTER_PAD_Y_RATIO", "0.6"))
+    pad_min = int(os.getenv("OCR_CLUSTER_PAD_MIN", "4"))
+    pad_max = int(os.getenv("OCR_CLUSTER_PAD_MAX", "120"))
+    max_dx_ratio = float(os.getenv("OCR_CLUSTER_MAX_DX_RATIO", "2.2"))
+    max_dy_ratio = float(os.getenv("OCR_CLUSTER_MAX_DY_RATIO", "2.8"))
+    min_x_overlap = float(os.getenv("OCR_CLUSTER_MIN_X_OVERLAP", "0.12"))
+
+    items = []
+    for region in regions:
+        if not region.box_2d:
+            continue
+        width = max(1, region.box_2d.width)
+        height = max(1, region.box_2d.height)
+        pad_x = max(pad_min, min(pad_max, int(round(width * pad_x_ratio))))
+        pad_y = max(pad_min, min(pad_max, int(round(height * pad_y_ratio))))
+        items.append((region, pad_x, pad_y, width, height))
+
+    if len(items) <= 1:
+        return None
+
+    expanded = []
+    for region, pad_x, pad_y, width, height in items:
+        expanded.append(
+            (
+                region,
+                region.box_2d.x1 - pad_x,
+                region.box_2d.y1 - pad_y,
+                region.box_2d.x2 + pad_x,
+                region.box_2d.y2 + pad_y,
+                pad_x,
+                pad_y,
+                width,
+                height,
+            )
+        )
+
+    parent = list(range(len(expanded)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
+
+    for i in range(len(expanded)):
+        r1, ax1, ay1, ax2, ay2, _, _, w1, h1 = expanded[i]
+        bucket1 = _script_bucket(r1.source_text or "")
+        for j in range(i + 1, len(expanded)):
+            r2, bx1, by1, bx2, by2, _, _, w2, h2 = expanded[j]
+            if ax1 <= bx2 and ax2 >= bx1 and ay1 <= by2 and ay2 >= by1:
+                bucket2 = _script_bucket(r2.source_text or "")
+                if (
+                    bucket1
+                    and bucket2
+                    and bucket1 != bucket2
+                    and "mixed" not in (bucket1, bucket2)
+                ):
+                    continue
+                # Apply distance / overlap constraints to avoid跨泡泡粘连
+                gap_x = max(r2.box_2d.x1 - r1.box_2d.x2, r1.box_2d.x1 - r2.box_2d.x2, 0)
+                gap_y = max(r2.box_2d.y1 - r1.box_2d.y2, r1.box_2d.y1 - r2.box_2d.y2, 0)
+                min_w = max(1, min(w1, w2))
+                x_overlap = max(0, min(r1.box_2d.x2, r2.box_2d.x2) - max(r1.box_2d.x1, r2.box_2d.x1))
+                x_overlap_ratio = x_overlap / min_w
+                avg_h = max(1.0, (h1 + h2) / 2)
+                max_dx = avg_h * max_dx_ratio
+                max_dy = avg_h * max_dy_ratio
+                if gap_y <= max_dy and (x_overlap_ratio >= min_x_overlap or gap_x <= max_dx):
+                    union(i, j)
+
+    cluster_ids = {}
+    mapping: dict = {}
+    for idx, (region, _, _, _, _, pad_x, pad_y, _, _) in enumerate(expanded):
+        root = find(idx)
+        if root not in cluster_ids:
+            cluster_ids[root] = len(cluster_ids)
+        cluster_id = cluster_ids[root]
+        mapping[region.region_id] = cluster_id
+        if attach_debug:
+            if region.debug is None:
+                region.debug = {}
+            region.debug["ocr_cluster_id"] = cluster_id
+            region.debug["ocr_cluster_pad_x"] = pad_x
+            region.debug["ocr_cluster_pad_y"] = pad_y
+
+    return mapping or None
 
 
 class TranslatorModule(BaseModule):
@@ -127,6 +373,7 @@ class TranslatorModule(BaseModule):
         self._translator_class = None
         self._ai_translator = None
         self._current_model = None  # 缓存当前模型
+        self._post_rec_engine = None
         self.last_metrics: Optional[dict] = None
         
         if not use_mock and not use_ai:
@@ -191,14 +438,61 @@ class TranslatorModule(BaseModule):
 
         logger.info(f"[{context.task_id}] 开始翻译 {len(context.regions)} 个区域")
 
+        quality_debug = os.getenv("QUALITY_REPORT_DEBUG") == "1"
+        bubble_boxes = None
+        bubble_map = None
+        if context.image_path:
+            bubble_boxes = await _detect_bubble_boxes(context.image_path)
+            if bubble_boxes:
+                bubble_map = _assign_bubble_ids(
+                    context.regions,
+                    bubble_boxes,
+                    attach_debug=quality_debug,
+                )
+                if os.getenv("DEBUG_TRANSLATOR") == "1":
+                    logger.info(
+                        "[%s] bubble boxes=%d assigned=%d",
+                        context.task_id,
+                        len(bubble_boxes),
+                        len(bubble_map or {}),
+                    )
+            if not bubble_map and os.getenv("OCR_CLUSTER_GROUPING", "1") == "1":
+                bubble_map = _assign_ocr_cluster_ids(
+                    context.regions,
+                    attach_debug=quality_debug,
+                )
+                if os.getenv("DEBUG_TRANSLATOR") == "1":
+                    logger.info(
+                        "[%s] ocr clusters assigned=%d",
+                        context.task_id,
+                        len(bubble_map or {}),
+                    )
+
         # 使用分组翻译策略：分组获取上下文，批量翻译，按比例分割结果回原始区域
         from ..translator import group_adjacent_regions, split_translation_by_ratio
         from ..text_merge.line_merger import merge_line_regions
         
         # 1. 将相邻区域分组（保持原始区域不变）
-        raw_groups = group_adjacent_regions(context.regions)
+        raw_groups = group_adjacent_regions(context.regions, bubble_map=bubble_map)
         context.regions = merge_line_regions(raw_groups)
-        groups = group_adjacent_regions(context.regions)
+        if bubble_boxes:
+            bubble_map = _assign_bubble_ids(
+                context.regions,
+                bubble_boxes,
+                attach_debug=quality_debug,
+            )
+        if not bubble_map and os.getenv("OCR_CLUSTER_GROUPING", "1") == "1":
+            bubble_map = _assign_ocr_cluster_ids(
+                context.regions,
+                attach_debug=quality_debug,
+            )
+        groups = group_adjacent_regions(context.regions, bubble_map=bubble_map)
+        if quality_debug:
+            for idx, group in enumerate(groups):
+                for region in group:
+                    if region.debug is None:
+                        region.debug = {}
+                    region.debug["group_id"] = idx
         logger.debug(f"[{context.task_id}] 区域分组: {len(context.regions)} 个区域 -> {len(groups)} 个分组")
         debug = os.getenv("DEBUG_TRANSLATOR") == "1"
         if debug:
@@ -212,6 +506,28 @@ class TranslatorModule(BaseModule):
         # Metrics tracking
         total_translate_ms = 0.0
         sfx_count = 0
+        post_rec_texts = {}
+
+        if os.getenv("POST_REC") == "1" and context.image_path:
+            try:
+                post_lang = context.source_language or self.source_lang or "en"
+                if self._post_rec_engine is None or getattr(self._post_rec_engine, "lang", None) != post_lang:
+                    self._post_rec_engine = PaddleOCREngine(lang=post_lang)
+                    self._post_rec_engine._init_ocr()
+                post_rec_texts = await post_recognize_groups(
+                    context.image_path,
+                    groups,
+                    self._post_rec_engine,
+                    image_height=context.image_height,
+                )
+                if debug and post_rec_texts:
+                    logger.info(
+                        "[%s] post-rec overrides=%s",
+                        context.task_id,
+                        {k: v for k, v in post_rec_texts.items()},
+                    )
+            except Exception as e:
+                logger.warning("[%s] post-rec failed: %s", context.task_id, e)
 
         # 2. 准备批量翻译：收集所有分组的合并文本
         texts_to_translate = []
@@ -219,6 +535,8 @@ class TranslatorModule(BaseModule):
         group_indexes = []
         crosspage_meta = []
         skip_region_ids_list = []
+        group_text_map = {}
+        group_context_ok = {}
 
         for idx, group in enumerate(groups):
             group = [
@@ -277,7 +595,8 @@ class TranslatorModule(BaseModule):
                         text = f"{text} {extra}".strip()
                 texts.append(text)
 
-            combined_text = " ".join(texts)
+            combined_text = post_rec_texts.get(idx, " ".join(texts))
+            group_text_map[idx] = combined_text
             if debug:
                 logger.info(
                     "[%s] group[%d] texts=%s combined=%s skip_ids=%s watermark=%s",
@@ -298,11 +617,13 @@ class TranslatorModule(BaseModule):
                 for region in group:
                     if not region.target_text:
                         region.target_text = ""
+                group_context_ok[idx] = False
                 continue
 
             if any(getattr(r, "is_watermark", False) for r in group):
                 for region in group:
                     region.target_text = ""
+                group_context_ok[idx] = False
                 continue
             
             # 检测是否应跳过翻译（纯数字/符号等）
@@ -310,14 +631,21 @@ class TranslatorModule(BaseModule):
             if should_skip:
                 for region in group:
                     region.target_text = ""  # 留空不渲染
+                group_context_ok[idx] = False
                 continue
             
             # 检测 SFX
-            if _is_sfx(combined_text):
+            has_sfx = any(getattr(r, "is_sfx", False) for r in group)
+            has_dialogue = any(not getattr(r, "is_sfx", False) for r in group)
+            group_is_sfx = (has_sfx and not has_dialogue) or _is_sfx(combined_text)
+            if group_is_sfx:
                 for region in group:
-                    region.target_text = f"[SFX: {region.source_text}]"
+                    sfx_src = region.normalized_text or region.source_text or ""
+                    region.target_text = translate_sfx(sfx_src)
                 sfx_count += len(group)
+                group_context_ok[idx] = False
                 continue
+            group_context_ok[idx] = True
             
             texts_to_translate.append(combined_text)
             groups_to_translate.append(group)
@@ -333,7 +661,34 @@ class TranslatorModule(BaseModule):
             else:
                 crosspage_meta.append(None)
 
-        # 3. 批量翻译（一次 API 调用）
+        # 3. 构建同页相邻短上下文（前后各 1 条）
+        contexts_to_translate = []
+        for idx in group_indexes:
+            parts = []
+            prev_idx = idx - 1
+            next_idx = idx + 1
+            if prev_idx >= 0 and group_context_ok.get(prev_idx):
+                parts.append(group_text_map.get(prev_idx, ""))
+            if next_idx < len(groups) and group_context_ok.get(next_idx):
+                parts.append(group_text_map.get(next_idx, ""))
+            context_text = " | ".join([p for p in parts if p])
+            contexts_to_translate.append(context_text)
+        if debug:
+            for req_idx, (group_idx, text, group, ctx_text) in enumerate(
+                zip(group_indexes, texts_to_translate, groups_to_translate, contexts_to_translate)
+            ):
+                region_ids = [str(r.region_id)[:8] for r in group]
+                logger.info(
+                    "[%s] translate_in[%d] group=%d regions=%s text=%s context=%s",
+                    context.task_id,
+                    req_idx,
+                    group_idx,
+                    region_ids,
+                    _snippet(text),
+                    _snippet(ctx_text),
+                )
+
+        # 4. 批量翻译（一次 API 调用）
         ai_translator = None
         if texts_to_translate:
             try:
@@ -360,18 +715,24 @@ class TranslatorModule(BaseModule):
                         ]
                         if crosspage_indices:
                             crosspage_texts = [texts_to_translate[i] for i in crosspage_indices]
+                            crosspage_contexts = [contexts_to_translate[i] for i in crosspage_indices]
                             start = time.perf_counter()
                             crosspage_translations = await ai_translator.translate_batch(
                                 crosspage_texts,
                                 output_format="json",
+                                contexts=crosspage_contexts,
                             )
                             total_translate_ms += (time.perf_counter() - start) * 1000
                             for idx, translation in zip(crosspage_indices, crosspage_translations):
                                 translations[idx] = translation
                         if normal_indices:
                             normal_texts = [texts_to_translate[i] for i in normal_indices]
+                            normal_contexts = [contexts_to_translate[i] for i in normal_indices]
                             start = time.perf_counter()
-                            normal_translations = await ai_translator.translate_batch(normal_texts)
+                            normal_translations = await ai_translator.translate_batch(
+                                normal_texts,
+                                contexts=normal_contexts,
+                            )
                             total_translate_ms += (time.perf_counter() - start) * 1000
                             for idx, translation in zip(normal_indices, normal_translations):
                                 translations[idx] = translation
@@ -396,6 +757,14 @@ class TranslatorModule(BaseModule):
                         context.task_id,
                         list(zip(group_indexes, translations)),
                     )
+                    for req_idx, (group_idx, translation) in enumerate(zip(group_indexes, translations)):
+                        logger.info(
+                            "[%s] translate_out[%d] group=%d text=%s",
+                            context.task_id,
+                            req_idx,
+                            group_idx,
+                            _snippet(translation),
+                        )
 
                 if self.use_ai and (self.target_lang or "").startswith("zh"):
                     ai_translator = self._get_ai_translator()
@@ -403,8 +772,23 @@ class TranslatorModule(BaseModule):
                         fixed_translations = []
                         for src_text, translation in zip(texts_to_translate, translations):
                             if not _has_cjk(translation):
+                                fallback_input = src_text or ""
+                                fallback_source = "src"
+                                if translation and not translation.strip().startswith("[翻译失败]"):
+                                    if translation.strip() != (src_text or "").strip():
+                                        fallback_input = translation
+                                        fallback_source = "corrected"
+                                if debug:
+                                    logger.info(
+                                        "[%s] retranslate fallback source=%s src=%s raw=%s input=%s",
+                                        context.task_id,
+                                        fallback_source,
+                                        _snippet(src_text),
+                                        _snippet(translation),
+                                        _snippet(fallback_input),
+                                    )
                                 try:
-                                    translation = await ai_translator.translate(src_text)
+                                    translation = await ai_translator.translate(fallback_input)
                                 except Exception:
                                     pass
                                 if not _has_cjk(translation):
@@ -423,7 +807,7 @@ class TranslatorModule(BaseModule):
                                         )
                                         try:
                                             translation = await loop.run_in_executor(
-                                                None, translator.translate, src_text
+                                                None, translator.translate, fallback_input
                                             )
                                         except Exception:
                                             pass

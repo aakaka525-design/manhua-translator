@@ -42,6 +42,10 @@ def _clean_ai_annotations(text: str) -> str:
     if not text:
         return text
     
+    # 移除可能回显的结构化前缀（TEXT/CTX）
+    text = re.sub(r'^\s*(TEXT|CTX)\s*[:：]\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(TEXT|CTX)\s*[:：]\s*', '', text, flags=re.IGNORECASE)
+
     # 移除括号内的注释 (Note: ...), (注: ...), etc.
     # 支持闭合和未闭合的括号
     text = re.sub(r'\s*\(Note:.*?(\)|$)', '', text, flags=re.IGNORECASE | re.DOTALL)
@@ -205,7 +209,12 @@ Text: {text}
             )
             return response.choices[0].message.content.strip()
     
-    async def translate_batch(self, texts: list[str], output_format: str = "numbered") -> list[str]:
+    async def translate_batch(
+        self,
+        texts: list[str],
+        output_format: str = "numbered",
+        contexts: Optional[list[str]] = None,
+    ) -> list[str]:
         """批量翻译多个文本。"""
         if not texts:
             return []
@@ -258,30 +267,68 @@ Text: {text}
                         start = None
             return objects
 
-        def _parse_numbered_lines(text: str):
+        def _parse_numbered_lines(text: str, expected_count: int | None = None):
             lines = text.split("\n")
             translations = []
+            numbered: dict[int, str] = {}
+            unnumbered: list[str] = []
             has_numbered = False
             for line in lines:
                 line = line.strip()
                 if line:
                     import re
-                    match = re.match(r"^\d+\s*[\.\)：:\-、]\s*(.+)$", line)
+                    match = re.match(r"^(\d+)\s*[\.\)\）:\-、：]\s*(.+)$", line)
                     if match:
-                        translations.append(match.group(1))
+                        idx = int(match.group(1))
+                        if idx not in numbered:
+                            numbered[idx] = match.group(2).strip()
                         has_numbered = True
                     else:
-                        translations.append(line)
-            return translations, has_numbered
+                        unnumbered.append(line)
+            if not has_numbered:
+                return unnumbered, False
+
+            max_idx = max(numbered) if numbered else 0
+            if expected_count and max_idx < expected_count:
+                max_idx = expected_count
+            fallback_iter = iter(unnumbered)
+            for i in range(1, max_idx + 1):
+                if i in numbered:
+                    translations.append(numbered[i])
+                else:
+                    translations.append(next(fallback_iter, ""))
+            if expected_count:
+                translations = translations[:expected_count]
+                while len(translations) < expected_count:
+                    translations.append(next(fallback_iter, ""))
+            else:
+                translations.extend(list(fallback_iter))
+            return translations, True
         
         cleaned_texts = [clean_text(t) for t in texts]
+        if contexts is None:
+            cleaned_contexts = ["" for _ in texts]
+        else:
+            cleaned_contexts = [clean_text(t) if t else "" for t in contexts]
+            if len(cleaned_contexts) < len(texts):
+                cleaned_contexts += [""] * (len(texts) - len(cleaned_contexts))
+            elif len(cleaned_contexts) > len(texts):
+                cleaned_contexts = cleaned_contexts[: len(texts)]
         valid_pairs = [(i, t) for i, t in enumerate(cleaned_texts) if t.strip()]
         
         if not valid_pairs:
             return ["" for _ in texts]
         
         target_name = self._get_lang_name(self.target_lang)
-        numbered_texts = "\n".join(f"{i+1}. {t}" for i, (_, t) in enumerate(valid_pairs))
+        def _format_entry(index: int, text: str, ctx: str) -> str:
+            if ctx:
+                return f"{index}. TEXT: {text}\n   CTX: {ctx}"
+            return f"{index}. {text}"
+
+        numbered_texts = "\n".join(
+            _format_entry(i + 1, t, cleaned_contexts[orig_idx])
+            for i, (orig_idx, t) in enumerate(valid_pairs)
+        )
         
         output_hint = "请用数字编号格式输出翻译结果。禁止添加任何注释、说明或括号备注。"
         if output_format == "json":
@@ -295,8 +342,10 @@ Text: {text}
 你是一位资深的**漫画/汉化组翻译专家**，精通多国语言与{target_name}的文化转换。
 
 # OCR 纠错
-输入可能含OCR识别错误，请根据上下文自动纠正拼写/字符错误。
+输入可能含OCR识别错误。你会看到每条文本的可选上下文(CTX)，来自同页相邻 1-2 个气泡。
+请结合上下文纠正拼写/字符错误；允许多字符纠错，但只有在把握足够时才修改，不确定则保留原文。
 例如：이닌 억은 → 이번 역은
+若为英文，纠正常见拼写错误（如 OLAINKEI → BLANKET），并保持原语气与格式。
 
 # 专有名词（必须音译）
 地名、人名、站名等专有名词必须音译，不可直译。
@@ -330,9 +379,11 @@ Text: {text}
                     json_text = _strip_code_fence(result)
                     translations = _extract_json_objects(json_text)
                     if not translations:
-                        translations, has_numbered = _parse_numbered_lines(result)
+                        translations, has_numbered = _parse_numbered_lines(
+                            result, expected_count=len(valid_pairs)
+                        )
                 else:
-                    translations, has_numbered = _parse_numbered_lines(result)
+                    translations, has_numbered = _parse_numbered_lines(result, expected_count=len(valid_pairs))
 
                 if not has_numbered:
                     # Fallback: split single-line output by common separators

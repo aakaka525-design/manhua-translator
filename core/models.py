@@ -79,6 +79,7 @@ class RegionData(BaseModel):
     crosspage_role: Optional[str] = Field(default=None, description="Crosspage role: current_bottom/next_top")
     skip_translation: bool = Field(default=False, description="Skip translation for this region")
     crosspage_texts: Optional[list[str]] = Field(default=None, description="Appended texts from neighbor page")
+    debug: Optional[dict] = Field(default=None, description="Debug metadata")
     font_style_params: FontStyleParams = Field(
         default_factory=FontStyleParams,
         description="Font styling for rendering"

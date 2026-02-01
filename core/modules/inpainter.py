@@ -8,9 +8,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..models import Box2D, RegionData, TaskContext
+from ..models import RegionData, TaskContext
 from ..modules.base import BaseModule
-from ..translator import group_adjacent_regions
 from ..vision import Inpainter, create_inpainter
 from ..debug_artifacts import DebugArtifactWriter
 
@@ -113,37 +112,7 @@ class InpainterModule(BaseModule):
             context.inpainted_path = context.image_path
             return context
 
-        # 合并同一气泡内的多段文本框，避免擦除不连续
-        merged_regions: list[RegionData] = []
-        groups = group_adjacent_regions(regions_to_inpaint)
-        for group in groups:
-            if not group:
-                continue
-            if len(group) == 1:
-                merged_regions.append(group[0])
-                continue
-
-            boxes = [r.box_2d for r in group if r.box_2d]
-            if not boxes:
-                continue
-            merged_box = Box2D(
-                x1=min(b.x1 for b in boxes),
-                y1=min(b.y1 for b in boxes),
-                x2=max(b.x2 for b in boxes),
-                y2=max(b.y2 for b in boxes),
-            )
-            merged_mode = "erase" if any(r.inpaint_mode == "erase" for r in group) else "replace"
-            merged_regions.append(
-                RegionData(
-                    box_2d=merged_box,
-                    source_text=" ".join(r.source_text for r in group if r.source_text),
-                    target_text=" ".join(r.target_text for r in group if r.target_text),
-                    inpaint_mode=merged_mode,
-                )
-            )
-
-        if merged_regions:
-            regions_to_inpaint = merged_regions
+        # 擦除仅基于 OCR 原始框，避免跨区域扩大导致背景破坏
 
         # 生成中间文件路径（擦除后的图片）
         inpainted_path = self.output_dir / f"inpainted_{context.task_id}.png"

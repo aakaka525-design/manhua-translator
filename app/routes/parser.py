@@ -241,7 +241,8 @@ async def _list_recognized_catalog(
         warnings.append(f"Catalog fetch failed: {exc}")
         return [], warnings
     items = []
-    for item in result.items:
+    catalog_items = result[0] if isinstance(result, tuple) else result
+    for item in catalog_items:
         items.append(
             {
                 "id": item.id,

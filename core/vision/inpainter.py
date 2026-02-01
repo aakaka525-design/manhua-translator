@@ -7,6 +7,7 @@ Provides two implementations:
 """
 
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,33 @@ import cv2
 import numpy as np
 
 from ..models import RegionData
+
+
+def mask_params_for_region(
+    region: RegionData,
+    base_expand: int = 10,
+    base_dilation: int = 4,
+) -> tuple[int, int]:
+    """Return (expand, dilation) adjusted per region type/size."""
+    expand = max(0, int(base_expand))
+    dilation = max(0, int(base_dilation))
+
+    if not region or not region.box_2d:
+        return expand, dilation
+
+    height = region.box_2d.height
+    width = region.box_2d.width
+    area = max(0, height * width)
+
+    small_box = height <= 18 or width <= 18 or area <= 1200
+    if getattr(region, "target_text", None) == "[INPAINT_ONLY]":
+        return expand, dilation
+
+    if region.is_sfx or small_box:
+        expand = max(4, int(base_expand * 0.6))
+        dilation = max(2, int(base_dilation * 0.5))
+
+    return expand, dilation
 
 
 class Inpainter(ABC):
@@ -82,7 +110,11 @@ class Inpainter(ABC):
             # Expand box to cover full text area with generous margin
             # Increased to 25 to handle edge cases where original text
             # extends beyond detected OCR box boundaries (especially for Korean)
-            expand = 10  # Smaller margin to reduce mask merging across bubbles
+            expand, region_dilation = mask_params_for_region(
+                region,
+                base_expand=10,
+                base_dilation=dilation,
+            )
             y1 = max(0, box.y1 - expand)
             y2 = min(height, box.y2 + expand)
             x1 = max(0, box.x1 - expand)
@@ -108,9 +140,9 @@ class Inpainter(ABC):
                     _, text_mask = cv2.threshold(roi_gray, 110, 255, cv2.THRESH_BINARY)
                 
                 # Dilate text mask to cover text edges
-                if dilation > 0:
+                if region_dilation > 0:
                     # 核大小 = dilation * 2 + 1，当 dilation=8 时为 17px
-                    kernel_size = dilation * 2 + 1
+                    kernel_size = region_dilation * 2 + 1
                     kernel = cv2.getStructuringElement(
                         cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)
                     )
@@ -128,7 +160,16 @@ class Inpainter(ABC):
 
         # Post-process: Fill vertical gaps between nearby text regions
         # This handles OCR miss of some text lines
-        combined_mask = self._fill_vertical_gaps(combined_mask, regions, height, width)
+        gap_fill_px = self._read_env_int("INPAINT_GAP_FILL_PX", 0)
+        combined_mask = self._fill_vertical_gaps(
+            combined_mask,
+            regions,
+            height,
+            width,
+            max_gap=gap_fill_px,
+            base_expand=10,
+            base_dilation=dilation,
+        )
 
         # Save combined mask
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
@@ -145,7 +186,9 @@ class Inpainter(ABC):
         regions: list[RegionData],
         height: int,
         width: int,
-        max_gap: int = 0
+        max_gap: int = 0,
+        base_expand: int = 10,
+        base_dilation: int = 4,
     ) -> np.ndarray:
         """
         Fill vertical gaps between text regions that likely belong to same paragraph.
@@ -155,34 +198,61 @@ class Inpainter(ABC):
         if len(regions) < 2:
             return mask
         
-        # Sort regions by Y position
-        sorted_regions = sorted(
-            [r for r in regions if r.box_2d], 
-            key=lambda r: r.box_2d.y1
-        )
+        expanded_boxes = []
+        for region in regions:
+            if not region.box_2d:
+                continue
+            if region.target_text and region.target_text.startswith("[SFX:"):
+                continue
+            expand, _ = mask_params_for_region(
+                region,
+                base_expand=base_expand,
+                base_dilation=base_dilation,
+            )
+            x1 = max(0, region.box_2d.x1 - expand)
+            y1 = max(0, region.box_2d.y1 - expand)
+            x2 = min(width, region.box_2d.x2 + expand)
+            y2 = min(height, region.box_2d.y2 + expand)
+            expanded_boxes.append((x1, y1, x2, y2))
+
+        if len(expanded_boxes) < 2:
+            return mask
+
+        # Sort regions by Y position (expanded boxes)
+        sorted_regions = sorted(expanded_boxes, key=lambda b: b[1])
         
         for i in range(len(sorted_regions) - 1):
-            curr = sorted_regions[i].box_2d
-            next_r = sorted_regions[i + 1].box_2d
+            curr = sorted_regions[i]
+            next_r = sorted_regions[i + 1]
             
             # Calculate gap
-            y_gap = next_r.y1 - curr.y2
+            y_gap = next_r[1] - curr[3]
             
             # Check X overlap
-            x_overlap = min(curr.x2, next_r.x2) - max(curr.x1, next_r.x1)
-            min_width = min(curr.width, next_r.width)
+            x_overlap = min(curr[2], next_r[2]) - max(curr[0], next_r[0])
+            min_width = min(curr[2] - curr[0], next_r[2] - next_r[0])
             
             # If there's significant X overlap and reasonable Y gap, fill it
             if 0 < y_gap < max_gap and x_overlap > min_width * 0.5:
                 # Fill the gap region
-                fill_x1 = max(0, min(curr.x1, next_r.x1) - 10)
-                fill_x2 = min(width, max(curr.x2, next_r.x2) + 10)
-                fill_y1 = curr.y2
-                fill_y2 = next_r.y1
+                fill_x1 = max(0, min(curr[0], next_r[0]) - 10)
+                fill_x2 = min(width, max(curr[2], next_r[2]) + 10)
+                fill_y1 = curr[3]
+                fill_y2 = next_r[1]
                 
                 mask[fill_y1:fill_y2, fill_x1:fill_x2] = 255
         
         return mask
+
+    @staticmethod
+    def _read_env_int(name: str, default: int) -> int:
+        value = os.getenv(name)
+        if value is None or value == "":
+            return default
+        try:
+            return max(0, int(float(value)))
+        except (TypeError, ValueError):
+            return default
 
 
 class LamaInpainter(Inpainter):

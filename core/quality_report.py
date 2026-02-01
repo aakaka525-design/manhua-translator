@@ -113,6 +113,7 @@ def write_quality_report(result) -> str:
     output_dir = _resolve_output_dir()
     slug = _source_slug(ctx.image_path)
     report_path = output_dir / f"{slug}__{ctx.task_id}.json"
+    quality_debug = os.getenv("QUALITY_REPORT_DEBUG") == "1"
 
     data = {
         "task_id": str(ctx.task_id),
@@ -145,6 +146,7 @@ def write_quality_report(result) -> str:
                 "font_size_used": getattr(region, "font_size_used", None),
                 "font_size_relaxed": getattr(region, "font_size_relaxed", None),
                 "font_size_source": getattr(region, "font_size_source", None),
+                **({"debug": getattr(region, "debug", None)} if quality_debug else {}),
                 **quality,
             }
         )
