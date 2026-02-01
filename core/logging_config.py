@@ -21,10 +21,18 @@ LOG_DIR = (
 
 
 def _ensure_log_dir() -> None:
+    global LOG_DIR
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise RuntimeError(f"Failed to create log directory: {LOG_DIR}") from exc
+        return
+    except OSError:
+        # Fallback to a writable temp dir if repo logs are not writable
+        fallback = Path(os.getenv("MANHUA_LOG_DIR_FALLBACK", "/tmp/manhua-logs"))
+        if fallback != LOG_DIR:
+            LOG_DIR = fallback
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            return
+        raise
 
 
 def setup_logging(
@@ -64,12 +72,16 @@ def setup_logging(
 
     # 文件输出
     if log_file:
-        date_str = datetime.now().strftime("%Y%m%d")
-        log_path = LOG_DIR / f"{date_str}_{log_file}"
-        file_handler = logging.FileHandler(log_path, encoding="utf-8")
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
+        try:
+            date_str = datetime.now().strftime("%Y%m%d")
+            log_path = LOG_DIR / f"{date_str}_{log_file}"
+            file_handler = logging.FileHandler(log_path, encoding="utf-8")
+            file_handler.setLevel(level)
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+        except OSError:
+            # Ignore file handler if we cannot write logs
+            pass
 
     # 抑制第三方库的冗余日志
     logging.getLogger("ppocr").setLevel(logging.WARNING)
@@ -111,7 +123,13 @@ def setup_module_logger(
         log_path = log_path.parent / date_str / log_path.name
     else:
         log_path = LOG_DIR / f"{date_str}_{log_file}"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Fallback to temp dir if cannot create module log dir
+        fallback = Path(os.getenv("MANHUA_LOG_DIR_FALLBACK", "/tmp/manhua-logs"))
+        fallback.mkdir(parents=True, exist_ok=True)
+        log_path = fallback / log_path.name
     for handler in logger.handlers:
         if (
             isinstance(handler, logging.FileHandler)
@@ -119,10 +137,14 @@ def setup_module_logger(
         ):
             return logger
 
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    try:
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except OSError:
+        # If we still cannot write, keep logger without file handler
+        pass
     return logger
 
 

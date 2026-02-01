@@ -710,6 +710,18 @@ class TranslatorModule(BaseModule):
                 elif self.use_ai:
                     ai_translator = self._get_ai_translator()
                     if ai_translator:
+                        async def _batch_translate(texts, output_format=None, contexts=None):
+                            payload = {}
+                            if output_format is not None:
+                                payload["output_format"] = output_format
+                            if contexts is not None:
+                                payload["contexts"] = contexts
+                            try:
+                                return await ai_translator.translate_batch(texts, **payload)
+                            except TypeError:
+                                payload.pop("contexts", None)
+                                return await ai_translator.translate_batch(texts, **payload)
+
                         translations = [None] * len(texts_to_translate)
                         crosspage_indices = [
                             i for i, meta in enumerate(crosspage_meta) if meta
@@ -721,7 +733,7 @@ class TranslatorModule(BaseModule):
                             crosspage_texts = [texts_to_translate[i] for i in crosspage_indices]
                             crosspage_contexts = [contexts_to_translate[i] for i in crosspage_indices]
                             start = time.perf_counter()
-                            crosspage_translations = await ai_translator.translate_batch(
+                            crosspage_translations = await _batch_translate(
                                 crosspage_texts,
                                 output_format="json",
                                 contexts=crosspage_contexts,
@@ -733,7 +745,7 @@ class TranslatorModule(BaseModule):
                             normal_texts = [texts_to_translate[i] for i in normal_indices]
                             normal_contexts = [contexts_to_translate[i] for i in normal_indices]
                             start = time.perf_counter()
-                            normal_translations = await ai_translator.translate_batch(
+                            normal_translations = await _batch_translate(
                                 normal_texts,
                                 contexts=normal_contexts,
                             )
