@@ -20,7 +20,7 @@ def test_inpaint_regions_uses_env_gap_fill(monkeypatch, tmp_path: Path) -> None:
 
     called = {}
 
-    def _spy_fill(self, mask, regions, height, width, max_gap=0):
+    def _spy_fill(self, mask, regions, height, width, max_gap=0, **kwargs):
         called["max_gap"] = max_gap
         return mask
 

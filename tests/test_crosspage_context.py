@@ -260,7 +260,7 @@ def test_translator_uses_json_output_for_crosspage(monkeypatch):
     class FakeAI:
         model = "fake"
 
-        async def translate_batch(self, texts, output_format="numbered"):
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
             captured["output_format"] = output_format
             return ['{"top":"上","bottom":"下"}']
 
@@ -291,7 +291,7 @@ def test_translator_records_crosspage_raw_output(monkeypatch):
     class FakeAI:
         model = "fake"
 
-        async def translate_batch(self, texts, output_format="numbered"):
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
             return ['{"top":"上","bottom":"下"}']
 
     module = TranslatorModule(use_mock=False, use_ai=True)
@@ -327,7 +327,7 @@ def test_crosspage_bottom_empty_translates_extra(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        async def translate_batch(self, texts, output_format="numbered"):
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
             self.calls.append((list(texts), output_format))
             if output_format == "json":
                 return ['{"top":"上","bottom":""}']
@@ -364,7 +364,7 @@ def test_crosspage_bottom_retranslate_same_as_source_not_stored(monkeypatch):
     class FakeAI:
         model = "fake"
 
-        async def translate_batch(self, texts, output_format="numbered"):
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
             if output_format == "json":
                 return ['{"top":"上","bottom":""}']
             return [texts[0]]
@@ -398,7 +398,7 @@ def test_crosspage_bottom_retranslate_hangul_rejected(monkeypatch):
     class FakeAI:
         model = "fake"
 
-        async def translate_batch(self, texts, output_format="numbered"):
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
             if output_format == "json":
                 return ['{"top":"上","bottom":""}']
             return ["당했던 걸"]
@@ -432,7 +432,7 @@ def test_crosspage_bottom_retranslate_jamo_rejected(monkeypatch):
     class FakeAI:
         model = "fake"
 
-        async def translate_batch(self, texts, output_format="numbered"):
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
             if output_format == "json":
                 return ['{"top":"上","bottom":""}']
             return ["当时的 mㄴ"]

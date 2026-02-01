@@ -5,6 +5,7 @@ Replaces mock implementation with LaMa/OpenCV inpainter.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -46,13 +47,22 @@ class InpainterModule(BaseModule):
         self.inpainter = inpainter or create_inpainter(prefer_lama=prefer_lama)
         
         # 创建时间目录
+        base_dir = Path(os.getenv("MANHUA_TEMP_DIR", output_dir))
         if use_time_subdir:
             from datetime import datetime
             time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.output_dir = Path(output_dir) / time_str
+            self.output_dir = base_dir / time_str
         else:
-            self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir = base_dir
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            fallback_base = Path("/tmp/manhua-temp")
+            if use_time_subdir:
+                self.output_dir = fallback_base / time_str
+            else:
+                self.output_dir = fallback_base
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         self.dilation = dilation
 
     async def process(self, context: TaskContext) -> TaskContext:
