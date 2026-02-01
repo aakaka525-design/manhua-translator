@@ -368,12 +368,14 @@ class AITranslator:
 例如：이닌 억은 → 이번 역은
 若为英文，纠正常见拼写错误（如 DONT → DON'T, Im → I'm, OLAINKEI → BLANKET）。
 
-# 专有名词（必须音译）
-地名、人名、站名等专有名词必须音译，不可直译。
-例如：사당 → 舍堂, 東京 → 东京, 강남 → 江南
+# 专有名词（必须音译，禁止保留原文）
+韩文人名必须音译为中文，绝不可保留韩文原文！
+例如：이수희 → 李秀熙, 김민수 → 金民秀, 박지현 → 朴智贤
+地名/站名同理：사당 → 舍堂, 강남 → 江南, 東京 → 东京
 
-# 多语言处理
-若原文含多种语言（如英韩/英日混合），必须全部翻译为{target_name}，不可保留任何原语言片段。
+# 多语言处理（禁止保留原文）
+若原文含韩文/日文/英文，必须全部翻译为{target_name}，绝不可返回原文！
+特别注意：人名喊叫（如"이수희!!"）必须翻译为"李秀熙!!"
 
 # 翻译规则
 1. **语境优先**：对话用口语，旁白用书面语
@@ -423,10 +425,16 @@ class AITranslator:
                                 translations = parts
 
                     slice_results: list[tuple[int, str]] = []
+                    import re as _re
+                    _hangul_check = _re.compile(r'[\uac00-\ud7a3]')
                     for (orig_idx, orig_text), trans in zip(pairs, translations):
                         cleaned = _clean_ai_annotations(trans)
                         # Empty translation means AI skipped this number
                         if not cleaned.strip():
+                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                        # Detect Korean text returned unchanged (AI failed to translate names)
+                        elif _hangul_check.search(cleaned) and cleaned.strip() == orig_text.strip():
+                            logger.warning(f"AI returned Korean unchanged: {orig_text}")
                             slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
                         else:
                             slice_results.append((orig_idx, cleaned))
