@@ -128,3 +128,38 @@ def test_translate_batch_respects_numbered_order(monkeypatch):
     result = asyncio.run(translator.translate_batch(["one", "two", "three"]))
 
     assert result == ["第一", "第二", "第三"]
+
+
+def test_translate_batch_chunks_and_merges(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CHUNK_SIZE", "2")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CONCURRENCY", "8")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+    calls = {"count": 0}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        calls["count"] += 1
+        import re
+
+        start = prompt.rfind("# 输出格式")
+        section = prompt[start:] if start >= 0 else prompt
+        lines = []
+        for line in section.splitlines():
+            match = re.match(r"^(\d+)\.\s+(.*)$", line.strip())
+            if match:
+                lines.append(match.group(2).strip())
+        outputs = [f"{i + 1}. OUT:{line}" for i, line in enumerate(lines)]
+        return "\n".join(outputs)
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    texts = ["A", "B", "C", "D", "E"]
+    result = asyncio.run(translator.translate_batch(texts))
+
+    assert calls["count"] == 3
+    assert result == [f"OUT:{t}" for t in texts]

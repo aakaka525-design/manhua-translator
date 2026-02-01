@@ -50,9 +50,13 @@ def _is_sfx(text: str) -> bool:
     raw = (text or "").strip()
     if not raw:
         return False
+
+    # Punctuation-only SFX like "!!!"
+    import re as _re
+    if _re.fullmatch(r"[!！?？]+", raw):
+        return True
     
     # Remove trailing punctuation for matching
-    import re as _re
     base = _re.sub(r'[!！?？….,。]+$', '', raw).strip()
     if not base:
         return False

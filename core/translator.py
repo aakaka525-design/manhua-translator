@@ -196,7 +196,7 @@ def _should_merge_vertical(
         if y_overlap_ratio >= 0.7 and gap <= avg_height * 0.8 and overlap / max(min_width, 1) >= min_overlap_required:
             return True
         # 同行紧贴：允许小间隙的同一行文本合并（更严格的间隙阈值）
-        if y_overlap_ratio >= 0.75 and gap <= avg_height * 0.3:
+        if y_overlap_ratio >= 0.75 and gap <= avg_height * 0.4:
             return True
     
     # 中心点 X 接近也可以合并
