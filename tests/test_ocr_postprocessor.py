@@ -50,6 +50,20 @@ def test_ocr_postprocessor_korean_dialogue_not_sfx():
     assert processed[0].is_sfx is False
 
 
+@pytest.mark.parametrize("text", ["이거", "하지", "뭐야", "네가"])
+def test_ocr_postprocessor_short_korean_not_sfx(text):
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text=text,
+        confidence=0.9,
+    )
+
+    from core.ocr_postprocessor import OCRPostProcessor
+    processed = OCRPostProcessor().process_regions([region], lang="korean")
+
+    assert processed[0].is_sfx is False
+
+
 @pytest.mark.parametrize("text", [
     "BANG!",
     "砰！",
@@ -68,6 +82,19 @@ def test_ocr_postprocessor_marks_sfx(text):
 
     from core.ocr_postprocessor import OCRPostProcessor
     processed = OCRPostProcessor().process_regions([region], lang="en")
+
+    assert processed[0].is_sfx is True
+
+
+def test_ocr_postprocessor_marks_custom_korean_sfx():
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text="헤이뉴트드",
+        confidence=0.9,
+    )
+
+    from core.ocr_postprocessor import OCRPostProcessor
+    processed = OCRPostProcessor().process_regions([region], lang="korean")
 
     assert processed[0].is_sfx is True
 

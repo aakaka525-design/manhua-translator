@@ -45,7 +45,7 @@ SFX_PATTERNS = [
 
 def _is_sfx(text: str) -> bool:
     """Check if text is likely a sound effect."""
-    from ..sfx_dict import KO_SFX_MAP, EN_SFX_MAP
+    from ..sfx_dict import KO_SFX_MAP, EN_SFX_MAP, KO_SFX_FORCE
     
     raw = (text or "").strip()
     if not raw:
@@ -57,6 +57,10 @@ def _is_sfx(text: str) -> bool:
     if not base:
         return False
     
+    # Check Korean SFX dictionary / force list
+    if base in KO_SFX_FORCE:
+        return True
+
     # Check Korean SFX dictionary
     if base in KO_SFX_MAP:
         return True
@@ -70,6 +74,9 @@ def _is_sfx(text: str) -> bool:
     for pattern in SFX_PATTERNS:
         if _re.match(pattern, upper, _re.IGNORECASE):
             return True
+
+    if _looks_like_hangul_sfx(raw):
+        return True
     
     return False
 
@@ -113,6 +120,34 @@ def _has_cjk(text: str) -> bool:
 
 def _has_hangul(text: str) -> bool:
     return bool(_HANGUL_RE.search(text or ""))
+
+
+def _hangul_ratio(text: str) -> float:
+    if not text:
+        return 0.0
+    chars = [c for c in text if not c.isspace()]
+    if not chars:
+        return 0.0
+    hangul = sum(1 for c in chars if _HANGUL_RE.match(c))
+    return hangul / len(chars)
+
+
+def _looks_like_hangul_sfx(raw: str) -> bool:
+    if not raw:
+        return False
+    base = re.sub(r"[!！?？….,。]+$", "", raw).strip()
+    if not base or " " in base:
+        return False
+    if _hangul_ratio(base) < 0.8:
+        return False
+    length = len(base)
+    has_exclaim = bool(re.search(r"[!！]+$", raw))
+    is_repeat = bool(re.match(r"^([\uac00-\ud7a3]{1,2})\\1+$", base))
+    if length <= 4:
+        return has_exclaim or is_repeat
+    if 5 <= length <= 6:
+        return is_repeat
+    return False
 
 
 def _snippet(text: Optional[str], limit: int = 20) -> str:
