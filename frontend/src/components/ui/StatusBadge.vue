@@ -9,6 +9,7 @@ const props = defineProps({
 
 const meta = {
   success: { color: 'bg-emerald-500/90', icon: 'fa-check', label: '成功' },
+  not_started: { color: 'bg-slate-400/90', icon: 'fa-circle', label: '未开始' },
   no_text: { color: 'bg-slate-400/90', icon: 'fa-circle', label: '无文本' },
   failed: { color: 'bg-red-500/90', icon: 'fa-exclamation', label: '失败' },
   processing: { color: 'bg-blue-500/90', icon: 'fa-spinner', label: '处理中', spin: true },

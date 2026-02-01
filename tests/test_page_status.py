@@ -28,6 +28,16 @@ def test_status_no_text(tmp_path: Path):
     assert status["status"] == "no_text"
 
 
+def test_status_not_started(tmp_path: Path):
+    status = compute_page_status(
+        report_paths=[],
+        translated_exists=False,
+        low_quality_threshold=0.7,
+        low_quality_ratio=0.3,
+    )
+    assert status["status"] == "not_started"
+
+
 def test_status_warning_retranslate(tmp_path: Path):
     report = tmp_path / "x__ch1__1__abc.json"
     _write_report(

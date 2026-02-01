@@ -21,8 +21,15 @@ def compute_page_status(
     low_quality_ratio: float,
 ) -> dict:
     if not report_paths:
+        if translated_exists:
+            return {
+                "status": "success",
+                "reason": "no_report",
+                "warning": False,
+                "warning_counts": {"retranslate": 0, "low_quality": 0, "low_ocr": 0},
+            }
         return {
-            "status": "processing",
+            "status": "not_started",
             "reason": "no_report",
             "warning": False,
             "warning_counts": {"retranslate": 0, "low_quality": 0, "low_ocr": 0},
