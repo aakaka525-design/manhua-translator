@@ -33,10 +33,10 @@ KO_SFX_MAP = {
     "떠링": "叮",
     "부들": "颤抖",
     "무들": "颤抖",
-    "헤이뉴트드": "嘿纽特德",
 }
 
-KO_SFX_FORCE = {"헤이뉴트드", "탈간잘자리"}
+# Force-SFX list (use sparingly - only for clear onomatopoeia not in KO_SFX_MAP)
+KO_SFX_FORCE: set[str] = set()
 
 # English SFX -> Chinese
 EN_SFX_MAP = {

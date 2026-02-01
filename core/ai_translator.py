@@ -81,8 +81,8 @@ class AITranslator:
         self.source_lang = source_lang
         self.target_lang = target_lang
         
-        # 从环境变量或参数加载模型
-        self.model = model or os.getenv("PPIO_MODEL", "glm-4-flash-250414")
+        # 从环境变量或参数加载模型（默认使用 Gemini 3 Flash）
+        self.model = model or os.getenv("PPIO_MODEL", "gemini-3-flash-preview")
         
         # 模型名称兼容性映射
         _compat_map = {
@@ -156,15 +156,21 @@ class AITranslator:
         
         target_name = self._get_lang_name(self.target_lang)
         
-        prompt = f"""You are a professional translator for manga/comics.
-Translate the following text to {target_name}.
-This is dialogue from a comic, translate it naturally.
-You MUST translate, do NOT return the original text.
-Only output the translation, nothing else.
+        prompt = f"""你是一位资深的漫画翻译专家。
 
-Text: {text}
+# 任务
+将以下文本翻译为{target_name}。
 
-{target_name} Translation:"""
+# 规则
+1. 口语化自然翻译，适合漫画对白
+2. 输入可能含 OCR 错误，请适当纠正（如 Im → I'm）
+3. 专有名词（人名/地名）音译，不可直译
+4. 若原文含多种语言，全部翻译为{target_name}，不保留原文
+5. 只输出翻译结果，不要任何解释或注释
+
+原文: {text}
+
+翻译:"""
         
         start = time.perf_counter()
         logger.debug(f"translate: model={self.model} len={len(text)}")
@@ -360,11 +366,14 @@ Text: {text}
 输入可能含OCR识别错误。你会看到每条文本的可选上下文(CTX)，来自同页相邻 1-2 个气泡。
 请结合上下文纠正拼写/字符错误；允许多字符纠错，但只有在把握足够时才修改，不确定则保留原文。
 例如：이닌 억은 → 이번 역은
-若为英文，纠正常见拼写错误（如 OLAINKEI → BLANKET），并保持原语气与格式。
+若为英文，纠正常见拼写错误（如 DONT → DON'T, Im → I'm, OLAINKEI → BLANKET）。
 
 # 专有名词（必须音译）
 地名、人名、站名等专有名词必须音译，不可直译。
 例如：사당 → 舍堂, 東京 → 东京, 강남 → 江南
+
+# 多语言处理
+若原文含多种语言（如英韩/英日混合），必须全部翻译为{target_name}，不可保留任何原语言片段。
 
 # 翻译规则
 1. **语境优先**：对话用口语，旁白用书面语
@@ -372,7 +381,7 @@ Text: {text}
 3. **拟声词**：转换为{target_name}习惯表达
 4. **语气推断**：根据说话人特征调整用词
 
-# 输出格式
+# 待翻译文本
 {numbered_texts}
 
 {output_hint}"""

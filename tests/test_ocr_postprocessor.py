@@ -89,7 +89,7 @@ def test_ocr_postprocessor_marks_sfx(text):
 def test_ocr_postprocessor_marks_custom_korean_sfx():
     region = RegionData(
         box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
-        source_text="헤이뉴트드",
+        source_text="부들",  # trembling SFX, in KO_SFX_MAP
         confidence=0.9,
     )
 

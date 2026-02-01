@@ -32,15 +32,18 @@ logger = setup_module_logger(
 
 # Common SFX patterns that should not be translated
 SFX_PATTERNS = [
-    r'^[A-Z]{1,3}$',  # Short caps like "HA", "HM"
     r'^[!?]+$',  # Punctuation only
     r'^\*+.*\*+$',  # Asterisk wrapped
-    r'^(BOOM|BANG|CRASH|SLASH|WHOOSH|THUD|CRACK|THUMP|SPLASH|RUMBLE)$',  # Common SFX
-    r'^(HA)+$',  # Laughter
-    r'^(HE)+$',
-    r'^(HO)+$',
+    r'^(BOOM|BANG|CRASH|SLASH|WHOOSH|THUD|CRACK|THUMP|SPLASH|RUMBLE)!*$',  # Common SFX
+    r'^(HA)+!*$',  # Laughter
+    r'^(HE)+!*$',
+    r'^(HO)+!*$',
+    r'^(HM)+!*$',
     r'^[A-Z]{2,4}!+$',  # CAPS with exclamation like "BOOM!"
 ]
+
+# Abbreviations that should NOT be treated as SFX (signage, labels, etc.)
+SFX_EXCLUSIONS = {"TEL", "VIP", "SMS", "ID", "NO", "OK", "TV", "VS", "FM", "AM", "DJ", "MC", "PC"}
 
 
 def _is_sfx(text: str) -> bool:
@@ -59,6 +62,10 @@ def _is_sfx(text: str) -> bool:
     # Remove trailing punctuation for matching
     base = _re.sub(r'[!！?？….,。]+$', '', raw).strip()
     if not base:
+        return False
+    
+    # Exclude common abbreviations (signage, labels)
+    if base.upper() in SFX_EXCLUSIONS:
         return False
     
     # Check Korean SFX dictionary / force list
