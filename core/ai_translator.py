@@ -196,7 +196,7 @@ class AITranslator:
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         max_output_tokens=max_tokens,
-                        temperature=0.7,
+                        temperature=0.3,  # Lower temp for faster, more consistent output
                     )
                 )
                 return response.text
@@ -297,18 +297,18 @@ class AITranslator:
             max_idx = max(numbered) if numbered else 0
             if expected_count and max_idx < expected_count:
                 max_idx = expected_count
-            fallback_iter = iter(unnumbered)
+            # Don't use fallback for missing numbers - mark as empty to trigger failure handler
             for i in range(1, max_idx + 1):
                 if i in numbered:
                     translations.append(numbered[i])
                 else:
-                    translations.append(next(fallback_iter, ""))
+                    # Missing number - return empty string, will be marked as failed later
+                    translations.append("")
+                    logger.warning(f"AI response missing number {i}, marking as failed")
             if expected_count:
                 translations = translations[:expected_count]
                 while len(translations) < expected_count:
-                    translations.append(next(fallback_iter, ""))
-            else:
-                translations.extend(list(fallback_iter))
+                    translations.append("")
             return translations, True
         
         cleaned_texts = [clean_text(t) for t in texts]
@@ -423,8 +423,13 @@ class AITranslator:
                                 translations = parts
 
                     slice_results: list[tuple[int, str]] = []
-                    for (orig_idx, _), trans in zip(pairs, translations):
-                        slice_results.append((orig_idx, _clean_ai_annotations(trans)))
+                    for (orig_idx, orig_text), trans in zip(pairs, translations):
+                        cleaned = _clean_ai_annotations(trans)
+                        # Empty translation means AI skipped this number
+                        if not cleaned.strip():
+                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                        else:
+                            slice_results.append((orig_idx, cleaned))
                     if len(translations) < len(pairs):
                         for i in range(len(translations), len(pairs)):
                             orig_idx, orig_text = pairs[i]
@@ -462,8 +467,8 @@ class AITranslator:
                 for orig_idx, orig_text in pairs
             ]
 
-        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 8)
-        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 8)
+        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 15)  # Larger batches = fewer API calls
+        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 4)  # Balance speed vs rate limits
 
         if len(valid_pairs) <= chunk_size:
             slice_results = await _translate_pairs(valid_pairs)

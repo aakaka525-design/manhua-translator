@@ -114,6 +114,7 @@ def translate_sfx(text: str) -> str:
         return EN_SFX_MAP[upper_key] + suffix
     if key in KO_SFX_MAP:
         return KO_SFX_MAP[key] + suffix
-    if _HANGUL_RE.search(key):
-        return _romanize_hangul(key) + suffix
+    # 韩文不在词典中，返回原文（不再罗马化，避免人名等被错误处理）
+    # if _HANGUL_RE.search(key):
+    #     return _romanize_hangul(key) + suffix
     return key + suffix

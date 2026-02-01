@@ -41,7 +41,8 @@ def test_translator_sfx_english_mapping():
     assert result.regions[0].target_text == "砰!"
 
 
-def test_translator_sfx_romanization_fallback():
+def test_translator_sfx_unknown_korean_preserved():
+    """Unknown Korean SFX should be preserved, not romanized (to avoid breaking names)."""
     result = _run_translate(
         [
             RegionData(
@@ -53,4 +54,5 @@ def test_translator_sfx_romanization_fallback():
             )
         ]
     )
-    assert result.regions[0].target_text == "teong"
+    # Now returns original Korean instead of romanization
+    assert result.regions[0].target_text == "텅"
