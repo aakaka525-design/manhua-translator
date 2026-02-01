@@ -163,9 +163,10 @@ def _looks_like_hangul_sfx(raw: str) -> bool:
         return False
     length = len(base)
     has_exclaim = bool(re.search(r"[!！]+$", raw))
-    is_repeat = bool(re.match(r"^([\uac00-\ud7a3]{1,2})\\1+$", base))
+    is_repeat = bool(re.match(r"^([\uac00-\ud7a3]{1,2})\1+$", base))
+    # Short Korean: require BOTH exclamation AND repetition (avoids names like 이수희)
     if length <= 4:
-        return has_exclaim or is_repeat
+        return has_exclaim and is_repeat
     if 5 <= length <= 6:
         return is_repeat
     return False
