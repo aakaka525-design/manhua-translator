@@ -320,15 +320,20 @@ Text: {text}
             return ["" for _ in texts]
         
         target_name = self._get_lang_name(self.target_lang)
+        def _read_env_int(name: str, default: int) -> int:
+            raw = os.getenv(name)
+            if not raw:
+                return default
+            try:
+                value = int(raw)
+            except ValueError:
+                return default
+            return value if value > 0 else default
+
         def _format_entry(index: int, text: str, ctx: str) -> str:
             if ctx:
                 return f"{index}. TEXT: {text}\n   CTX: {ctx}"
             return f"{index}. {text}"
-
-        numbered_texts = "\n".join(
-            _format_entry(i + 1, t, cleaned_contexts[orig_idx])
-            for i, (orig_idx, t) in enumerate(valid_pairs)
-        )
         
         output_hint = "请用数字编号格式输出翻译结果。禁止添加任何注释、说明或括号备注。"
         if output_format == "json":
@@ -337,8 +342,18 @@ Text: {text}
                 '{"top":"...","bottom":"..."}。不要输出数组、代码块或多行 JSON。'
                 "禁止添加任何注释、说明或括号备注。"
             )
+        max_retries = 2
 
-        prompt = f"""# Role
+        async def _translate_pairs(
+            pairs: list[tuple[int, str]],
+            slice_idx: int | None = None,
+            slice_total: int | None = None,
+        ) -> list[tuple[int, str]]:
+            numbered_texts = "\n".join(
+                _format_entry(i + 1, t, cleaned_contexts[orig_idx])
+                for i, (orig_idx, t) in enumerate(pairs)
+            )
+            prompt = f"""# Role
 你是一位资深的**漫画/汉化组翻译专家**，精通多国语言与{target_name}的文化转换。
 
 # OCR 纠错
@@ -361,71 +376,111 @@ Text: {text}
 {numbered_texts}
 
 {output_hint}"""
-        
-        max_retries = 2
-        logger.info(
-            f"batch: model={self.model} count={len(valid_pairs)} total_len={len(numbered_texts)}"
-        )
-        for attempt in range(max_retries + 1):
-            try:
-                start = time.perf_counter()
-                result = await self._call_api(prompt, max_tokens=2000)
-                duration_ms = (time.perf_counter() - start) * 1000
-                
-                # 解析结果
-                translations = []
-                has_numbered = False
-                if output_format == "json":
-                    json_text = _strip_code_fence(result)
-                    translations = _extract_json_objects(json_text)
-                    if not translations:
-                        translations, has_numbered = _parse_numbered_lines(
-                            result, expected_count=len(valid_pairs)
-                        )
-                else:
-                    translations, has_numbered = _parse_numbered_lines(result, expected_count=len(valid_pairs))
 
-                if not has_numbered:
-                    # Fallback: split single-line output by common separators
-                    if len(translations) == 1 and len(valid_pairs) > 1:
-                        import re
-                        parts = re.split(r"\s*(?:/|\||｜|;|；)\s*", translations[0])
-                        parts = [p for p in parts if p]
-                        if len(parts) == len(valid_pairs):
-                            translations = parts
-                
-                # 重建完整结果，并清理 AI 注释
-                full_results = ["" for _ in texts]
-                for (orig_idx, _), trans in zip(valid_pairs, translations):
-                    full_results[orig_idx] = _clean_ai_annotations(trans)
-                
-                for i, (orig_idx, orig_text) in enumerate(valid_pairs):
-                    if i >= len(translations):
-                        full_results[orig_idx] = f"[翻译失败] {orig_text}"
-                
-                logger.info(
-                    f"batch: ok model={self.model} ms={duration_ms:.0f} out_count={len(full_results)}"
-                )
-                return full_results
-                
-            except Exception as e:
-                if attempt < max_retries:
-                    error_msg = str(e)
-                    # 如果是 400 错误，打印更多诊断信息
-                    if '400' in error_msg:
-                        logger.warning(
-                            f"batch: retry {attempt + 1}/{max_retries} err={e} count={len(valid_pairs)} len={len(numbered_texts)}"
-                        )
+            slice_note = ""
+            if slice_idx is not None and slice_total:
+                slice_note = f" slice={slice_idx + 1}/{slice_total}"
+            logger.info(
+                f"batch: model={self.model} count={len(pairs)} total_len={len(numbered_texts)}{slice_note}"
+            )
+            for attempt in range(max_retries + 1):
+                try:
+                    start = time.perf_counter()
+                    result = await self._call_api(prompt, max_tokens=2000)
+                    duration_ms = (time.perf_counter() - start) * 1000
+
+                    # 解析结果
+                    translations = []
+                    has_numbered = False
+                    if output_format == "json":
+                        json_text = _strip_code_fence(result)
+                        translations = _extract_json_objects(json_text)
+                        if not translations:
+                            translations, has_numbered = _parse_numbered_lines(
+                                result, expected_count=len(pairs)
+                            )
                     else:
-                        logger.warning(f"batch: retry {attempt + 1}/{max_retries} err={e}")
-                    await asyncio.sleep(1)
-                else:
-                    logger.error(
-                        f"batch: error model={self.model} err={e} count={len(valid_pairs)} len={len(numbered_texts)}"
+                        translations, has_numbered = _parse_numbered_lines(
+                            result, expected_count=len(pairs)
+                        )
+
+                    if not has_numbered:
+                        # Fallback: split single-line output by common separators
+                        if len(translations) == 1 and len(pairs) > 1:
+                            import re
+                            parts = re.split(r"\s*(?:/|\||｜|;|；)\s*", translations[0])
+                            parts = [p for p in parts if p]
+                            if len(parts) == len(pairs):
+                                translations = parts
+
+                    slice_results: list[tuple[int, str]] = []
+                    for (orig_idx, _), trans in zip(pairs, translations):
+                        slice_results.append((orig_idx, _clean_ai_annotations(trans)))
+                    if len(translations) < len(pairs):
+                        for i in range(len(translations), len(pairs)):
+                            orig_idx, orig_text = pairs[i]
+                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+
+                    logger.info(
+                        f"batch: ok model={self.model} ms={duration_ms:.0f} out_count={len(slice_results)}{slice_note}"
                     )
-                    return [f"[翻译失败] {t}" if t else "" for t in texts]
-        
-        return [f"[翻译失败] {t}" if t else "" for t in texts]
+                    return slice_results
+
+                except Exception as e:
+                    if attempt < max_retries:
+                        error_msg = str(e)
+                        # 如果是 400 错误，打印更多诊断信息
+                        if '400' in error_msg:
+                            logger.warning(
+                                f"batch: retry {attempt + 1}/{max_retries} err={e} count={len(pairs)} len={len(numbered_texts)}{slice_note}"
+                            )
+                        else:
+                            logger.warning(
+                                f"batch: retry {attempt + 1}/{max_retries} err={e}{slice_note}"
+                            )
+                        await asyncio.sleep(1)
+                    else:
+                        logger.error(
+                            f"batch: error model={self.model} err={e} count={len(pairs)} len={len(numbered_texts)}{slice_note}"
+                        )
+                        return [
+                            (orig_idx, f"[翻译失败] {orig_text}")
+                            for orig_idx, orig_text in pairs
+                        ]
+
+            return [
+                (orig_idx, f"[翻译失败] {orig_text}")
+                for orig_idx, orig_text in pairs
+            ]
+
+        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 8)
+        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 8)
+
+        if len(valid_pairs) <= chunk_size:
+            slice_results = await _translate_pairs(valid_pairs)
+            full_results = ["" for _ in texts]
+            for orig_idx, trans in slice_results:
+                full_results[orig_idx] = trans
+            return full_results
+
+        slices = [
+            valid_pairs[i : i + chunk_size]
+            for i in range(0, len(valid_pairs), chunk_size)
+        ]
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _run_slice(idx: int, pairs: list[tuple[int, str]]):
+            async with sem:
+                return await _translate_pairs(pairs, idx, len(slices))
+
+        results = await asyncio.gather(
+            *[_run_slice(i, pairs) for i, pairs in enumerate(slices)]
+        )
+        full_results = ["" for _ in texts]
+        for slice_results in results:
+            for orig_idx, trans in slice_results:
+                full_results[orig_idx] = trans
+        return full_results
 
 
 # 测试
