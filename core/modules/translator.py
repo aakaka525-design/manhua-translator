@@ -118,6 +118,16 @@ def _has_cjk(text: str) -> bool:
     return bool(_CJK_RE.search(text))
 
 
+def _english_ratio(text: str) -> float:
+    if not text:
+        return 0.0
+    chars = [c for c in text if not c.isspace()]
+    if not chars:
+        return 0.0
+    eng = sum(1 for c in chars if "A" <= c.upper() <= "Z")
+    return eng / len(chars)
+
+
 def _has_hangul(text: str) -> bool:
     return bool(_HANGUL_RE.search(text or ""))
 
@@ -806,7 +816,11 @@ class TranslatorModule(BaseModule):
                     if ai_translator:
                         fixed_translations = []
                         for src_text, translation in zip(texts_to_translate, translations):
-                            if not _has_cjk(translation):
+                            needs_fallback = (
+                                (not _has_cjk(translation))
+                                or (_english_ratio(translation) >= 0.35)
+                            )
+                            if needs_fallback:
                                 fallback_input = src_text or ""
                                 fallback_source = "src"
                                 if translation and not translation.strip().startswith("[翻译失败]"):
@@ -826,7 +840,7 @@ class TranslatorModule(BaseModule):
                                     translation = await ai_translator.translate(fallback_input)
                                 except Exception:
                                     pass
-                                if not _has_cjk(translation):
+                                if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
                                     gt_class = self._translator_class
                                     if gt_class is None:
                                         try:

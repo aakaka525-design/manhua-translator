@@ -98,3 +98,31 @@ def test_translator_fallback_uses_corrected_translation(monkeypatch):
 
     result = asyncio.run(translator.process(ctx))
     assert result.regions[0].target_text == "毯子"
+
+
+class _MockMixedAI:
+    model = "mock"
+
+    async def translate_batch(self, texts, output_format="numbered", contexts=None):
+        return ["O-OR THAT 那个大叔..??"]
+
+    async def translate(self, text):
+        return "O-OR THAT 那个大叔..??"
+
+
+def test_translator_fallback_when_english_ratio_high(monkeypatch):
+    translator = TranslatorModule(source_lang="en", target_lang="zh-CN", use_ai=True)
+    monkeypatch.setattr(translator, "_get_ai_translator", lambda: _MockMixedAI())
+    translator._translator_class = _MockGoogleTranslator
+
+    ctx = TaskContext(image_path="/tmp/in.png", source_language="en", target_language="zh-CN")
+    ctx.regions = [
+        RegionData(
+            box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+            source_text="O-OR THAT AHJUSSI..?!!?",
+            confidence=0.9,
+        )
+    ]
+
+    result = asyncio.run(translator.process(ctx))
+    assert result.regions[0].target_text == "中文"
