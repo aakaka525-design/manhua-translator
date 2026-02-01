@@ -33,6 +33,14 @@ KO_SFX_MAP = {
     "떠링": "叮",
     "부들": "颤抖",
     "무들": "颤抖",
+    # Footsteps
+    "저벅": "踏踏",
+    "저벽": "踏踏",  # OCR variant
+    "처벽": "踏踏",  # OCR variant
+    # Mumbling / throat clearing
+    "중얼": "嘀咕",
+    "큼큼": "咳咳",
+    "e큼큼": "咳咳",  # OCR variant with 'e'
 }
 
 # Force-SFX list (use sparingly - only for clear onomatopoeia not in KO_SFX_MAP)
