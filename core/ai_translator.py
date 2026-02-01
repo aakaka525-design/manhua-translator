@@ -45,6 +45,9 @@ def _clean_ai_annotations(text: str) -> str:
     # 移除可能回显的结构化前缀（TEXT/CTX）
     text = re.sub(r'^\s*(TEXT|CTX)\s*[:：]\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\b(TEXT|CTX)\s*[:：]\s*', '', text, flags=re.IGNORECASE)
+    
+    # 移除 AI 可能添加的 "翻译:" 前缀
+    text = re.sub(r'^\s*翻译\s*[:：]\s*', '', text)
 
     # 移除括号内的注释 (Note: ...), (注: ...), etc.
     # 支持闭合和未闭合的括号
