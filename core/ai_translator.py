@@ -72,11 +72,11 @@ class AITranslator:
     
     # Gemini 模型列表 (使用前缀匹配)
     GEMINI_MODELS = {
-        # Gemini 3.x 系列
+        # Gemini 3.x 系列 (推荐)
         'gemini-3-pro-preview', 'gemini-3-flash-preview',
         # Gemini 2.5 系列
         'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro-exp',
-        # Gemini 2.0 系列
+        # Gemini 2.0 系列 ⚠️ 将于 2026年3月31日弃用，请迁移至 3.x
         'gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-2.0-flash-exp',
         # Gemini 1.5 系列 (旧版本兼容)
         'gemini-1.5-flash', 'gemini-1.5-pro',
