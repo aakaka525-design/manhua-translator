@@ -487,8 +487,8 @@ class AITranslator:
                 for orig_idx, orig_text in pairs
             ]
 
-        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 15)  # Larger batches = fewer API calls
-        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 4)  # Balance speed vs rate limits
+        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 20)  # Larger batches = fewer API calls
+        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 2)  # Reduced to avoid rate limits
 
         if len(valid_pairs) <= chunk_size:
             slice_results = await _translate_pairs(valid_pairs)
