@@ -146,13 +146,21 @@ def test_translate_batch_chunks_and_merges(monkeypatch):
         calls["count"] += 1
         import re
 
-        start = prompt.rfind("# 输出格式")
+        # 查找 "# 待翻译文本" 部分来获取编号行
+        start = prompt.find("# 待翻译文本")
+        if start < 0:
+            start = prompt.rfind("# 输出格式")
         section = prompt[start:] if start >= 0 else prompt
         lines = []
         for line in section.splitlines():
             match = re.match(r"^(\d+)\.\s+(.*)$", line.strip())
             if match:
-                lines.append(match.group(2).strip())
+                text = match.group(2).strip()
+                # 跳过提示词说明行
+                if text.startswith("TEXT:"):
+                    text = text[5:].strip()
+                if text and not text.startswith("**") and not text.startswith("请"):
+                    lines.append(text)
         outputs = [f"{i + 1}. OUT:{line}" for i, line in enumerate(lines)]
         return "\n".join(outputs)
 
