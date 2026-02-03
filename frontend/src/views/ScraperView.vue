@@ -378,7 +378,7 @@ onUnmounted(() => {
 
               <div v-if="scraper.parser.result" class="grid gap-4 md:grid-cols-12">
                 <div class="md:col-span-4 bg-bg-secondary/30 rounded-xl p-4 border border-border-subtle flex flex-col gap-3">
-                  <div class="flex items-center gap-3 pb-3 border-b border-border-subtle/50">
+                  <div class="flex items-center gap-3 pb-3 border-b border-border-subtle">
                     <div class="w-10 h-10 rounded-full bg-accent-1/10 flex items-center justify-center text-accent-1">
                       <i class="fas fa-info-circle text-lg"></i>
                     </div>
@@ -416,7 +416,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="md:col-span-8 bg-bg-secondary/20 rounded-xl border border-border-subtle overflow-hidden flex flex-col">
-                  <div class="flex items-center justify-between px-4 py-3 bg-bg-secondary/40 border-b border-border-subtle/50">
+                  <div class="flex items-center justify-between px-4 py-3 bg-bg-secondary/40 border-b border-border-subtle">
                     <div class="flex items-center gap-2">
                       <i class="fas fa-align-left text-text-secondary text-xs"></i>
                       <span class="text-xs font-bold text-text-main">正文预览</span>
@@ -434,7 +434,7 @@ onUnmounted(() => {
                       <span>无正文内容</span>
                     </div>
                   </div>
-                  <div v-if="hasMoreParagraphs" class="p-2 bg-bg-secondary/30 border-t border-border-subtle/50 text-center">
+                  <div v-if="hasMoreParagraphs" class="p-2 bg-bg-secondary/30 border-t border-border-subtle text-center">
                     <button @click="scraper.parser.showAll = !scraper.parser.showAll" class="text-xs text-accent-1 hover:underline font-medium">
                       {{ scraper.parser.showAll ? '收起' : `展开剩余 ${scraper.parser.result.paragraphs.length - 6} 段` }}
                     </button>
@@ -442,7 +442,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div v-if="parserListAvailable" class="space-y-4 pt-4 border-t border-border-subtle/30">
+              <div v-if="parserListAvailable" class="space-y-4 pt-4 border-t border-border-subtle">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-bold text-text-main">

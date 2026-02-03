@@ -1,5 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, useAttrs, computed } from 'vue'
+
+// We want the parent `class=""` (and other attrs) to apply to the underlying <img>,
+// not the wrapper <div>.
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   src: String,
@@ -11,6 +15,16 @@ const props = defineProps({
     type: Number,
     default: 0.1
   }
+})
+
+const attrs = useAttrs()
+const imgClass = computed(() => attrs.class)
+const imgAttrs = computed(() => {
+  // Remove `class` since we handle it explicitly via `imgClass`.
+  // Everything else (e.g. loading/decoding) is forwarded to <img>.
+  // eslint-disable-next-line no-unused-vars
+  const { class: _klass, ...rest } = attrs
+  return rest
 })
 
 const imgRef = ref(null)
@@ -39,20 +53,20 @@ onMounted(() => {
   if (imgRef.value) {
     observer.observe(imgRef.value)
   }
-
-  const imgEl = imgRef.value?.querySelector('img')
-  if (imgEl && imgEl.complete) {
-    isVisible.value = true
-    isLoaded.value = true
-  }
 })
 
 onUnmounted(() => {
   if (observer) observer.disconnect()
 })
 
+watch(() => props.src, () => {
+  isLoaded.value = false
+  error.value = false
+})
+
 const onLoad = () => {
   isLoaded.value = true
+  error.value = false
 }
 
 const onError = () => {
@@ -61,7 +75,7 @@ const onError = () => {
 </script>
 
 <template>
-  <div ref="imgRef" class="relative overflow-hidden bg-bg-secondary/30 min-h-[200px] flex items-center justify-center">
+  <div ref="imgRef" class="relative overflow-hidden bg-bg-secondary/30 w-full h-full flex items-center justify-center">
     <!-- Placeholder / Skeleton -->
     <div v-if="!isLoaded && !error" class="absolute inset-0 animate-pulse bg-bg-secondary/50">
         <div class="h-full w-full flex items-center justify-center">
@@ -80,11 +94,11 @@ const onError = () => {
       v-if="isVisible"
       :src="src" 
       :alt="alt"
-      class="w-full h-auto transition-opacity duration-300 block"
-      :class="isLoaded ? 'opacity-100' : 'opacity-0'"
+      v-bind="imgAttrs"
+      class="w-full h-full transition-opacity duration-300 block"
+      :class="[imgClass, isLoaded ? 'opacity-100' : 'opacity-0']"
       @load="onLoad"
       @error="onError"
-      @loadstart="() => { if (isLoaded) isLoaded = false }"
     />
   </div>
 </template>

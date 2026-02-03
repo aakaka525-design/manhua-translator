@@ -25,7 +25,7 @@ const emit = defineEmits(['click'])
   >
     <div class="relative overflow-hidden aspect-[3/4]">
       <LazyImage 
-        :src="cover || '/static/placeholder.png'" 
+        :src="cover || '/static/placeholder.svg'" 
         class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         :alt="title"
       />

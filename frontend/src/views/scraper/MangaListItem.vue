@@ -79,7 +79,7 @@ function handleSelect() {
         class="px-3 py-1.5 text-xs font-semibold rounded-full transition-all duration-300 transform active:scale-95 border"
         :class="(disabled || loading)
           ? 'opacity-60 cursor-not-allowed bg-bg-secondary text-text-secondary border-transparent' 
-          : 'bg-bg-main border-border-subtle text-text-main hover:text-accent-1 hover:border-accent-1 hover:shadow-md'"
+          : 'bg-bg-secondary/40 border-border-subtle text-text-main hover:text-accent-1 hover:border-accent-1 hover:shadow-md'"
       >
         {{ loading ? '...' : actionLabel }}
       </button>
@@ -117,7 +117,7 @@ function handleSelect() {
       <h4 class="text-sm font-bold text-text-main line-clamp-2 leading-tight group-hover:text-accent-1 transition-colors mb-1">
         {{ manga.title || manga.id }}
       </h4>
-      <p class="text-[10px] text-text-secondary truncate opacity-60 font-mono mt-auto pt-2 border-t border-border-subtle/50">
+      <p class="text-[10px] text-text-secondary truncate opacity-60 font-mono mt-auto pt-2 border-t border-border-subtle">
         {{ manga.url }}
       </p>
     </div>

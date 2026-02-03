@@ -70,12 +70,16 @@ def _clean_ai_annotations(text: str) -> str:
 class AITranslator:
     """支持多个 AI 提供商的翻译器。"""
     
-    # Gemini 模型列表 (2026-01 更新：Gemini 2.0 将于 2026年3月31日弃用)
+    # Gemini 模型列表 (使用前缀匹配)
     GEMINI_MODELS = {
         # Gemini 3.x 系列
         'gemini-3-pro-preview', 'gemini-3-flash-preview',
         # Gemini 2.5 系列
         'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro-exp',
+        # Gemini 2.0 系列
+        'gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-2.0-flash-exp',
+        # Gemini 1.5 系列 (旧版本兼容)
+        'gemini-1.5-flash', 'gemini-1.5-pro',
     }
     
 

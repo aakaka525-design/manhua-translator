@@ -9,6 +9,7 @@ const props = defineProps({
 const visible = ref(false)
 const position = ref({ x: 0, y: 0 })
 const targetData = ref(null)
+const menuRef = ref(null)
 
 function show(event, data = null) {
   event.preventDefault()
@@ -43,7 +44,12 @@ function handleAction(item) {
 
 // Close on click outside
 function onClickOutside(e) {
-  if (visible.value) hide()
+  if (!visible.value) return
+  const el = menuRef.value
+  // On touch devices, `touchstart` can fire before the menu item click.
+  // Only close when the user taps/clicks outside of the menu.
+  if (el && e?.target && el.contains(e.target)) return
+  hide()
 }
 
 onMounted(() => {
@@ -63,6 +69,7 @@ defineExpose({ show, hide })
   <Teleport to="body">
     <Transition name="menu">
       <div v-if="visible" 
+        ref="menuRef"
         class="fixed z-[150] min-w-[180px] bg-surface border border-slate-700 rounded-xl shadow-2xl overflow-hidden py-2"
         :style="{ left: position.x + 'px', top: position.y + 'px' }">
         <button v-for="(item, idx) in items" :key="idx"

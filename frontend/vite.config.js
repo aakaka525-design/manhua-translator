@@ -12,6 +12,12 @@ export default defineConfig({
         VitePWA({
             registerType: 'autoUpdate',
             includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+            // Workbox's default SW bundling uses @rollup/plugin-terser in "production" mode.
+            // On Node 22.x this can fail with "Unfinished hook action(s) on exit: (terser) renderChunk".
+            // Disabling SW minification keeps the PWA build stable.
+            workbox: {
+                mode: 'development'
+            },
             manifest: {
                 name: 'Neo-Comic Reader',
                 short_name: 'NeoComic',

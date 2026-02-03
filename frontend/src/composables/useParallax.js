@@ -1,14 +1,16 @@
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
 export function useParallax() {
+    const animations = []
+
     onMounted(() => {
         gsap.registerPlugin(ScrollTrigger)
 
         // Parallax background effect
         // Assumes '.halftone-bg' class exists
-        gsap.to('.halftone-bg', {
+        animations.push(gsap.to('.halftone-bg', {
             backgroundPosition: '0px 100px',
             ease: 'none',
             scrollTrigger: {
@@ -17,12 +19,12 @@ export function useParallax() {
                 end: 'bottom bottom',
                 scrub: true
             }
-        })
+        }))
 
         // Fade in elements with class .gsap-fade-up
         const fadeElements = document.querySelectorAll('.gsap-fade-up')
         fadeElements.forEach(el => {
-            gsap.fromTo(el,
+            animations.push(gsap.fromTo(el,
                 { opacity: 0, y: 30 },
                 {
                     opacity: 1,
@@ -34,7 +36,14 @@ export function useParallax() {
                         start: 'top 90%',
                     }
                 }
-            )
+            ))
+        })
+    })
+
+    onUnmounted(() => {
+        animations.forEach(anim => {
+            anim?.scrollTrigger?.kill()
+            anim?.kill()
         })
     })
 }

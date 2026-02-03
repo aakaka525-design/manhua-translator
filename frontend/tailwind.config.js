@@ -7,18 +7,20 @@ export default {
     theme: {
         extend: {
             colors: {
-                'bg-primary': 'var(--bg-primary)',
-                'bg-secondary': 'var(--bg-secondary)',
-                'surface': 'var(--bg-surface)',
-                'accent-1': 'var(--accent-1)',
-                'accent-2': 'var(--accent-2)',
-                'text-main': 'var(--text-main)',
-                'text-secondary': 'var(--text-secondary)',
+                // Use the rgb(var(--token) / <alpha-value>) convention so Tailwind's
+                // opacity modifiers (e.g. bg-accent-1/20) work with CSS variables.
+                'bg-primary': 'rgb(var(--bg-primary) / <alpha-value>)',
+                'bg-secondary': 'rgb(var(--bg-secondary) / <alpha-value>)',
+                'surface': 'rgb(var(--bg-surface) / <alpha-value>)',
+                'accent-1': 'rgb(var(--accent-1) / <alpha-value>)',
+                'accent-2': 'rgb(var(--accent-2) / <alpha-value>)',
+                'text-main': 'rgb(var(--text-main) / <alpha-value>)',
+                'text-secondary': 'rgb(var(--text-secondary) / <alpha-value>)',
                 'border-main': 'var(--border-color)',
                 'border-subtle': 'var(--border-subtle)',
-                'state-success': 'var(--state-success)',
-                'state-warning': 'var(--state-warning)',
-                'state-error': 'var(--state-error)',
+                'state-success': 'rgb(var(--state-success) / <alpha-value>)',
+                'state-warning': 'rgb(var(--state-warning) / <alpha-value>)',
+                'state-error': 'rgb(var(--state-error) / <alpha-value>)',
             },
             fontFamily: {
                 'heading': ['Bebas Neue', 'sans-serif'],

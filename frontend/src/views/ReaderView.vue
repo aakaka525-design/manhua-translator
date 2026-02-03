@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMangaStore } from '@/stores/manga'
 import { useToastStore } from '@/stores/toast'
@@ -21,12 +21,12 @@ const loading = ref(true)
 const compareMode = ref(false)
 const contextMenuRef = ref(null)
 
-const mangaId = route.params.mangaId
-const chapterId = route.params.chapterId
+const mangaId = computed(() => String(route.params.mangaId || ''))
+const chapterId = computed(() => String(route.params.chapterId || ''))
 
 // Chapter navigation
 const currentChapterIndex = computed(() => {
-  return mangaStore.chapters.findIndex(c => c.id === chapterId)
+  return mangaStore.chapters.findIndex(c => c.id === chapterId.value)
 })
 
 const prevChapter = computed(() => {
@@ -45,7 +45,7 @@ function goToChapter(chapter) {
   if (!chapter) return
   router.push({ 
     name: 'reader', 
-    params: { mangaId, chapterId: chapter.id }
+    params: { mangaId: mangaId.value, chapterId: chapter.id }
   })
 }
 
@@ -57,31 +57,52 @@ useKeyboard({
   onNext: () => { if (nextChapter.value) goToChapter(nextChapter.value) }
 })
 
-onMounted(async () => {
+let loadSeq = 0
+
+async function loadChapter() {
+  const mid = mangaId.value
+  const cid = chapterId.value
+  if (!mid || !cid) return
+
+  const seq = ++loadSeq
   loading.value = true
+  pages.value = []
+
   try {
-    if (!mangaStore.currentManga) {
+    // Ensure we have the current manga + chapters in store for prev/next navigation.
+    if (!mangaStore.currentManga || mangaStore.currentManga.id !== mid) {
       await mangaStore.fetchMangas()
-      await mangaStore.openManga(mangaId)
+      await mangaStore.openManga(mid)
     }
-    const data = await mangaApi.getChapter(mangaId, chapterId)
+
+    const data = await mangaApi.getChapter(mid, cid)
+    if (seq !== loadSeq) return
     pages.value = data.pages
-    
+
     // Record reading history
-    const currentChapter = mangaStore.chapters.find(c => c.id === chapterId)
+    const currentChapter = mangaStore.chapters.find(c => c.id === cid)
     addEntry({
-      mangaId,
-      mangaName: mangaStore.currentManga?.name || mangaId,
-      chapterId,
-      chapterName: currentChapter?.name || chapterId
+      mangaId: mid,
+      mangaName: mangaStore.currentManga?.name || mid,
+      chapterId: cid,
+      chapterName: currentChapter?.name || cid
     })
+
+    // Switching chapters keeps the component mounted; reset scroll for better UX.
+    window.scrollTo({ top: 0, behavior: 'auto' })
   } catch (e) {
     console.error(e)
     toast.show('加载失败', 'error')
   } finally {
-    loading.value = false
+    if (seq === loadSeq) {
+      loading.value = false
+    }
   }
-})
+}
+
+watch([mangaId, chapterId], () => {
+  loadChapter()
+}, { immediate: true })
 
 function toggleCompare() {
   compareMode.value = !compareMode.value
@@ -96,8 +117,8 @@ async function handleRetranslate(page) {
   toast.show('正在重新翻译...', 'info')
   try {
     await translateApi.retranslatePage({
-      manga_id: mangaId,
-      chapter_id: chapterId,
+      manga_id: mangaId.value,
+      chapter_id: chapterId.value,
       image_name: pageName
     })
     toast.show('翻译请求已提交', 'success')
@@ -120,13 +141,13 @@ const contextMenuItems = [
   <div class="min-h-screen bg-bg-primary text-text-main">
     <!-- Toolbar -->
     <div class="fixed top-0 left-0 right-0 p-4 bg-gradient-to-b from-bg-primary/90 to-transparent z-50 flex justify-between items-start pointer-events-none">
-      <button @click="router.go(-1)" class="pointer-events-auto w-10 h-10 rounded-full bg-bg-surface/50 backdrop-blur flex items-center justify-center text-text-main hover:bg-bg-surface border border-transparent hover:border-border-subtle transition">
+      <button @click="router.go(-1)" class="pointer-events-auto w-10 h-10 rounded-full bg-surface/50 backdrop-blur flex items-center justify-center text-text-main hover:bg-surface border border-transparent hover:border-border-subtle transition">
         <i class="fas fa-arrow-left"></i>
       </button>
       
       <button @click="toggleCompare" 
         class="pointer-events-auto px-4 py-2 rounded-full backdrop-blur font-bold text-sm transition border border-transparent"
-        :class="compareMode ? 'bg-accent-2/80 text-white' : 'bg-bg-surface/50 text-text-main border-border-subtle'">
+        :class="compareMode ? 'bg-accent-2/80 text-white' : 'bg-surface/50 text-text-main border-border-subtle'">
         <i class="fas fa-columns mr-2"></i> 对比模式
       </button>
     </div>
