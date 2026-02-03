@@ -26,6 +26,11 @@ logger = setup_module_logger(
     level=get_log_level("AI_TRANSLATOR_LOG_LEVEL", logging.INFO),
 )
 
+# 启用 OpenAI SDK 详细日志（显示重试原因）
+if os.getenv("DEBUG_OPENAI") == "1":
+    logging.getLogger("openai").setLevel(logging.DEBUG)
+    logging.getLogger("httpx").setLevel(logging.DEBUG)
+
 
 def _clean_ai_annotations(text: str) -> str:
     """
