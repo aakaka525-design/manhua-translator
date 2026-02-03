@@ -130,9 +130,11 @@ class AITranslator:
         if not self.api_key:
             raise ValueError("PPIO_API_KEY not found in environment variables")
         
+        # 禁用 SDK 内部重试，让我们自己控制并记录错误原因
         self.client = OpenAI(
             base_url=self.base_url,
             api_key=self.api_key,
+            max_retries=0,  # 禁用内部重试，便于查看真实错误
         )
     
     def _init_gemini(self):
@@ -199,29 +201,46 @@ class AITranslator:
         if self.is_gemini:
             from google.genai import types
             def call_gemini():
-                response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        max_output_tokens=max_tokens,
-                        temperature=0.3,  # Lower temp for faster, more consistent output
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            max_output_tokens=max_tokens,
+                            temperature=0.3,  # Lower temp for faster, more consistent output
+                        )
                     )
-                )
-                return response.text
+                    return response.text
+                except Exception as e:
+                    logger.error(f"Gemini API error: {type(e).__name__}: {e}")
+                    raise
 
             return await loop.run_in_executor(None, call_gemini)
         else:
             # PPIO / OpenAI 兼容调用
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    stream=False,
-                )
-            )
-            return response.choices[0].message.content.strip()
+            def call_openai():
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=max_tokens,
+                        stream=False,
+                    )
+                    return response.choices[0].message.content.strip()
+                except Exception as e:
+                    # 记录详细错误信息
+                    error_msg = f"{type(e).__name__}: {e}"
+                    if hasattr(e, 'status_code'):
+                        error_msg = f"HTTP {e.status_code}: {error_msg}"
+                    if hasattr(e, 'response') and e.response:
+                        try:
+                            error_msg += f" | Response: {e.response.text[:200]}"
+                        except:
+                            pass
+                    logger.error(f"OpenAI API error: {error_msg}")
+                    raise
+            
+            return await loop.run_in_executor(None, call_openai)
     
     async def translate_batch(
         self,
