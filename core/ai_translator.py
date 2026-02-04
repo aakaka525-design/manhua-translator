@@ -10,6 +10,7 @@ import os
 import asyncio
 import logging
 import time
+import hashlib
 from typing import Optional
 
 from openai import OpenAI
@@ -67,6 +68,49 @@ def _clean_ai_annotations(text: str) -> str:
     
     return text.strip()
 
+
+def _format_log_text(text: str, mode: str, limit: int) -> str | None:
+    if text is None:
+        return ""
+    mode = (mode or "off").strip().lower()
+    if mode == "off":
+        return None
+    raw = str(text)
+    if mode == "full":
+        return raw
+    if mode == "hash":
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        return f"sha256:{digest} len={len(raw)}"
+    if mode == "snippet":
+        if limit <= 0:
+            return ""
+        if len(raw) <= limit * 2:
+            return raw
+        return f"{raw[:limit]}...{raw[-limit:]}"
+    return None
+
+
+def _read_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _get_log_config():
+    mode = (os.getenv("AI_TRANSLATOR_LOG_MODE") or "off").strip().lower()
+    limit = _read_env_int("AI_TRANSLATOR_LOG_SNIPPET_CHARS", 120)
+    log_ctx = os.getenv("AI_TRANSLATOR_LOG_CTX", "0") == "1"
+    return mode, limit, log_ctx
+
+
+def _sanitize_log_text(text: str) -> str:
+    return (text or "").replace("\n", "\\n")
+
 class AITranslator:
     """支持多个 AI 提供商的翻译器。"""
     
@@ -89,20 +133,35 @@ class AITranslator:
         self.source_lang = source_lang
         self.target_lang = target_lang
         
-        # 从环境变量或参数加载模型（默认使用 Gemini 3 Flash）
-        self.model = model or os.getenv("PPIO_MODEL", "gemini-3-flash-preview")
-        
-        # 模型名称兼容性映射
-        _compat_map = {
-            'gemini-3-flash': 'gemini-3-flash-preview',
-            'gemini-3-pro': 'gemini-3-pro-preview',
-        }
-        if self.model in _compat_map:
-            logger.warning(f"自动将模型 {self.model} 映射为 {_compat_map[self.model]}")
-            self.model = _compat_map[self.model]
+        provider = (os.getenv("AI_PROVIDER") or "").strip().lower()
+        if provider and provider not in ("gemini", "ppio"):
+            raise ValueError("AI_PROVIDER must be 'gemini' or 'ppio'")
 
-        # 检查是否是 Gemini 模型
-        self.is_gemini = any(g in self.model for g in self.GEMINI_MODELS)
+        ppio_key = os.getenv("PPIO_API_KEY")
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if not provider:
+            if ppio_key and gemini_key:
+                raise ValueError(
+                    "AI_PROVIDER must be set when both PPIO_API_KEY and GEMINI_API_KEY are present"
+                )
+            provider = "gemini" if gemini_key else "ppio"
+
+        if provider == "gemini":
+            # 从环境变量或参数加载模型（默认使用 Gemini 3 Flash）
+            self.model = model or os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+            # 模型名称兼容性映射
+            _compat_map = {
+                'gemini-3-flash': 'gemini-3-flash-preview',
+                'gemini-3-pro': 'gemini-3-pro-preview',
+            }
+            if self.model in _compat_map:
+                logger.warning(f"自动将模型 {self.model} 映射为 {_compat_map[self.model]}")
+                self.model = _compat_map[self.model]
+            self.is_gemini = True
+        else:
+            # PPIO 模型
+            self.model = model or os.getenv("PPIO_MODEL", "zai-org/glm-4.7-flash")
+            self.is_gemini = False
         
         logger.info(f"初始化翻译器: model={self.model}, is_gemini={self.is_gemini}")
         
@@ -163,6 +222,11 @@ class AITranslator:
         """翻译单个文本。"""
         if not text or not text.strip():
             return text
+
+        log_mode, log_limit, _log_ctx = _get_log_config()
+        log_input = _format_log_text(text, log_mode, log_limit)
+        if log_input is not None:
+            logger.info(f'translate: in="{_sanitize_log_text(log_input)}"')
         
         target_name = self._get_lang_name(self.target_lang)
         
@@ -188,10 +252,16 @@ class AITranslator:
             result = await self._call_api(prompt, max_tokens=500)
             duration_ms = (time.perf_counter() - start) * 1000
             logger.info(f"translate: ok model={self.model} ms={duration_ms:.0f} out_len={len(result)}")
+            log_output = _format_log_text(result, log_mode, log_limit)
+            if log_output is not None:
+                logger.info(f'translate: out="{_sanitize_log_text(log_output)}"')
             return result
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             logger.error(f"translate: error model={self.model} ms={duration_ms:.0f} err={type(e).__name__}: {e}")
+            log_output = _format_log_text(f"[翻译失败] {text}", log_mode, log_limit)
+            if log_output is not None:
+                logger.info(f'translate: out="{_sanitize_log_text(log_output)}"')
             return f"[翻译失败] {text}"
     
     async def _call_api(self, prompt: str, max_tokens: int = 500) -> str:
@@ -351,18 +421,10 @@ class AITranslator:
         
         if not valid_pairs:
             return ["" for _ in texts]
+
+        log_mode, log_limit, log_ctx = _get_log_config()
         
         target_name = self._get_lang_name(self.target_lang)
-        def _read_env_int(name: str, default: int) -> int:
-            raw = os.getenv(name)
-            if not raw:
-                return default
-            try:
-                value = int(raw)
-            except ValueError:
-                return default
-            return value if value > 0 else default
-
         def _format_entry(index: int, text: str, ctx: str) -> str:
             if ctx:
                 return f"{index}. TEXT: {text}\n   CTX: {ctx}"
@@ -433,7 +495,7 @@ class AITranslator:
             for attempt in range(max_retries + 1):
                 try:
                     start = time.perf_counter()
-                    result = await self._call_api(prompt, max_tokens=2000)
+                    result = await self._call_api(prompt, max_tokens=4000)
                     duration_ms = (time.perf_counter() - start) * 1000
 
                     # 解析结果
@@ -482,6 +544,28 @@ class AITranslator:
                     logger.info(
                         f"batch: ok model={self.model} ms={duration_ms:.0f} out_count={len(slice_results)}{slice_note}"
                     )
+                    if log_mode != "off":
+                        orig_text_map = {orig_idx: orig_text for orig_idx, orig_text in pairs}
+                        for orig_idx, trans in slice_results:
+                            orig_text = orig_text_map.get(orig_idx, "")
+                            log_in = _format_log_text(orig_text, log_mode, log_limit)
+                            log_out = _format_log_text(trans, log_mode, log_limit)
+                            if log_in is None and log_out is None:
+                                continue
+                            ctx_suffix = ""
+                            if log_ctx:
+                                ctx_text = cleaned_contexts[orig_idx]
+                                log_ctx_text = _format_log_text(ctx_text, log_mode, log_limit)
+                                if log_ctx_text is not None:
+                                    ctx_suffix = f' ctx="{_sanitize_log_text(log_ctx_text)}"'
+                            if log_in is None:
+                                log_in = ""
+                            if log_out is None:
+                                log_out = ""
+                            logger.info(
+                                f'batch[{orig_idx + 1}]: in="{_sanitize_log_text(log_in)}" '
+                                f'out="{_sanitize_log_text(log_out)}"{ctx_suffix}'
+                            )
                     return slice_results
 
                 except Exception as e:

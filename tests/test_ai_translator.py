@@ -1,4 +1,31 @@
 import asyncio
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _ai_provider_ppio(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "ppio")
+
+
+def test_format_log_text_full():
+    from core.ai_translator import _format_log_text
+
+    assert _format_log_text("hello", "full", 3) == "hello"
+
+
+def test_format_log_text_snippet():
+    from core.ai_translator import _format_log_text
+
+    assert _format_log_text("abcdefghij", "snippet", 3) == "abc...hij"
+    assert _format_log_text("short", "snippet", 10) == "short"
+
+
+def test_format_log_text_hash():
+    from core.ai_translator import _format_log_text
+
+    result = _format_log_text("hello", "hash", 3)
+    assert result.startswith("sha256:")
+    assert "len=5" in result
 
 
 def test_translate_batch_fallback_splits_on_slash(monkeypatch):
@@ -171,3 +198,95 @@ def test_translate_batch_chunks_and_merges(monkeypatch):
 
     assert calls["count"] == 3
     assert result == [f"OUT:{t}" for t in texts]
+
+
+def test_ai_provider_prefers_gemini_when_explicit(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    monkeypatch.delenv("PPIO_API_KEY", raising=False)
+
+    from core.ai_translator import AITranslator
+
+    called = {"gemini": 0, "ppio": 0}
+    monkeypatch.setattr(
+        AITranslator,
+        "_init_gemini",
+        lambda self: called.__setitem__("gemini", called["gemini"] + 1),
+    )
+    monkeypatch.setattr(
+        AITranslator,
+        "_init_ppio",
+        lambda self: called.__setitem__("ppio", called["ppio"] + 1),
+    )
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    assert translator.is_gemini is True
+    assert translator.model == "gemini-3-flash-preview"
+    assert called["gemini"] == 1
+    assert called["ppio"] == 0
+
+
+def test_ai_provider_prefers_ppio_when_explicit(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "ppio")
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("PPIO_MODEL", "zai-org/glm-4.7-flash")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    from core.ai_translator import AITranslator
+
+    called = {"gemini": 0, "ppio": 0}
+    monkeypatch.setattr(
+        AITranslator,
+        "_init_gemini",
+        lambda self: called.__setitem__("gemini", called["gemini"] + 1),
+    )
+    monkeypatch.setattr(
+        AITranslator,
+        "_init_ppio",
+        lambda self: called.__setitem__("ppio", called["ppio"] + 1),
+    )
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    assert translator.is_gemini is False
+    assert translator.model == "zai-org/glm-4.7-flash"
+    assert called["ppio"] == 1
+    assert called["gemini"] == 0
+
+
+def test_ai_provider_requires_explicit_when_both_keys_present(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_gemini", lambda self: None)
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    with pytest.raises(ValueError):
+        AITranslator(source_lang="en", target_lang="zh")
+
+
+def test_ai_provider_defaults_to_gemini_when_only_gemini_key(monkeypatch):
+    monkeypatch.delenv("PPIO_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+
+    from core.ai_translator import AITranslator
+
+    called = {"gemini": 0}
+    monkeypatch.setattr(
+        AITranslator,
+        "_init_gemini",
+        lambda self: called.__setitem__("gemini", called["gemini"] + 1),
+    )
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    assert translator.is_gemini is True
+    assert translator.model == "gemini-3-flash-preview"
+    assert called["gemini"] == 1
