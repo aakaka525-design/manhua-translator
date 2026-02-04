@@ -10,9 +10,9 @@ def test_compute_stripes_returns_full_when_below_threshold():
 
 
 def test_compute_stripes_merges_small_tail():
-    # height=4100 with stripe=2000, overlap=64 leaves tail < overlap
-    stripes = upscaler.compute_stripes(height=4100, threshold=4000, stripe_height=2000, overlap=64)
-    assert stripes[-1][1] == 4100
+    # height=3986 with stripe=2000, overlap=64 leaves tail < overlap
+    stripes = upscaler.compute_stripes(height=3986, threshold=3900, stripe_height=2000, overlap=64)
+    assert stripes[-1][1] == 3986
     # ensure only 2 stripes, tail merged
     assert len(stripes) == 2
 

@@ -56,6 +56,47 @@ def _resolve_torch_device_name() -> str:
     return "mps" if mps_available else "cpu"
 
 
+def compute_stripes(height: int, threshold: int, stripe_height: int, overlap: int) -> list[tuple[int, int]]:
+    if height <= threshold:
+        return [(0, height)]
+    if stripe_height <= overlap:
+        raise ValueError("stripe_height must be greater than overlap")
+    stripes: list[tuple[int, int]] = []
+    start = 0
+    while start < height:
+        end = min(start + stripe_height, height)
+        remaining = height - end
+        if remaining > 0 and remaining < overlap:
+            end = height
+        stripes.append((start, end))
+        if end >= height:
+            break
+        start = end - overlap
+    return stripes
+
+
+def crop_and_merge(stripes: list, overlap_px: int, scale: int):
+    import numpy as np
+
+    if not stripes:
+        raise ValueError("no stripes to merge")
+    if len(stripes) == 1 or overlap_px <= 0:
+        return np.concatenate(stripes, axis=0) if len(stripes) > 1 else stripes[0]
+    trimmed = []
+    for idx, stripe in enumerate(stripes):
+        if stripe.shape[0] <= overlap_px:
+            raise ValueError("stripe height too small for overlap")
+        if idx == 0:
+            trimmed.append(stripe[:-overlap_px])
+        elif idx == len(stripes) - 1:
+            trimmed.append(stripe[overlap_px:])
+        else:
+            if stripe.shape[0] <= 2 * overlap_px:
+                raise ValueError("stripe height too small for double overlap")
+            trimmed.append(stripe[overlap_px:-overlap_px])
+    return np.concatenate(trimmed, axis=0)
+
+
 class UpscaleModule(BaseModule):
     def __init__(self, binary_path: str | None = None):
         super().__init__(name="Upscaler")
