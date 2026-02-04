@@ -6,6 +6,7 @@ from .ocr import OCRModule
 from .translator import TranslatorModule
 from .inpainter import InpainterModule
 from .renderer import RendererModule
+from .upscaler import UpscaleModule
 
 __all__ = [
     "BaseModule",
@@ -14,4 +15,5 @@ __all__ = [
     "TranslatorModule",
     "InpainterModule",
     "RendererModule",
+    "UpscaleModule",
 ]
