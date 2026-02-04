@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
+import { useToastStore } from '@/stores/toast'
 
 const api = {
     async search(payload) {
@@ -314,13 +315,18 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     async function search() {
+        const toast = useToastStore()
         if (state.view !== 'search') {
             state.view = 'search'
         }
         ensureUserAgent()
         checkStateInfo()
         const kw = state.keyword.trim()
-        if (!kw) { error.value = '请输入关键词'; return }
+        if (!kw) {
+            toast.show('请输入关键词', 'warning')
+            error.value = '请输入关键词';
+            return
+        }
         loading.value = true
         error.value = ''
         results.value = []
@@ -338,6 +344,7 @@ export const useScraperStore = defineStore('scraper', () => {
                 results.value = await api.search({ ...getPayload(), keyword: kw })
             }
         } catch (e) {
+            toast.show(e.message, 'error')
             error.value = e.message
         } finally {
             loading.value = false
@@ -345,6 +352,7 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     async function selectManga(manga) {
+        const toast = useToastStore()
         selectedManga.value = manga
         loading.value = true
         error.value = ''
@@ -359,6 +367,7 @@ export const useScraperStore = defineStore('scraper', () => {
                 downloaded_total: chapter.downloaded_total || 0
             }))
         } catch (e) {
+            toast.show(`获取章节失败: ${e.message}`, 'error')
             error.value = e.message
         } finally {
             loading.value = false
@@ -366,6 +375,7 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     async function loadCatalog(reset = false) {
+        const toast = useToastStore()
         if (catalog.loading) return
         catalog.loading = true
         error.value = ''
@@ -391,6 +401,7 @@ export const useScraperStore = defineStore('scraper', () => {
             catalog.page = data.page
             catalog.hasMore = data.has_more
         } catch (e) {
+            toast.show(`加载目录失败: ${e.message}`, 'error')
             error.value = e.message
         } finally {
             catalog.loading = false
@@ -494,8 +505,11 @@ export const useScraperStore = defineStore('scraper', () => {
         parser.result = null
         parser.showAll = false
         try {
+            const toast = useToastStore()
             parser.result = await parserApi.parse(url, parser.mode)
         } catch (e) {
+            const toast = useToastStore()
+            toast.show(`解析失败: ${e.message}`, 'error')
             parser.error = e.message || '解析失败'
         } finally {
             parser.loading = false
@@ -623,7 +637,7 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     function download(chapter) {
-        enqueue(chapter)
+        enqueueMany([chapter])
     }
 
     function downloadSelected() {
