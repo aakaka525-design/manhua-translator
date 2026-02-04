@@ -12,3 +12,7 @@ def test_env_example_includes_upscale_settings():
     assert "UPSCALE_SCALE" in content
     assert "UPSCALE_TIMEOUT" in content
     assert "UPSCALE_TILE" in content
+    assert "UPSCALE_STRIPE_ENABLE" in content
+    assert "UPSCALE_STRIPE_THRESHOLD" in content
+    assert "UPSCALE_STRIPE_HEIGHT" in content
+    assert "UPSCALE_STRIPE_OVERLAP" in content
