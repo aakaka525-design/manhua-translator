@@ -157,8 +157,10 @@ const emit = defineEmits(['toggle-mobile'])
           </div>
         </details>
 
+
+
         <p v-if="scraper.error" class="text-xs text-red-400 p-2 bg-red-400/10 border border-red-400/20 rounded-lg">
-          {{ scraper.error }}
+            {{ scraper.error }}
         </p>
 
         <details class="group rounded-xl border border-border-subtle bg-bg-secondary/40 p-3">
@@ -177,6 +179,7 @@ const emit = defineEmits(['toggle-mobile'])
       </div>
     </div>
 
+    <!-- Task Status -->
     <div class="bg-surface border border-main rounded-xl p-4">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold text-text-main">下载状态</h3>
