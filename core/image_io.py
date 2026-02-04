@@ -19,6 +19,28 @@ def _normalize_suffix(path: Path) -> Path:
     return path.with_suffix(".webp" if fmt == "webp" else ".png")
 
 
+def compute_webp_slices(height: int, slice_height: int, overlap: int) -> list[tuple[int, int]]:
+    if height <= 16383:
+        return [(0, height)]
+    if slice_height <= overlap:
+        raise ValueError("slice_height must be greater than overlap")
+    slices: list[tuple[int, int]] = []
+    stride = slice_height - overlap
+    start = 0
+    while start < height:
+        end = min(start + slice_height, height)
+        remaining = height - end
+        if remaining > 0 and remaining <= overlap:
+            end = height
+            slices.append((start, end))
+            break
+        slices.append((start, end))
+        if end >= height:
+            break
+        start = start + stride
+    return slices
+
+
 def save_image(
     image: Union[Image.Image, np.ndarray],
     path: str,
@@ -30,17 +52,27 @@ def save_image(
 
     fmt = _output_format()
     if fmt == "webp":
+        if isinstance(image, Image.Image):
+            width, height = image.size
+        else:
+            height, width = image.shape[:2]
+        if width > 16383 or height > 16383:
+            fmt = "png"
+            out_path = out_path.with_suffix(".png")
+    if fmt == "webp":
         if purpose == "final":
             quality = int(os.getenv("WEBP_QUALITY_FINAL", "90"))
             if isinstance(image, Image.Image):
                 image.save(out_path, format="WEBP", quality=quality)
             else:
-                cv2.imwrite(str(out_path), image, [cv2.IMWRITE_WEBP_QUALITY, quality])
+                rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                Image.fromarray(rgb).save(out_path, format="WEBP", quality=quality)
         else:
             if isinstance(image, Image.Image):
                 image.save(out_path, format="WEBP", lossless=True)
             else:
-                cv2.imwrite(str(out_path), image, [cv2.IMWRITE_WEBP_QUALITY, 100])
+                rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                Image.fromarray(rgb).save(out_path, format="WEBP", lossless=True)
         return str(out_path)
 
     if isinstance(image, Image.Image):
