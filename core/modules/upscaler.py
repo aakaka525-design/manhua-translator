@@ -165,14 +165,15 @@ class UpscaleModule(BaseModule):
         scale = int(os.getenv("UPSCALE_SCALE", str(DEFAULT_SCALE)))
         timeout = int(os.getenv("UPSCALE_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
-        tmp_path = output_path.with_name(output_path.stem + ".upscale.tmp.png")
+        input_path = output_path.resolve()
+        tmp_path = output_path.with_name(output_path.stem + ".upscale.tmp.png").resolve()
         if tmp_path.exists():
             tmp_path.unlink()
 
         cmd = [
             str(binary),
             "-i",
-            str(output_path),
+            str(input_path),
             "-o",
             str(tmp_path),
             "-n",
