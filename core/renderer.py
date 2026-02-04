@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from .image_io import save_image
 from .models import Box2D, FontStyleParams, RegionData
 from .style_config import load_style_config
 
@@ -653,8 +654,7 @@ class TextRenderer:
                     draw.text((x, y), line, font=font, fill=text_color)
 
         # Save result
-        image.save(output_path)
-        return output_path
+        return save_image(image, output_path, purpose="final")
 
 
 # Convenience function

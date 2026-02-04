@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from .image_io import save_image
+
 
 class DebugArtifactWriter:
     def __init__(self, output_dir: str = "output/debug", enabled: Optional[bool] = None):
@@ -60,7 +62,8 @@ class DebugArtifactWriter:
                 y = max(0, box.y1 - text_h - 4)
                 draw.rectangle([x, y, x + text_w + 6, y + text_h + 4], fill="white")
                 draw.text((x + 3, y + 2), label, font=font, fill="black")
-        img.save(out_path)
+        saved_path = save_image(img, str(out_path), purpose="intermediate")
+        return saved_path
 
     def write_ocr(self, context, image_path: str):
         if not self.enabled:
@@ -71,8 +74,7 @@ class DebugArtifactWriter:
         def label(region):
             return region.normalized_text or region.source_text or ""
 
-        self._draw_regions(image_path, context.regions, label, "#00A0FF", out_path)
-        return out_path
+        return self._draw_regions(image_path, context.regions, label, "#00A0FF", out_path)
 
     def write_grouping(self, context, image_path: str):
         if not self.enabled:
@@ -86,8 +88,14 @@ class DebugArtifactWriter:
         def box_getter(region):
             return region.render_box_2d or region.box_2d
 
-        self._draw_regions(image_path, context.regions, label, "#7B61FF", out_path, box_getter=box_getter)
-        return out_path
+        return self._draw_regions(
+            image_path,
+            context.regions,
+            label,
+            "#7B61FF",
+            out_path,
+            box_getter=box_getter,
+        )
 
     def write_translation(self, context, image_path: str):
         if not self.enabled:
@@ -98,8 +106,7 @@ class DebugArtifactWriter:
         def label(region):
             return region.target_text or ""
 
-        self._draw_regions(image_path, context.regions, label, "#FF8C00", out_path)
-        return out_path
+        return self._draw_regions(image_path, context.regions, label, "#FF8C00", out_path)
 
     def write_mask(self, context):
         if not self.enabled:
@@ -109,7 +116,7 @@ class DebugArtifactWriter:
         task_dir = self._ensure_dir(context.task_id)
         out_path = task_dir / "05_inpaint_mask.png"
         mask_img = Image.open(context.mask_path)
-        mask_img.save(out_path)
+        save_image(mask_img, str(out_path), purpose="intermediate")
 
         overlay_path = task_dir / "05_inpaint_mask_cc_overlay.png"
         grouped_overlay_path = task_dir / "05_inpaint_mask_cc_grouped_overlay.png"
@@ -135,7 +142,7 @@ class DebugArtifactWriter:
                 ty = max(0, y1 - text_h - 4)
                 cc_draw.rectangle([tx, ty, tx + text_w + 6, ty + text_h + 4], fill="white")
                 cc_draw.text((tx + 3, ty + 2), label, font=font, fill="black")
-            cc_img.save(overlay_path)
+            save_image(cc_img, str(overlay_path), purpose="intermediate")
 
             # Grouped overlay by OCR regions
             regions = getattr(context, "regions", None) or []
@@ -215,7 +222,7 @@ class DebugArtifactWriter:
                     grouped_draw.rectangle([tx, ty, tx + text_w + 6, ty + text_h + 4], fill="white")
                     grouped_draw.text((tx + 3, ty + 2), label, font=font, fill="black")
 
-                grouped_img.save(grouped_overlay_path)
+                save_image(grouped_img, str(grouped_overlay_path), purpose="intermediate")
         except Exception:
             # Debug overlay is best-effort; keep mask output even if overlay fails.
             pass
@@ -228,8 +235,7 @@ class DebugArtifactWriter:
             return None
         task_dir = self._ensure_dir(context.task_id)
         out_path = task_dir / "06_inpainted.png"
-        Image.open(context.inpainted_path).save(out_path)
-        return out_path
+        return save_image(Image.open(context.inpainted_path), str(out_path), purpose="intermediate")
 
     def write_layout(self, context, image_path: str):
         if not self.enabled:
@@ -243,8 +249,14 @@ class DebugArtifactWriter:
         def box_getter(region):
             return region.render_box_2d or region.box_2d
 
-        self._draw_regions(image_path, context.regions, label, "#00C48C", out_path, box_getter=box_getter)
-        return out_path
+        return self._draw_regions(
+            image_path,
+            context.regions,
+            label,
+            "#00C48C",
+            out_path,
+            box_getter=box_getter,
+        )
 
     def write_final(self, context):
         if not self.enabled:
@@ -253,5 +265,4 @@ class DebugArtifactWriter:
             return None
         task_dir = self._ensure_dir(context.task_id)
         out_path = task_dir / "08_final.png"
-        Image.open(context.output_path).save(out_path)
-        return out_path
+        return save_image(Image.open(context.output_path), str(out_path), purpose="intermediate")
