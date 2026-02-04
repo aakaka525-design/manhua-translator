@@ -8,8 +8,11 @@ import types
 import importlib.util
 from pathlib import Path
 
+import cv2
+
 from .base import BaseModule
 from ..models import TaskContext
+from ..image_io import save_image
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +169,23 @@ class UpscaleModule(BaseModule):
         timeout = int(os.getenv("UPSCALE_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
         input_path = output_path.resolve()
-        tmp_path = output_path.with_name(output_path.stem + ".upscale.tmp.png").resolve()
+        input_tmp = None
+        output_tmp = None
+
+        if output_path.suffix.lower() == ".webp":
+            input_tmp = output_path.with_name(output_path.stem + ".upscale.in.png").resolve()
+            output_tmp = output_path.with_name(output_path.stem + ".upscale.tmp.png").resolve()
+            image = cv2.imread(str(input_path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise RuntimeError(f"Failed to read image: {input_path}")
+            cv2.imwrite(str(input_tmp), image)
+            input_path = input_tmp
+            tmp_path = output_tmp
+        else:
+            tmp_path = output_path.with_name(
+                output_path.stem + ".upscale.tmp" + output_path.suffix
+            ).resolve()
+
         if tmp_path.exists():
             tmp_path.unlink()
 
@@ -203,7 +222,19 @@ class UpscaleModule(BaseModule):
 
         if not tmp_path.exists():
             raise RuntimeError(f"Upscale output missing: {tmp_path}")
-        shutil.move(str(tmp_path), str(output_path))
+
+        if output_path.suffix.lower() == ".webp":
+            image = cv2.imread(str(tmp_path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise RuntimeError(f"Failed to read image: {tmp_path}")
+            saved_path = save_image(image, str(output_path), purpose="final")
+            output_path = Path(saved_path)
+            if output_tmp and output_tmp.exists():
+                output_tmp.unlink()
+            if input_tmp and input_tmp.exists():
+                input_tmp.unlink()
+        else:
+            shutil.move(str(tmp_path), str(output_path))
 
         stderr = (result.stderr or "").lower()
         if "cpu" in stderr and "fallback" in stderr:
@@ -216,6 +247,7 @@ class UpscaleModule(BaseModule):
             "scale": scale,
             "backend": "ncnn",
         }
+        context.output_path = str(output_path)
         return context
 
     def _run_pytorch(self, context: TaskContext, output_path: Path) -> TaskContext:
@@ -240,7 +272,9 @@ class UpscaleModule(BaseModule):
         timeout = int(os.getenv("UPSCALE_TIMEOUT", str(DEFAULT_TIMEOUT)))
         tile = int(os.getenv("UPSCALE_TILE", str(DEFAULT_TILE)))
 
-        tmp_path = output_path.with_name(output_path.stem + ".upscale.tmp.png")
+        tmp_path = output_path.with_name(
+            output_path.stem + ".upscale.tmp" + output_path.suffix
+        )
         if tmp_path.exists():
             tmp_path.unlink()
 
@@ -320,8 +354,8 @@ class UpscaleModule(BaseModule):
         if duration_ms > timeout * 1000:
             raise TimeoutError(f"Upscale timeout after {timeout}s")
 
-        cv2.imwrite(str(tmp_path), output)
-        shutil.move(str(tmp_path), str(output_path))
+        saved_path = save_image(output, str(output_path), purpose="final")
+        output_path = Path(saved_path)
 
         logger.info("[%s] Upscaler done: %s ms", context.task_id, int(duration_ms))
         self.last_metrics = {
@@ -330,4 +364,5 @@ class UpscaleModule(BaseModule):
             "scale": scale,
             "backend": "pytorch",
         }
+        context.output_path = str(output_path)
         return context
