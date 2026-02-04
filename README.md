@@ -76,8 +76,8 @@ docker compose down
 ### 安装
 
 ```bash
-# 后端依赖
-pip install -r requirements.txt
+# 本地依赖 + Real-ESRGAN（二进制）
+./scripts/setup_local.sh
 
 # CPU-only OCR 依赖（Linux 服务器）
 pip install -r requirements-cpu.txt
@@ -121,6 +121,23 @@ AUTO_SETUP_MODELS=on
 MODEL_WARMUP_TIMEOUT=300
 OCR_WARMUP_LANGS=korean
 LAMA_DEVICE=cpu
+```
+
+### 超分（可选）
+
+默认关闭，启用后会在**渲染完成后**对最终图进行超分处理并覆盖输出：
+
+```env
+UPSCALE_ENABLE=1
+UPSCALE_MODEL=realesrgan-x4plus-anime
+UPSCALE_SCALE=2
+UPSCALE_TIMEOUT=120
+```
+
+评估脚本（OCR 置信度对比）：
+
+```bash
+/Users/xa/Desktop/projiect/manhua/.venv/bin/python scripts/upscale_eval.py data/raw/sexy-woman/chapter-1/1.jpg --lang korean
 ```
 
 **模型选择说明**
