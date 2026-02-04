@@ -152,6 +152,14 @@ UPSCALE_STRIPE_OVERLAP=64
 - `UPSCALE_STRIPE_HEIGHT` 控制每段高度
 - `UPSCALE_STRIPE_OVERLAP` 控制段间重叠（避免接缝）
 
+输出格式（默认 WebP）：
+
+```bash
+OUTPUT_FORMAT=webp
+WEBP_QUALITY_FINAL=90
+WEBP_LOSSLESS_INTERMEDIATE=1
+```
+
 评估脚本（OCR 置信度对比）：
 
 ```bash
