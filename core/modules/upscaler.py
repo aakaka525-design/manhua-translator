@@ -27,7 +27,12 @@ DEFAULT_STRIPE_OVERLAP = 64
 
 
 def _ensure_torchvision_functional_tensor() -> None:
-    if importlib.util.find_spec("torchvision.transforms.functional_tensor"):
+    if "torchvision.transforms.functional_tensor" in sys.modules:
+        return
+    try:
+        if importlib.util.find_spec("torchvision.transforms.functional_tensor"):
+            return
+    except ValueError:
         return
     try:
         from torchvision.transforms import functional as functional_api
@@ -177,7 +182,7 @@ class UpscaleModule(BaseModule):
         ]
 
         logger.info("[%s] Upscaler start (ncnn): model=%s scale=%s", context.task_id, model, scale)
-        start = time.perf_counter()
+        overall_start = time.perf_counter()
         try:
             result = subprocess.run(
                 cmd,
@@ -193,7 +198,7 @@ class UpscaleModule(BaseModule):
             stderr = (exc.stderr or "").strip()
             raise RuntimeError(f"Upscale failed: {stderr[-200:]}") from exc
 
-        duration_ms = (time.perf_counter() - start) * 1000
+        duration_ms = (time.perf_counter() - overall_start) * 1000
 
         if not tmp_path.exists():
             raise RuntimeError(f"Upscale output missing: {tmp_path}")
@@ -260,7 +265,7 @@ class UpscaleModule(BaseModule):
             tile,
             device_name,
         )
-        start = time.perf_counter()
+        overall_start = time.perf_counter()
         try:
             image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
             if image is None:
@@ -281,8 +286,8 @@ class UpscaleModule(BaseModule):
                 )
                 outputs = []
                 overlap_px = int(overlap * scale)
-                for i, (start, end) in enumerate(stripes):
-                    stripe = image[start:end, :, :]
+                for i, (stripe_start, stripe_end) in enumerate(stripes):
+                    stripe = image[stripe_start:stripe_end, :, :]
                     start_t = time.perf_counter()
                     try:
                         out, _ = upsampler.enhance(stripe, outscale=scale)
@@ -310,7 +315,7 @@ class UpscaleModule(BaseModule):
         except Exception as exc:
             raise RuntimeError(f"Upscale failed: {exc}") from exc
 
-        duration_ms = (time.perf_counter() - start) * 1000
+        duration_ms = (time.perf_counter() - overall_start) * 1000
         if duration_ms > timeout * 1000:
             raise TimeoutError(f"Upscale timeout after {timeout}s")
 

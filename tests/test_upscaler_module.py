@@ -140,3 +140,64 @@ def test_upscaler_pytorch_device_mps_requires_available(monkeypatch):
 
     with pytest.raises(RuntimeError):
         upscaler._resolve_torch_device_name()
+
+
+def test_upscaler_stripe_timeout_uses_perf_start(monkeypatch, tmp_path):
+    import asyncio
+    import sys
+    import types
+    import numpy as np
+    import cv2
+    import shutil
+    from core.modules import upscaler
+
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "pytorch")
+    monkeypatch.setenv("UPSCALE_DEVICE", "cpu")
+    monkeypatch.setenv("UPSCALE_SCALE", "2")
+    monkeypatch.setenv("UPSCALE_TIMEOUT", "1")
+    monkeypatch.setenv("UPSCALE_STRIPE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_STRIPE_THRESHOLD", "4000")
+    monkeypatch.setenv("UPSCALE_STRIPE_HEIGHT", "2000")
+    monkeypatch.setenv("UPSCALE_STRIPE_OVERLAP", "64")
+
+    model_path = tmp_path / "RealESRGAN_x4plus.pth"
+    model_path.write_text("pth")
+    monkeypatch.setenv("UPSCALE_MODEL_PATH", str(model_path))
+
+    fake_image = np.zeros((5000, 10, 3), dtype=np.uint8)
+    monkeypatch.setattr(cv2, "imread", lambda *args, **kwargs: fake_image)
+    monkeypatch.setattr(cv2, "imwrite", lambda *args, **kwargs: True)
+    monkeypatch.setattr(shutil, "move", lambda *args, **kwargs: None)
+
+    class _DummyRRDBNet:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _DummyESRGANer:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def enhance(self, image, outscale=2):
+            h, w = image.shape[:2]
+            return np.zeros((h * outscale, w * outscale, 3), dtype=np.uint8), None
+
+    basicsr = types.ModuleType("basicsr")
+    basicsr_archs = types.ModuleType("basicsr.archs")
+    basicsr_archs_rrdb = types.ModuleType("basicsr.archs.rrdbnet_arch")
+    basicsr_archs_rrdb.RRDBNet = _DummyRRDBNet
+    sys.modules["basicsr"] = basicsr
+    sys.modules["basicsr.archs"] = basicsr_archs
+    sys.modules["basicsr.archs.rrdbnet_arch"] = basicsr_archs_rrdb
+
+    realesrgan = types.ModuleType("realesrgan")
+    realesrgan.RealESRGANer = _DummyESRGANer
+    sys.modules["realesrgan"] = realesrgan
+
+    values = iter([20000.0, 20000.1, 20000.2, 20000.3, 20000.4, 20000.45, 20000.48, 20000.5])
+    monkeypatch.setattr(upscaler.time, "perf_counter", lambda: next(values))
+
+    ctx = _make_context(tmp_path)
+    module = UpscaleModule()
+
+    asyncio.run(module.process(ctx))
