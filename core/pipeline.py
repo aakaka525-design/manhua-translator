@@ -2,7 +2,7 @@
 Pipeline Manager - Orchestrates the translation pipeline.
 
 Chains all processing modules together:
-OCR → Translator → Inpainter → Renderer
+OCR → Translator → Inpainter → Renderer → Upscaler
 
 Includes performance metrics collection for each stage.
 """
@@ -26,6 +26,7 @@ from .modules import (
     OCRModule,
     RendererModule,
     TranslatorModule,
+    UpscaleModule,
 )
 from .crosspage_carryover import CrosspageCarryOverStore
 
@@ -59,7 +60,7 @@ class Pipeline:
     Orchestrates the flow of data through all processing stages.
     Each stage updates the TaskContext with its results.
     
-    流程: OCR → Translator → Inpainter → Renderer
+    流程: OCR → Translator → Inpainter → Renderer → Upscaler
     """
 
     def __init__(
@@ -68,6 +69,7 @@ class Pipeline:
         translator: Optional[BaseModule] = None,
         inpainter: Optional[BaseModule] = None,
         renderer: Optional[BaseModule] = None,
+        upscaler: Optional[BaseModule] = None,
     ):
         """
         Initialize pipeline with modules.
@@ -82,6 +84,7 @@ class Pipeline:
         self.translator = translator or TranslatorModule()
         self.inpainter = inpainter or InpainterModule()
         self.renderer = renderer or RendererModule()
+        self.upscaler = upscaler or UpscaleModule()
 
         carry_path = os.getenv("CROSSPAGE_CARRYOVER_PATH")
         if not carry_path:
@@ -94,6 +97,7 @@ class Pipeline:
             ("translator", self.translator),
             ("inpainter", self.inpainter),
             ("renderer", self.renderer),
+            ("upscaler", self.upscaler),
         ]
 
     async def process(
@@ -256,6 +260,7 @@ class Pipeline:
         for ctx in contexts:
             ctx = await self.inpainter.process(ctx)
             ctx = await self.renderer.process(ctx)
+            ctx = await self.upscaler.process(ctx)
             results.append(ctx)
         return results
 
