@@ -195,19 +195,21 @@ async def get_chapter_details(
         key=natural_sort_key,
     )
 
-    from app.services.page_status import compute_page_status
+    from app.services.page_status import compute_page_status, find_translated_file
 
     report_dir = Path(settings.output_dir) / "quality_reports"
     low_quality_threshold = float(os.getenv("LOW_QUALITY_THRESHOLD", "0.7"))
     low_quality_ratio = float(os.getenv("LOW_QUALITY_RATIO", "0.3"))
 
     for p in original_files:
-        translated_file = output_path / p.name
+        translated_file = (
+            find_translated_file(output_path, p.stem) if output_path.exists() else None
+        )
         report_pattern = f"{manga_id}__{chapter_id}__{p.stem}__*.json"
         report_paths = list(report_dir.glob(report_pattern))
         status = compute_page_status(
             report_paths=report_paths,
-            translated_exists=translated_file.exists(),
+            translated_exists=bool(translated_file and translated_file.exists()),
             low_quality_threshold=low_quality_threshold,
             low_quality_ratio=low_quality_ratio,
         )
@@ -216,9 +218,11 @@ async def get_chapter_details(
             {
                 "name": p.name,
                 "original_url": f"/data/{manga_id}/{chapter_id}/{p.name}",
-                "translated_url": f"/output/{manga_id}/{chapter_id}/{p.name}"
-                if translated_file.exists()
-                else None,
+                "translated_url": (
+                    f"/output/{manga_id}/{chapter_id}/{translated_file.name}"
+                    if translated_file and translated_file.exists()
+                    else None
+                ),
                 "status": status["status"],
                 "status_reason": status["reason"],
                 "warning_counts": status["warning_counts"],
