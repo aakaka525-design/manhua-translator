@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from ..models import Box2D, RegionData
+from ..image_io import save_image
 
 
 class TextDetector(ABC):
@@ -176,9 +177,7 @@ class ContourDetector(TextDetector):
         # Place in full mask
         mask[box.y1:box.y2, box.x1:box.x2] = roi_binary
 
-        # Save mask
-        cv2.imwrite(output_path, mask)
-        return output_path
+        return save_image(mask, output_path, purpose="intermediate")
 
 
 class YOLODetector(TextDetector):

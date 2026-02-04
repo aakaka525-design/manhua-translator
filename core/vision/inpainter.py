@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from ..models import RegionData
+from ..image_io import save_image
 
 
 def mask_params_for_region(
@@ -174,7 +175,9 @@ class Inpainter(ABC):
         # Save combined mask
         Path(temp_dir).mkdir(parents=True, exist_ok=True)
         mask_path = Path(temp_dir) / f"combined_mask_{Path(image_path).stem}.png"
-        cv2.imwrite(str(mask_path), combined_mask)
+        mask_path = Path(
+            save_image(combined_mask, str(mask_path), purpose="intermediate")
+        )
 
         # Inpaint
         result_path = await self.inpaint(image_path, str(mask_path), output_path)
@@ -336,8 +339,7 @@ class LamaInpainter(Inpainter):
         # If image is small enough, process directly
         if height <= self.MAX_CHUNK_SIZE and width <= self.MAX_CHUNK_SIZE:
             result = model(image, mask)
-            result.save(output_path)
-            return output_path
+            return save_image(result, output_path, purpose="intermediate")
         
         # Find regions that need inpainting
         mask_np = np.array(mask)
@@ -345,8 +347,7 @@ class LamaInpainter(Inpainter):
         
         if not chunks:
             # No mask regions, save original
-            image.save(output_path)
-            return output_path
+            return save_image(image, output_path, purpose="intermediate")
         
         # Process each chunk
         result_np = np.array(image)
@@ -387,7 +388,7 @@ class LamaInpainter(Inpainter):
         
         # Save result
         result = Image.fromarray(result_np)
-        result.save(output_path)
+        output_path = save_image(result, output_path, purpose="intermediate")
         
         # Cleanup
         del result_np
@@ -534,8 +535,7 @@ class OpenCVInpainter(Inpainter):
         result = cv2.inpaint(image, mask, self.radius, self.flags)
 
         # Save result
-        cv2.imwrite(output_path, result)
-        return output_path
+        return save_image(result, output_path, purpose="intermediate")
 
 
 def create_inpainter(prefer_lama: bool = True, device: str = "cpu") -> Inpainter:

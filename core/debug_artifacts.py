@@ -116,7 +116,8 @@ class DebugArtifactWriter:
         task_dir = self._ensure_dir(context.task_id)
         out_path = task_dir / "05_inpaint_mask.png"
         mask_img = Image.open(context.mask_path)
-        save_image(mask_img, str(out_path), purpose="intermediate")
+        saved_mask = save_image(mask_img, str(out_path), purpose="intermediate")
+        out_path = Path(saved_mask)
 
         overlay_path = task_dir / "05_inpaint_mask_cc_overlay.png"
         grouped_overlay_path = task_dir / "05_inpaint_mask_cc_grouped_overlay.png"
