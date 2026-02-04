@@ -20,6 +20,10 @@ DEFAULT_BACKEND = "pytorch"
 DEFAULT_PYTORCH_MODEL = "tools/bin/RealESRGAN_x4plus.pth"
 DEFAULT_TILE = 0
 DEFAULT_DEVICE = "auto"
+DEFAULT_STRIPE_ENABLE = "0"
+DEFAULT_STRIPE_THRESHOLD = 4000
+DEFAULT_STRIPE_HEIGHT = 2000
+DEFAULT_STRIPE_OVERLAP = 64
 
 
 def _ensure_torchvision_functional_tensor() -> None:
@@ -261,7 +265,48 @@ class UpscaleModule(BaseModule):
             image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
             if image is None:
                 raise RuntimeError(f"Failed to read image: {output_path}")
-            output, _ = upsampler.enhance(image, outscale=scale)
+            stripe_enable = os.getenv("UPSCALE_STRIPE_ENABLE", DEFAULT_STRIPE_ENABLE) == "1"
+            threshold = int(os.getenv("UPSCALE_STRIPE_THRESHOLD", str(DEFAULT_STRIPE_THRESHOLD)))
+            stripe_height = int(os.getenv("UPSCALE_STRIPE_HEIGHT", str(DEFAULT_STRIPE_HEIGHT)))
+            overlap = int(os.getenv("UPSCALE_STRIPE_OVERLAP", str(DEFAULT_STRIPE_OVERLAP)))
+
+            if stripe_enable and image.shape[0] > threshold:
+                stripes = compute_stripes(image.shape[0], threshold, stripe_height, overlap)
+                logger.info(
+                    "stripe: segments=%d h=%d threshold=%d overlap=%d",
+                    len(stripes),
+                    image.shape[0],
+                    threshold,
+                    overlap,
+                )
+                outputs = []
+                overlap_px = int(overlap * scale)
+                for i, (start, end) in enumerate(stripes):
+                    stripe = image[start:end, :, :]
+                    start_t = time.perf_counter()
+                    try:
+                        out, _ = upsampler.enhance(stripe, outscale=scale)
+                    except Exception as exc:
+                        logger.error(
+                            "stripe[%d] failed: input_size=%sx%s error=%s",
+                            i,
+                            stripe.shape[1],
+                            stripe.shape[0],
+                            exc,
+                        )
+                        raise RuntimeError(f"Stripe {i} upscale failed") from exc
+                    elapsed = (time.perf_counter() - start_t) * 1000
+                    logger.debug(
+                        "stripe[%d]: input_h=%d output_h=%d ms=%.0f",
+                        i,
+                        stripe.shape[0],
+                        out.shape[0],
+                        elapsed,
+                    )
+                    outputs.append(out)
+                output = crop_and_merge(outputs, overlap_px=overlap_px, scale=scale)
+            else:
+                output, _ = upsampler.enhance(image, outscale=scale)
         except Exception as exc:
             raise RuntimeError(f"Upscale failed: {exc}") from exc
 
