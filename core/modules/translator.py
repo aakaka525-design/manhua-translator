@@ -45,6 +45,9 @@ SFX_PATTERNS = [
 # Abbreviations that should NOT be treated as SFX (signage, labels, etc.)
 SFX_EXCLUSIONS = {"TEL", "VIP", "SMS", "ID", "NO", "OK", "TV", "VS", "FM", "AM", "DJ", "MC", "PC"}
 
+# OCR 噪音白名单（避免误判短词）
+NOISE_ALLOWLIST = set(SFX_EXCLUSIONS) | {"YES", "OKAY", "USA", "UK", "EU", "IOS"}
+
 
 def _is_sfx(text: str) -> bool:
     """Check if text is likely a sound effect."""
@@ -113,6 +116,49 @@ def _should_skip_translation(text: str) -> tuple[bool, str]:
     if re.match(r'^[\u2160-\u2188]+$', text):
         return True, "罗马数字"
     
+    return False, ""
+
+
+_NOISE_SYMBOL_RE = re.compile(r"[\\$^_{}]")
+_NOISE_TWO_CAPS_RE = re.compile(r"^[A-Z]{2}$")
+_NOISE_ALNUM_SHORT_RE = re.compile(r"^[A-Za-z]{1,2}[0-9]{2,4}$")
+_NOISE_WEIRD_SPLIT_RE = re.compile(r"^[A-Z]{3,4}\s[A-Z][a-z]-[A-Z][a-z],?$")
+_NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
+
+
+def _is_ocr_noise(text: str) -> tuple[bool, str]:
+    raw = (text or "").strip()
+    if not raw:
+        return True, "空文本"
+    if _is_sfx(raw):
+        return False, ""
+
+    # Remove trailing punctuation for noise checks
+    base = re.sub(r"[!！?？….,。]+$", "", raw).strip()
+    if not base:
+        return False, ""
+
+    upper = base.upper()
+    if upper in NOISE_ALLOWLIST:
+        return False, ""
+
+    if _NOISE_SYMBOL_RE.search(base):
+        return True, "特殊符号"
+    if _NOISE_TWO_CAPS_RE.match(base):
+        return True, "短大写"
+    if _NOISE_ALNUM_SHORT_RE.match(base):
+        return True, "字母数字"
+    if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
+        return True, "分隔数字"
+    if _NOISE_WEIRD_SPLIT_RE.match(base):
+        return True, "异常拼写"
+
+    if base.isascii():
+        has_upper = any(c.isupper() for c in base)
+        has_lower = any(c.islower() for c in base)
+        if len(base) <= 3 and has_upper and has_lower:
+            return True, "短混合大小写"
+
     return False, ""
 
 
@@ -544,6 +590,14 @@ class TranslatorModule(BaseModule):
                 attach_debug=quality_debug,
             )
         groups = group_adjacent_regions(context.regions, bubble_map=bubble_map)
+        if bubble_map:
+            for region in context.regions:
+                bubble_id = bubble_map.get(region.region_id)
+                if bubble_id is None:
+                    continue
+                if region.debug is None:
+                    region.debug = {}
+                region.debug["bubble_id"] = bubble_id
         if quality_debug:
             for idx, group in enumerate(groups):
                 for region in group:
@@ -638,6 +692,15 @@ class TranslatorModule(BaseModule):
                     if r.target_text:
                         continue
                     r.target_text = ""
+                    continue
+                is_noise, noise_reason = _is_ocr_noise(r.source_text)
+                if is_noise:
+                    r.target_text = "[INPAINT_ONLY]"
+                    skip_region_ids.add(r.region_id)
+                    if quality_debug:
+                        if r.debug is None:
+                            r.debug = {}
+                        r.debug["noise_reason"] = noise_reason
                     continue
                 should_skip, _ = _should_skip_translation(r.source_text)
                 if should_skip:

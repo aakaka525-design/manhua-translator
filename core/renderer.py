@@ -509,6 +509,58 @@ class TextRenderer:
         else:
             original_cv = cv2.imread(image_path)
 
+        # Normalize font size within the same bubble (if bubble_id available)
+        try:
+            from statistics import median
+        except Exception:
+            median = None
+
+        def _bubble_id(r: RegionData):
+            if r.debug and isinstance(r.debug, dict):
+                return r.debug.get("bubble_id")
+            return None
+
+        if median:
+            bubble_groups: dict[int, list[RegionData]] = {}
+            for region in regions:
+                if not region.target_text or not region.box_2d:
+                    continue
+                if region.target_text.startswith("[SFX:") or region.target_text == "[INPAINT_ONLY]":
+                    continue
+                bid = _bubble_id(region)
+                if bid is None:
+                    continue
+                bubble_groups.setdefault(bid, []).append(region)
+
+            for group in bubble_groups.values():
+                if len(group) <= 1:
+                    continue
+                sizes: list[int] = []
+                for r in group:
+                    box = r.render_box_2d or r.box_2d
+                    if not box:
+                        continue
+                    text_len = len((r.source_text or "").strip())
+                    if text_len <= 0:
+                        continue
+                    sizes.append(
+                        self.style_estimator.estimate_font_size(
+                            box,
+                            text_len,
+                            line_spacing=self.line_spacing,
+                            line_spacing_compact=self.line_spacing_compact,
+                            compact_threshold=self.line_spacing_compact_threshold,
+                            bias=self.style_config.font_size_estimate_bias,
+                        )
+                    )
+                if not sizes:
+                    continue
+                ref_size = int(round(median(sizes)))
+                for r in group:
+                    r.font_style_params.font_size = ref_size
+                    r.font_size_source = "override"
+                    r.font_size_ref = ref_size
+
         for region in regions:
             if not region.target_text or not region.box_2d:
                 continue
@@ -537,7 +589,10 @@ class TextRenderer:
             default_font = FontStyleParams().font_size
             if (
                 region.font_style_params
-                and region.font_style_params.font_size != default_font
+                and (
+                    region.font_style_params.font_size != default_font
+                    or region.font_size_source == "override"
+                )
             ):
                 ref_size = region.font_style_params.font_size
                 ref_source = "override"

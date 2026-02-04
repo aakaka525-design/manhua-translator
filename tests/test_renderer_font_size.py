@@ -150,3 +150,35 @@ def test_renderer_uses_render_box_for_layout(tmp_path: Path):
         ref_source="estimate",
     )
     assert region.font_size_used == expected_size
+
+
+def test_renderer_normalizes_font_size_within_bubble(tmp_path: Path):
+    img_path = tmp_path / "src.png"
+    Image.new("RGB", (240, 120), "white").save(img_path)
+
+    r1 = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=200, y2=40),
+        source_text="HELLO",
+        target_text="你好",
+        debug={"bubble_id": 1},
+    )
+    r2 = RegionData(
+        box_2d=Box2D(x1=0, y1=45, x2=200, y2=85),
+        source_text="THIS IS A LONGER LINE",
+        target_text="这是一句更长的话",
+        debug={"bubble_id": 1},
+    )
+
+    renderer = TextRenderer()
+    renderer._render_sync(
+        image_path=str(img_path),
+        regions=[r1, r2],
+        output_path=str(tmp_path / "out.png"),
+        original_image_path=str(img_path),
+    )
+
+    assert r1.font_size_ref is not None
+    assert r2.font_size_ref is not None
+    assert r1.font_size_ref == r2.font_size_ref
+    assert r1.font_size_source == "override"
+    assert r2.font_size_source == "override"

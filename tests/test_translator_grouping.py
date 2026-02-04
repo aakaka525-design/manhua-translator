@@ -48,6 +48,39 @@ def test_translator_skips_numeric_noise_within_group():
     assert "2" not in translated[0].target_text
 
 
+def test_translator_marks_ascii_noise_inpaint_only():
+    noise = RegionData(
+        box_2d=Box2D(x1=10, y1=10, x2=60, y2=30),
+        source_text="CI",
+        confidence=0.95,
+    )
+    dialogue = RegionData(
+        box_2d=Box2D(x1=200, y1=200, x2=400, y2=260),
+        source_text="Hello there",
+        confidence=0.95,
+    )
+
+    ctx = TaskContext(image_path="/tmp/input.png", regions=[noise, dialogue])
+    module = TranslatorModule(use_mock=True)
+
+    result = __import__("asyncio").run(module.process(ctx))
+    noise_region = next(r for r in result.regions if r.source_text == "CI")
+    assert noise_region.target_text == "[INPAINT_ONLY]"
+
+
+def test_translator_marks_spaced_digits_noise_inpaint_only():
+    noise = RegionData(
+        box_2d=Box2D(x1=10, y1=10, x2=60, y2=30),
+        source_text="9 9",
+        confidence=0.6,
+    )
+    ctx = TaskContext(image_path="/tmp/input.png", regions=[noise])
+    module = TranslatorModule(use_mock=True)
+
+    result = __import__("asyncio").run(module.process(ctx))
+    assert result.regions[0].target_text == "[INPAINT_ONLY]"
+
+
 def test_group_adjacent_regions_does_not_merge_sfx_with_dialogue():
     sfx = RegionData(
         box_2d=Box2D(x1=100, y1=100, x2=150, y2=140),
