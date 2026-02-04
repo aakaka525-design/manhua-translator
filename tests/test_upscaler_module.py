@@ -17,6 +17,7 @@ def _make_context(tmp_path: Path) -> TaskContext:
 
 def test_upscaler_skips_when_disabled(monkeypatch, tmp_path):
     monkeypatch.setenv("UPSCALE_ENABLE", "0")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
     ctx = _make_context(tmp_path)
     module = UpscaleModule(binary_path=str(tmp_path / "missing"))
 
@@ -29,6 +30,7 @@ def test_upscaler_skips_when_disabled(monkeypatch, tmp_path):
 
 def test_upscaler_missing_binary_raises(monkeypatch, tmp_path):
     monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
     ctx = _make_context(tmp_path)
     module = UpscaleModule(binary_path=str(tmp_path / "missing"))
 
@@ -38,6 +40,7 @@ def test_upscaler_missing_binary_raises(monkeypatch, tmp_path):
 
 def test_upscaler_replaces_output_with_temp(monkeypatch, tmp_path):
     monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
     monkeypatch.setenv("UPSCALE_MODEL", "realesrgan-x4plus-anime")
     monkeypatch.setenv("UPSCALE_SCALE", "2")
 
@@ -62,3 +65,35 @@ def test_upscaler_replaces_output_with_temp(monkeypatch, tmp_path):
     assert Path(ctx.output_path).read_bytes() == b"upscaled"
     assert "realesrgan-x4plus-anime" in calls["cmd"]
     assert calls["cwd"] == str(binary.parent)
+
+
+def test_upscaler_pytorch_missing_model_raises(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "pytorch")
+    monkeypatch.setenv("UPSCALE_MODEL_PATH", str(tmp_path / "missing.pth"))
+
+    ctx = _make_context(tmp_path)
+    module = UpscaleModule()
+
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(module.process(ctx))
+
+
+def test_upscaler_pytorch_calls_runner(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "pytorch")
+    model_path = tmp_path / "RealESRGAN_x4plus.pth"
+    model_path.write_text("pth")
+    monkeypatch.setenv("UPSCALE_MODEL_PATH", str(model_path))
+
+    ctx = _make_context(tmp_path)
+    module = UpscaleModule()
+    called = {}
+
+    def _fake_run(*args, **kwargs):
+        called["ok"] = True
+        return None
+
+    monkeypatch.setattr(module, "_run_pytorch", _fake_run)
+    asyncio.run(module.process(ctx))
+    assert called.get("ok") is True
