@@ -1,4 +1,6 @@
+import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -56,3 +58,27 @@ def test_consistency_eval_writes_report(tmp_path):
     assert out_path.exists()
     data = json.loads(out_path.read_text())
     assert data["summary"]["total"] == 1
+
+
+def test_script_imports_without_project_root():
+    script_path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "ocr_consistency_eval.py"
+    )
+    saved_sys_path = list(sys.path)
+    saved_core_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "core" or name.startswith("core.")
+    }
+    try:
+        sys.path = [str(script_path.parent)]
+        for name in list(sys.modules):
+            if name == "core" or name.startswith("core."):
+                del sys.modules[name]
+        spec = importlib.util.spec_from_file_location("ocr_eval_import", script_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+    finally:
+        sys.path = saved_sys_path
+        sys.modules.update(saved_core_modules)
