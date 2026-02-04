@@ -97,3 +97,46 @@ def test_upscaler_pytorch_calls_runner(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "_run_pytorch", _fake_run)
     asyncio.run(module.process(ctx))
     assert called.get("ok") is True
+
+
+def test_upscaler_pytorch_registers_torchvision_shim():
+    import importlib
+    import sys
+
+    sys.modules.pop("torchvision.transforms.functional_tensor", None)
+    from core.modules import upscaler
+
+    upscaler._ensure_torchvision_functional_tensor()
+    ft = importlib.import_module("torchvision.transforms.functional_tensor")
+    assert hasattr(ft, "rgb_to_grayscale")
+
+
+def test_upscaler_pytorch_device_auto_prefers_mps(monkeypatch):
+    import torch
+    from core.modules import upscaler
+
+    monkeypatch.setenv("UPSCALE_DEVICE", "auto")
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+
+    assert upscaler._resolve_torch_device_name() == "mps"
+
+
+def test_upscaler_pytorch_device_auto_falls_back_to_cpu(monkeypatch):
+    import torch
+    from core.modules import upscaler
+
+    monkeypatch.setenv("UPSCALE_DEVICE", "auto")
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+
+    assert upscaler._resolve_torch_device_name() == "cpu"
+
+
+def test_upscaler_pytorch_device_mps_requires_available(monkeypatch):
+    import torch
+    from core.modules import upscaler
+
+    monkeypatch.setenv("UPSCALE_DEVICE", "mps")
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+
+    with pytest.raises(RuntimeError):
+        upscaler._resolve_torch_device_name()

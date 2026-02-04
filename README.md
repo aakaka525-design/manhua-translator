@@ -130,12 +130,18 @@ LAMA_DEVICE=cpu
 ```env
 UPSCALE_ENABLE=1
 UPSCALE_BACKEND=pytorch
+UPSCALE_DEVICE=auto
 UPSCALE_MODEL_PATH=tools/bin/RealESRGAN_x4plus.pth
 UPSCALE_MODEL=realesrgan-x4plus-anime
 UPSCALE_SCALE=2
 UPSCALE_TIMEOUT=120
 UPSCALE_TILE=0
 ```
+
+设备说明：
+- `UPSCALE_DEVICE=auto`：优先 MPS（可用时），否则回退 CPU
+- `UPSCALE_DEVICE=mps`：强制 MPS（不可用时直接报错）
+- `UPSCALE_DEVICE=cpu`：固定 CPU
 
 评估脚本（OCR 置信度对比）：
 

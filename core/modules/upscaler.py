@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import sys
 import time
+import types
+import importlib.util
 from pathlib import Path
 
 from .base import BaseModule
@@ -17,6 +19,41 @@ DEFAULT_TIMEOUT = 120
 DEFAULT_BACKEND = "pytorch"
 DEFAULT_PYTORCH_MODEL = "tools/bin/RealESRGAN_x4plus.pth"
 DEFAULT_TILE = 0
+DEFAULT_DEVICE = "auto"
+
+
+def _ensure_torchvision_functional_tensor() -> None:
+    if importlib.util.find_spec("torchvision.transforms.functional_tensor"):
+        return
+    try:
+        from torchvision.transforms import functional as functional_api
+    except Exception:
+        return
+    module = types.ModuleType("torchvision.transforms.functional_tensor")
+    if hasattr(functional_api, "rgb_to_grayscale"):
+        module.rgb_to_grayscale = functional_api.rgb_to_grayscale
+    sys.modules["torchvision.transforms.functional_tensor"] = module
+
+
+def _resolve_torch_device_name() -> str:
+    choice = os.getenv("UPSCALE_DEVICE", DEFAULT_DEVICE).strip().lower()
+    if choice not in {"auto", "mps", "cpu"}:
+        raise ValueError(f"Unsupported UPSCALE_DEVICE: {choice}")
+    try:
+        import torch
+    except Exception as exc:
+        raise ImportError("Missing torch for UPSCALE_DEVICE resolution") from exc
+
+    mps_backend = getattr(torch.backends, "mps", None)
+    mps_available = bool(mps_backend and mps_backend.is_available())
+
+    if choice == "mps":
+        if not mps_available:
+            raise RuntimeError("UPSCALE_DEVICE=mps but MPS is not available")
+        return "mps"
+    if choice == "cpu":
+        return "cpu"
+    return "mps" if mps_available else "cpu"
 
 
 class UpscaleModule(BaseModule):
@@ -137,7 +174,9 @@ class UpscaleModule(BaseModule):
                 f"Upscale model not found: {model_path}. Provide UPSCALE_MODEL_PATH or run scripts/setup_local.sh."
             )
 
+        _ensure_torchvision_functional_tensor()
         try:
+            import torch
             import cv2
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
@@ -155,6 +194,8 @@ class UpscaleModule(BaseModule):
             tmp_path.unlink()
 
         model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
+        device_name = _resolve_torch_device_name()
+        device = torch.device(device_name)
         upsampler = RealESRGANer(
             scale=4,
             model_path=str(model_path),
@@ -163,9 +204,17 @@ class UpscaleModule(BaseModule):
             tile_pad=10,
             pre_pad=0,
             half=False,
+            device=device,
         )
 
-        logger.info("[%s] Upscaler start (pytorch): model=%s scale=%s tile=%s", context.task_id, model_path.name, scale, tile)
+        logger.info(
+            "[%s] Upscaler start (pytorch): model=%s scale=%s tile=%s device=%s",
+            context.task_id,
+            model_path.name,
+            scale,
+            tile,
+            device_name,
+        )
         start = time.perf_counter()
         try:
             image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
