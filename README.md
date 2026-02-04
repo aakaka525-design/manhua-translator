@@ -158,6 +158,12 @@ UPSCALE_STRIPE_OVERLAP=64
 /Users/xa/Desktop/projiect/manhua/.venv/bin/python scripts/upscale_eval.py data/raw/sexy-woman/chapter-1/1.jpg --lang korean
 ```
 
+评估脚本（固定检测框一致性）：
+
+```bash
+/Users/xa/Desktop/projiect/manhua/.venv/bin/python scripts/ocr_consistency_eval.py --orig input.jpg --upscaled output.jpg --lang korean --out output/consistency_eval/report.json
+```
+
 **模型选择说明**
 - 所有 AI 模型通过 `PPIO_MODEL` 选择。
 - 使用 PPIO 模型名（如 `zai-org/glm-4.7-flash`）走 PPIO。
