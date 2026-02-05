@@ -17,17 +17,17 @@ $PYTHON_BIN -m pip install -r "$ROOT_DIR/requirements.txt"
 mkdir -p "$BIN_DIR"
 
 if [[ "$BACKEND" == "ncnn" ]]; then
-  VERSION="v0.2.0"
+  VERSION="v0.2.5.0"
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    ZIP_NAME="realesrgan-ncnn-vulkan-v0.2.0-macos.zip"
+    ZIP_NAME="realesrgan-ncnn-vulkan-20220424-macos.zip"
   elif [[ "$(uname -s)" == "Linux" ]]; then
-    ZIP_NAME="realesrgan-ncnn-vulkan-v0.2.0-ubuntu.zip"
+    ZIP_NAME="realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
   else
     echo "Unsupported OS: $(uname -s)"
     exit 1
   fi
 
-  URL="https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/releases/download/${VERSION}/${ZIP_NAME}"
+  URL="https://github.com/xinntao/Real-ESRGAN/releases/download/${VERSION}/${ZIP_NAME}"
 
   curl -L "$URL" -o "$TMP_DIR/$ZIP_NAME"
   unzip -q "$TMP_DIR/$ZIP_NAME" -d "$TMP_DIR/extract"
