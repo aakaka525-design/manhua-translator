@@ -14,6 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence, cast
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import (
