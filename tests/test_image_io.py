@@ -66,3 +66,17 @@ def test_save_image_webp_oversize_slices(tmp_path, monkeypatch):
     saved = save_image(arr, str(path), purpose="final")
     assert saved.endswith("_slices.json")
     assert (tmp_path / "out_slices").exists()
+
+
+def test_save_image_webp_slice_failure_falls_back_png(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+    import core.image_io as image_io
+
+    def _boom(*args, **kwargs):
+        raise OSError("fail")
+
+    monkeypatch.setattr(image_io.Image.Image, "save", _boom, raising=False)
+    path = tmp_path / "out.png"
+    saved = save_image(arr, str(path), purpose="final")
+    assert saved.endswith(".png")

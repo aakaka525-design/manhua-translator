@@ -103,7 +103,15 @@ def save_image(
             height, width = image.shape[:2]
         if height > 16383:
             if purpose == "final" and width <= 16383:
-                return _save_webp_slices(image, out_path)
+                try:
+                    return _save_webp_slices(image, out_path)
+                except Exception:
+                    out_path = out_path.with_suffix(".png")
+                    if isinstance(image, Image.Image):
+                        image.save(out_path, format="PNG")
+                    else:
+                        cv2.imwrite(str(out_path), image)
+                    return str(out_path)
             fmt = "png"
             out_path = out_path.with_suffix(".png")
         elif width > 16383:
