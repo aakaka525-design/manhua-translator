@@ -28,7 +28,7 @@ os.environ["PADDLE_PDX_LOG_LEVEL"] = "ERROR"
 os.environ["GLOG_minloglevel"] = "3"  # 抑制 PaddlePaddle C++ 日志
 os.environ["FLAGS_log_level"] = "3"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["DISABLE_MODEL_SOURCE_CHECK"] = "True"  # 跳过模型连接检查
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"  # 跳过模型连接检查
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 

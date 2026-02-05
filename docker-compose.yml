@@ -10,11 +10,8 @@ services:
       - .env
     environment:
       AUTO_SETUP_MODELS: "${AUTO_SETUP_MODELS:-on}"
-      MODEL_WARMUP_TIMEOUT: "${MODEL_WARMUP_TIMEOUT:-300}"
       OCR_WARMUP_LANGS: "${OCR_WARMUP_LANGS:-korean}"
       LAMA_DEVICE: "${LAMA_DEVICE:-cpu}"
-      FLAGS_use_mkldnn: "${FLAGS_use_mkldnn:-0}"
-      FLAGS_use_pir_api: "${FLAGS_use_pir_api:-0}"
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "${PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK:-True}"
       DEBUG_OCR: "${DEBUG_OCR:-0}"
       DEBUG_TRANSLATOR: "${DEBUG_TRANSLATOR:-0}"
