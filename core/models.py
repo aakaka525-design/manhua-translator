@@ -180,8 +180,8 @@ class PipelineResult(BaseModel):
 class TranslateImageRequest(BaseModel):
     """Request model for single image translation."""
     image_path: str = Field(..., description="Path to source image")
-    source_language: str = Field(default="en", description="Source language")
-    target_language: str = Field(default="zh", description="Target language")
+    source_language: Optional[str] = Field(default=None, description="Source language")
+    target_language: Optional[str] = Field(default=None, description="Target language")
 
 
 class TranslateImageResponse(BaseModel):

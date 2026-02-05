@@ -77,6 +77,7 @@ async def sse_events():
 async def translate_image(
     request: TranslateImageRequest,
     pipeline: Pipeline = Depends(get_pipeline),
+    settings=Depends(get_settings),
 ):
     """
     Translate a single image.
@@ -87,10 +88,13 @@ async def translate_image(
             detail=f"Image not found: {request.image_path}",
         )
 
+    source_lang = request.source_language or settings.source_language
+    target_lang = request.target_language or settings.target_language
+
     context = TaskContext(
         image_path=request.image_path,
-        source_language=request.source_language,
-        target_language=request.target_language,
+        source_language=source_lang,
+        target_language=target_lang,
     )
 
     # Process through pipeline with callback

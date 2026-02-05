@@ -519,6 +519,18 @@ class TranslatorModule(BaseModule):
         from ..ai_translator import AITranslator
         return AITranslator(self.source_lang, self.target_lang, model=model_name)
 
+    def _refresh_lang_from_settings(self) -> None:
+        """从 settings 获取最新的语言配置（运行期更新）。"""
+        try:
+            from app.deps import get_settings
+
+            settings = get_settings()
+            self.source_lang = settings.source_language
+            self.target_lang = settings.target_language
+        except Exception:
+            # 避免在非 API 环境下引发异常
+            return
+
     async def process(self, context: TaskContext) -> TaskContext:
         """
         Translate all source texts to target language.
@@ -534,6 +546,7 @@ class TranslatorModule(BaseModule):
         Returns:
             Updated context with target_text filled
         """
+        self._refresh_lang_from_settings()
         if not context.regions:
             logger.debug(f"[{context.task_id}] 无区域需要翻译")
             self.last_metrics = {"requests": 0, "total_ms": 0, "avg_ms": 0}
