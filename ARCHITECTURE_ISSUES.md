@@ -32,4 +32,4 @@ P2：Scraper/Parser/CLI（阶段 C）
 
 P3：前端与工具（阶段 D）
 - [x] FastAPI 前端仅 dev 模式提供 — `SERVE_FRONTEND=dev` gate + 删除残留静态资源。
-- [ ] Tk GUI 脚本迁移至 `tools/` 或 `legacy/` 并注明 deprecated。
+- [x] Tk GUI 脚本迁移至 `tools/` 并注明 deprecated。
