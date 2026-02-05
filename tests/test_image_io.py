@@ -92,3 +92,27 @@ def test_save_image_webp_oversize_respects_overlap_env(tmp_path, monkeypatch):
     assert saved.endswith("_slices.json")
     data = json.loads(Path(saved).read_text())
     assert data["overlap"] == 10
+
+
+def test_save_image_webp_slices_lossless_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    monkeypatch.setenv("WEBP_SLICES_LOSSLESS", "1")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+
+    import core.image_io as image_io
+
+    calls = []
+
+    def _spy(self, fp, format=None, **kwargs):
+        Path(fp).write_bytes(b"")
+        calls.append((format, kwargs))
+
+    monkeypatch.setattr(image_io.Image.Image, "save", _spy, raising=False)
+
+    saved = save_image(arr, str(tmp_path / "out.png"), purpose="final")
+    assert saved.endswith("_slices.json")
+    assert calls, "expected at least one slice save"
+    fmt, kwargs = calls[0]
+    assert fmt == "WEBP"
+    assert kwargs.get("lossless") is True
+    assert "quality" not in kwargs

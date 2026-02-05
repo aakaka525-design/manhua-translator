@@ -24,6 +24,10 @@ def _webp_slice_overlap() -> int:
     return int(os.getenv("WEBP_SLICE_OVERLAP", "10"))
 
 
+def _webp_slices_lossless() -> bool:
+    return os.getenv("WEBP_SLICES_LOSSLESS", "0") == "1"
+
+
 def compute_webp_slices(height: int, slice_height: int, overlap: int) -> list[tuple[int, int]]:
     if height <= 16383:
         return [(0, height)]
@@ -69,7 +73,11 @@ def _save_webp_slices(
     for idx, (start, end) in enumerate(slices):
         filename = f"slice_{idx:03d}.webp"
         crop = pil.crop((0, start, width, end))
-        crop.save(slices_dir / filename, format="WEBP", quality=int(os.getenv("WEBP_QUALITY_FINAL", "90")))
+        path = slices_dir / filename
+        if _webp_slices_lossless():
+            crop.save(path, format="WEBP", lossless=True)
+        else:
+            crop.save(path, format="WEBP", quality=int(os.getenv("WEBP_QUALITY_FINAL", "90")))
         entries.append({"file": filename, "y": start, "height": end - start})
 
     index_path = out_path.parent / f"{out_path.stem}_slices.json"
