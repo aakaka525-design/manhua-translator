@@ -32,8 +32,8 @@ if [[ "$BACKEND" == "ncnn" ]]; then
   curl -L "$URL" -o "$TMP_DIR/$ZIP_NAME"
   unzip -q "$TMP_DIR/$ZIP_NAME" -d "$TMP_DIR/extract"
 
-  BIN_SRC="$(find "$TMP_DIR/extract" -type f -name realesrgan-ncnn-vulkan | head -n 1)"
-  MODEL_SRC="$(find "$TMP_DIR/extract" -type d -name models | head -n 1)"
+  BIN_SRC="$(find "$TMP_DIR/extract" -type f -name realesrgan-ncnn-vulkan -not -path "*/__MACOSX/*" -size +1024c | head -n 1)"
+  MODEL_SRC="$(find "$TMP_DIR/extract" -type d -name models -not -path "*/__MACOSX/*" | head -n 1)"
 
   if [[ -z "$BIN_SRC" ]]; then
     echo "Binary not found in zip"
