@@ -14,7 +14,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence, cast
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import (
@@ -36,6 +35,9 @@ from scraper.base import safe_name, normalize_url, load_storage_state_cookies
 from scraper.downloader import AsyncDownloader, DownloadConfig
 from scraper.implementations import MangaForFreeScraper, ToonGodScraper
 from scraper.implementations.generic_playwright import CloudflareChallengeError
+from scraper.url_utils import infer_id as _infer_id
+from scraper.url_utils import infer_url as _infer_url
+from scraper.url_utils import normalize_base_url as _normalize_base_url
 
 from ..deps import get_settings
 
@@ -151,13 +153,6 @@ class ScraperAuthUrlResponse(BaseModel):
     url: str
 
 
-def _normalize_base_url(value: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}"
-    return value.rstrip("/")
-
-
 def _normalize_catalog_path(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
@@ -193,26 +188,10 @@ def _cookie_expires(cookie: dict) -> float | None:
 
 
 def _build_cookie_header(storage_state_path: Optional[str], host: str) -> str:
-    if not storage_state_path:
+    cookies = load_storage_state_cookies(storage_state_path, domain_filter=host or None)
+    if not cookies:
         return ""
-    path = Path(storage_state_path)
-    if not path.exists():
-        return ""
-    payload = json.loads(path.read_text())
-    cookies = payload.get("cookies", []) if isinstance(payload, dict) else []
-    pairs = []
-    for cookie in cookies:
-        if not isinstance(cookie, dict):
-            continue
-        name = cookie.get("name")
-        value = cookie.get("value")
-        domain = str(cookie.get("domain", ""))
-        if not name or value is None:
-            continue
-        if host and domain and host not in domain:
-            continue
-        pairs.append(f"{name}={value}")
-    return "; ".join(pairs)
+    return "; ".join(f"{name}={value}" for name, value in cookies.items())
 
 
 def _default_state_path(base_url: str) -> Path:
@@ -425,31 +404,6 @@ async def _fetch_image_playwright(
         return float(str(value))
     except (TypeError, ValueError):
         return None
-
-
-def _infer_id(value: str) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        path = urlparse(value).path.rstrip("/")
-        return path.split("/")[-1]
-    return value
-
-
-def _infer_url(
-    base_url: str,
-    value: str,
-    kind: str,
-    manga_id: str | None = None,
-) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        return value
-    path = "manga" if "mangaforfree.com" in base_url else "webtoon"
-    if kind == "manga":
-        return f"{base_url.rstrip('/')}/{path}/{value}"
-    if kind == "chapter":
-        if not manga_id:
-            raise ValueError("chapter 需要 manga_id")
-        return f"{base_url.rstrip('/')}/{path}/{manga_id}/{value}/"
-    raise ValueError(f"unknown kind: {kind}")
 
 
 def _coerce_concurrency(value: int) -> int:

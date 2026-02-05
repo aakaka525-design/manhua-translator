@@ -45,8 +45,37 @@ SFX_PATTERNS = [
 # Abbreviations that should NOT be treated as SFX (signage, labels, etc.)
 SFX_EXCLUSIONS = {"TEL", "VIP", "SMS", "ID", "NO", "OK", "TV", "VS", "FM", "AM", "DJ", "MC", "PC"}
 
-# OCR 噪音白名单（避免误判短词）
-NOISE_ALLOWLIST = set(SFX_EXCLUSIONS) | {"YES", "OKAY", "USA", "UK", "EU", "IOS"}
+# CJK/Korean/Japanese SFX helpers
+_SFX_CN_WORDS = {"砰", "咔", "咔嚓", "嗖", "嘭", "哗", "呼", "啪", "嘎", "轰", "嘶", "咚", "叮", "嗡", "嘀", "哐", "咣", "嘣", "噗", "咻", "唰"}
+_SFX_CJK_RE = re.compile(r"^(砰|咔嚓|咔|嗖|嘭|哗|呼|啪|嘎|轰|嘶|咚|叮|嗡|嘀|哐|咣|嘣|噗|咻|唰)+[！!]*$")
+_SFX_JP_RE = re.compile(r"^[\u3040-\u30ff]{2,8}[!！]?$")
+_SFX_KO_WORDS = {
+    "쾅",
+    "쿵",
+    "탕",
+    "펑",
+    "퍽",
+    "두근두근",
+    "덜컹덜컹",
+    "철컹철컹",
+    "우두둑",
+    "슥",
+    "슥슥",
+    "쓱",
+    "쓱쓱",
+    "파닥",
+    "파닥파닥",
+    "팡",
+    "딱",
+    "헉",
+    "윽",
+    "흑",
+    "으악",
+    "휴",
+    "후",
+    "휙",
+}
+_SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,2})\1+$")
 
 
 def _is_sfx(text: str) -> bool:
@@ -89,6 +118,18 @@ def _is_sfx(text: str) -> bool:
         if _re.match(pattern, upper, _re.IGNORECASE):
             return True
 
+    # CJK/Korean/Japanese SFX rules
+    if base in _SFX_CN_WORDS:
+        return True
+    if _SFX_CJK_RE.match(raw):
+        return True
+    if _SFX_JP_RE.match(raw):
+        return True
+    if base in _SFX_KO_WORDS:
+        return True
+    if _SFX_KO_REPEAT_RE.match(base):
+        return True
+
     if _looks_like_hangul_sfx(raw):
         return True
     
@@ -119,13 +160,6 @@ def _should_skip_translation(text: str) -> tuple[bool, str]:
     return False, ""
 
 
-_NOISE_SYMBOL_RE = re.compile(r"[\\$^_{}]")
-_NOISE_TWO_CAPS_RE = re.compile(r"^[A-Z]{2}$")
-_NOISE_ALNUM_SHORT_RE = re.compile(r"^[A-Za-z]{1,2}[0-9]{2,4}$")
-_NOISE_WEIRD_SPLIT_RE = re.compile(r"^[A-Z]{3,4}\s[A-Z][a-z]-[A-Z][a-z],?$")
-_NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
-
-
 def _is_ocr_noise(text: str) -> tuple[bool, str]:
     raw = (text or "").strip()
     if not raw:
@@ -138,26 +172,18 @@ def _is_ocr_noise(text: str) -> tuple[bool, str]:
     if not base:
         return False, ""
 
-    upper = base.upper()
-    if upper in NOISE_ALLOWLIST:
-        return False, ""
-
-    if _NOISE_SYMBOL_RE.search(base):
-        return True, "特殊符号"
-    if _NOISE_TWO_CAPS_RE.match(base):
-        return True, "短大写"
-    if _NOISE_ALNUM_SHORT_RE.match(base):
-        return True, "字母数字"
-    if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
+    if re.search(r"[\\$^_{}]", base):
+        return True, "符号噪声"
+    if re.match(r"^[A-Z]{2}$", base):
+        return True, "短大写缩写"
+    if re.match(r"^[A-Za-z]{1,2}[0-9]{2,4}$", base):
+        return True, "短字母数字"
+    if re.match(r"^\d+$", base) and len(base) <= 3:
+        return True, "短数字"
+    if re.match(r"^\d+(?:\s+\d+)+$", base) and len(re.sub(r"\s+", "", base)) <= 4:
         return True, "分隔数字"
-    if _NOISE_WEIRD_SPLIT_RE.match(base):
-        return True, "异常拼写"
-
-    if base.isascii():
-        has_upper = any(c.isupper() for c in base)
-        has_lower = any(c.islower() for c in base)
-        if len(base) <= 3 and has_upper and has_lower:
-            return True, "短混合大小写"
+    if re.match(r"^[\u2160-\u2188]+$", base):
+        return True, "罗马数字"
 
     return False, ""
 
@@ -519,6 +545,18 @@ class TranslatorModule(BaseModule):
         from ..ai_translator import AITranslator
         return AITranslator(self.source_lang, self.target_lang, model=model_name)
 
+    def _refresh_lang_from_settings(self) -> None:
+        """从 settings 获取最新的语言配置（运行期更新）。"""
+        try:
+            from app.deps import get_settings
+
+            settings = get_settings()
+            self.source_lang = settings.source_language
+            self.target_lang = settings.target_language
+        except Exception:
+            # 避免在非 API 环境下引发异常
+            return
+
     async def process(self, context: TaskContext) -> TaskContext:
         """
         Translate all source texts to target language.
@@ -534,6 +572,7 @@ class TranslatorModule(BaseModule):
         Returns:
             Updated context with target_text filled
         """
+        self._refresh_lang_from_settings()
         if not context.regions:
             logger.debug(f"[{context.task_id}] 无区域需要翻译")
             self.last_metrics = {"requests": 0, "total_ms": 0, "avg_ms": 0}
@@ -902,7 +941,12 @@ class TranslatorModule(BaseModule):
                     ai_translator = self._get_ai_translator()
                     if ai_translator:
                         fixed_translations = []
-                        for src_text, translation in zip(texts_to_translate, translations):
+                        for src_text, translation, meta in zip(
+                            texts_to_translate, translations, crosspage_meta
+                        ):
+                            if meta:
+                                fixed_translations.append(translation)
+                                continue
                             needs_fallback = (
                                 (not _has_cjk(translation))
                                 or (_english_ratio(translation) >= 0.35)

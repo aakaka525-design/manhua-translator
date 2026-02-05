@@ -1,11 +1,11 @@
 """PaddleOCR instance cache and stderr suppression."""
 
-import contextlib
 import logging
 import os
-import sys
 import threading
 import warnings
+
+from ...utils.stderr_suppressor import suppress_native_stderr
 
 # Reduce PaddleOCR/PaddlePaddle log noise
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -27,28 +27,6 @@ def normalize_ocr_lang(lang: str) -> str:
         "kor": "korean",
     }
     return alias_map.get(value, value)
-
-
-@contextlib.contextmanager
-def suppress_native_stderr():
-    """Suppress native stderr (NSLog) for OCR init."""
-    if os.environ.get("OCR_SUPPRESS_NSLOG") == "0":
-        yield
-        return
-    try:
-        stderr_fd = sys.stderr.fileno()
-    except Exception:
-        yield
-        return
-    saved_stderr = os.dup(stderr_fd)
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    os.dup2(devnull, stderr_fd)
-    os.close(devnull)
-    try:
-        yield
-    finally:
-        os.dup2(saved_stderr, stderr_fd)
-        os.close(saved_stderr)
 
 
 def get_cached_ocr(lang: str = "en"):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
+from .constants import EDGE_BAND_RATIO
 from .models import Box2D, RegionData, TaskContext
 from .translator import group_adjacent_regions
 
@@ -14,7 +15,7 @@ def _group_box(group: List[RegionData]) -> Box2D:
     return Box2D(x1=min(xs), y1=min(ys), x2=max(xe), y2=max(ye))
 
 
-def find_edge_groups(context: TaskContext, edge: str, ratio: float = 0.1):
+def find_edge_groups(context: TaskContext, edge: str, ratio: float = EDGE_BAND_RATIO):
     groups = group_adjacent_regions(context.regions)
     edge_groups = []
     for group in groups:

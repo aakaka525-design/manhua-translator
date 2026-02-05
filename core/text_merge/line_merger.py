@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 import re
+from typing import Iterable
 from uuid import uuid4
 
 from ..models import Box2D, RegionData
@@ -12,8 +12,12 @@ X_GAP_RATIO = 0.8
 HEIGHT_RATIO = 0.5
 MAX_HEIGHT_RATIO = 2.6
 MIN_CONFIDENCE = 0.4
-_NOISE_RE = re.compile(r"^[\\d\\W]+$")
-_ROMAN_RE = re.compile(r"^[\\u2160-\\u2188]+$")
+_NOISE_SYMBOL_RE = re.compile(r"[\\$^_{}]")
+_NOISE_TWO_CAPS_RE = re.compile(r"^[A-Z]{2}$")
+_NOISE_ALNUM_SHORT_RE = re.compile(r"^[A-Za-z]{1,2}[0-9]{2,4}$")
+_NOISE_DIGITS_RE = re.compile(r"^\d+$")
+_NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
+_NOISE_ROMAN_RE = re.compile(r"^[\u2160-\u2188]+$")
 
 
 @dataclass
@@ -57,15 +61,24 @@ def _join_texts(texts: list[str]) -> str:
     return out
 
 
-def _is_noise_text(text: str | None) -> bool:
+def _is_merge_noise(region: RegionData) -> bool:
+    text = (region.source_text or "").strip()
     if not text:
+        return False
+    base = re.sub(r"[!！?？….,。]+$", "", text).strip()
+    if not base:
+        return False
+    if _NOISE_SYMBOL_RE.search(base):
         return True
-    stripped = text.strip()
-    if not stripped:
+    if _NOISE_TWO_CAPS_RE.match(base):
         return True
-    if _NOISE_RE.match(stripped):
+    if _NOISE_ALNUM_SHORT_RE.match(base):
         return True
-    if _ROMAN_RE.match(stripped):
+    if _NOISE_DIGITS_RE.match(base) and len(base) <= 3:
+        return True
+    if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
+        return True
+    if _NOISE_ROMAN_RE.match(base):
         return True
     return False
 
@@ -81,7 +94,7 @@ def merge_line_regions(groups: list[list[RegionData]]) -> list[RegionData]:
             and r.source_text
             and not r.is_watermark
             and not r.is_sfx
-            and not _is_noise_text(r.source_text)
+            and not _is_merge_noise(r)
             and r.confidence >= MIN_CONFIDENCE
         ]
         excluded = [r for r in group if r not in candidates]

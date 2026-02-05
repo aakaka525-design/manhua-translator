@@ -10,9 +10,7 @@ Includes performance metrics collection for each stage.
 import asyncio
 import logging
 import os
-import sys
 import time
-import contextlib
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +18,7 @@ from .models import PipelineResult, TaskContext, TaskStatus
 from .metrics import PipelineMetrics, StageMetrics, Timer, start_metrics
 from .quality_report import write_quality_report
 from .crosspage_processor import apply_crosspage_split
+from .utils.stderr_suppressor import suppress_native_stderr
 from .modules import (
     BaseModule,
     InpainterModule,
@@ -32,25 +31,6 @@ from .crosspage_carryover import CrosspageCarryOverStore
 
 # 配置日志
 logger = logging.getLogger(__name__)
-
-
-@contextlib.contextmanager
-def suppress_native_stderr():
-    """在 OS 级别抑制 stderr（包括 C/ObjC 的 NSLog）"""
-    try:
-        stderr_fd = sys.stderr.fileno()
-        saved_stderr = os.dup(stderr_fd)
-        devnull = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull, stderr_fd)
-        os.close(devnull)
-        try:
-            yield
-        finally:
-            os.dup2(saved_stderr, stderr_fd)
-            os.close(saved_stderr)
-    except (ValueError, OSError):
-        # 如果无法获取文件描述符（如在某些环境中），直接跳过
-        yield
 
 
 class Pipeline:

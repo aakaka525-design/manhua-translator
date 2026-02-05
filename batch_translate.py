@@ -34,7 +34,7 @@ async def translate_chapter(
         dict: 统计信息
     """
     from core.pipeline import translate_image
-    # 注意：OCR 缓存由 ocr_engine 模块自动管理，无需手动清空
+        # 注意：OCR 缓存由 core.vision.ocr 自动管理，无需手动清空
     
     # 创建输出目录（安全处理，不自动删除已有内容）
     output_path = Path(output_dir)
@@ -143,17 +143,4 @@ async def translate_chapter(
     return results
 
 
-# CLI 入口
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) < 3:
-        print("用法: python batch_translate.py <输入目录> <输出目录> [并发数]")
-        print("示例: python batch_translate.py test_img/chapter_98 output/chapter_98_v3 3")
-        sys.exit(1)
-    
-    input_dir = sys.argv[1]
-    output_dir = sys.argv[2]
-    max_concurrent = int(sys.argv[3]) if len(sys.argv) > 3 else 3
-    
-    asyncio.run(translate_chapter(input_dir, output_dir, max_concurrent=max_concurrent))
+__all__ = ["translate_chapter"]

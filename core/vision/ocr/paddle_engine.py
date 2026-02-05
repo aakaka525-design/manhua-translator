@@ -8,11 +8,9 @@ import cv2
 import numpy as np
 
 from ...models import Box2D, RegionData
-from ..text_detector import ContourDetector
 from ..tiling import get_tiling_manager
 from .base import OCREngine
 from .cache import get_cached_ocr
-from .preprocessing import preprocess_image
 from .postprocessing import (
     filter_noise_regions,
     geometric_cluster_dedup,
@@ -147,86 +145,6 @@ class PaddleOCREngine(OCREngine):
                 continue
 
         return regions
-
-    async def recognize_batch(
-        self,
-        image_path: str,
-        regions: list[RegionData],
-        batch_size: int = 10,
-    ) -> list[RegionData]:
-        for i in range(0, len(regions), batch_size):
-            batch = regions[i : i + batch_size]
-            await self.recognize(image_path, batch)
-        return regions
-
-    async def detect_and_recognize_roi(self, image_path: str) -> list[RegionData]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, self._detect_and_recognize_roi_sync, image_path
-        )
-
-    def _detect_and_recognize_roi_sync(
-        self,
-        image_path: str,
-        allow_fallback: bool = True,
-    ) -> list[RegionData]:
-        ocr = self._init_ocr()
-        image = cv2.imread(image_path)
-        if image is None:
-            raise FileNotFoundError(f"Cannot read image: {image_path}")
-
-        height, width = image.shape[:2]
-
-        detector = ContourDetector(
-            min_area=500,
-            max_area=int(width * height * 0.5),
-            binary_threshold=235,
-        )
-        rois = detector._detect_sync(image_path)
-
-        if not rois:
-            return self._detect_and_recognize_sync(image_path) if allow_fallback else []
-
-        all_regions: list[RegionData] = []
-        for roi in rois:
-            box = roi.box_2d
-            if box is None:
-                continue
-            roi_image = image[box.y1 : box.y2, box.x1 : box.x2]
-            if roi_image.size == 0:
-                continue
-
-            roi_processed = preprocess_image(roi_image)
-            roi_regions = self._process_chunk(
-                ocr, roi_processed, 0, min_score=0.3, min_len=1
-            )
-            if not roi_regions:
-                roi_regions = self._process_chunk(
-                    ocr, roi_image, 0, min_score=0.3, min_len=1
-                )
-
-            for region in roi_regions:
-                if region.box_2d is None:
-                    continue
-                region.box_2d = Box2D(
-                    x1=region.box_2d.x1 + box.x1,
-                    y1=region.box_2d.y1 + box.y1,
-                    x2=region.box_2d.x2 + box.x1,
-                    y2=region.box_2d.y2 + box.y1,
-                )
-                all_regions.append(region)
-
-        all_regions = filter_noise_regions(all_regions, image_height=height)
-        all_regions = geometric_cluster_dedup(all_regions)
-        all_regions = merge_line_regions_geometric(all_regions)
-        all_regions = merge_paragraph_regions(all_regions)
-        all_regions.sort(
-            key=lambda r: (
-                r.box_2d.y1 if r.box_2d else 0,
-                r.box_2d.x1 if r.box_2d else 0,
-            )
-        )
-        return all_regions
 
     async def detect_and_recognize(self, image_path: str) -> list[RegionData]:
         loop = asyncio.get_event_loop()

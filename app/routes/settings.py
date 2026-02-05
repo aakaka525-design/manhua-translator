@@ -33,6 +33,11 @@ class ModelUpdateRequest(BaseModel):
     model: str
 
 
+class LanguageUpdateRequest(BaseModel):
+    source_language: str
+    target_language: str
+
+
 class SettingsResponse(BaseModel):
     source_language: str
     target_language: str
@@ -69,18 +74,7 @@ async def set_ai_model(request: ModelUpdateRequest):
     """
     global _model_override
     _model_override = request.model
-    
-    # Also update the AITranslator instance
-    from core.ai_translator import AITranslator
-    
-    # Update the global translator model
-    try:
-        # Get existing translators and update their model
-        import os
-        os.environ['PPIO_MODEL'] = request.model
-    except Exception as e:
-        print(f"Warning: Could not update environment variable: {e}")
-    
+
     return {
         "message": f"AI model updated to {request.model}",
         "model": request.model
@@ -104,6 +98,20 @@ async def set_upscale_settings(request: UpscaleUpdateRequest):
         "model": request.model,
         "scale": request.scale,
     }
+
+
+@router.post("/language")
+async def update_language(request: LanguageUpdateRequest, settings=Depends(get_settings)):
+    """Update runtime language settings and persist to .env."""
+    settings.source_language = request.source_language
+    settings.target_language = request.target_language
+
+    from app.utils.env_file import update_env_file
+
+    update_env_file("SOURCE_LANGUAGE", request.source_language)
+    update_env_file("TARGET_LANGUAGE", request.target_language)
+
+    return {"status": "ok"}
 
 
 def get_current_model() -> Optional[str]:

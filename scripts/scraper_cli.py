@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import sys
 import time
 from pathlib import Path
 from typing import Sequence
-from urllib.parse import urlparse
 
 import click
 
@@ -19,6 +17,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scraper import Chapter, EngineConfig, Manga, ScraperConfig, ScraperEngine
 from scraper.downloader import AsyncDownloader, DownloadConfig
 from scraper.implementations import MangaForFreeScraper, ToonGodScraper
+from scraper.challenge import looks_like_challenge
+from scraper.url_utils import infer_id as _infer_id
+from scraper.url_utils import infer_url as _infer_url
+from scraper.url_utils import normalize_base_url as _normalize_base_url
+from scraper.url_utils import parse_chapter_range as _parse_chapter_range
 
 
 DEFAULT_BASE_URL = "https://toongod.org"
@@ -36,67 +39,12 @@ def _load_cookies(path: str | None) -> dict[str, str] | None:
     return {str(key): str(value) for key, value in payload.items()}
 
 
-def _infer_id(value: str) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        path = urlparse(value).path.rstrip("/")
-        return path.split("/")[-1]
-    return value
-
-
-def _infer_url(
-    base_url: str, value: str, kind: str, manga_id: str | None = None
-) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        return value
-    if kind == "manga":
-        path = "manga" if "mangaforfree.com" in base_url else "webtoon"
-        return f"{base_url.rstrip('/')}/{path}/{value}"
-    if kind == "chapter":
-        if not manga_id:
-            raise ValueError("chapter 需要 manga_id")
-        path = "manga" if "mangaforfree.com" in base_url else "webtoon"
-        return f"{base_url.rstrip('/')}/{path}/{manga_id}/{value}/"
-    raise ValueError(f"unknown kind: {kind}")
-
-
-def _normalize_base_url(value: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}"
-    return value.rstrip("/")
-
-
-def _parse_chapter_range(value: str) -> tuple[int, int]:
-    match = re.match(r"^\s*(\d+)\s*[-:]\s*(\d+)\s*$", value)
-    if not match:
-        raise ValueError("章节范围格式应为 1-10")
-    start = int(match.group(1))
-    end = int(match.group(2))
-    if start <= 0 or end <= 0:
-        raise ValueError("章节范围必须为正整数")
-    if start > end:
-        start, end = end, start
-    return start, end
-
-
 def _preview_items(label: str, items: list[str], limit: int = 10) -> None:
     click.echo(f"{label}（共 {len(items)} 个）:")
     for idx, item in enumerate(items[:limit], start=1):
         click.echo(f"  {idx}. {item}")
     if len(items) > limit:
         click.echo(f"  ... 还有 {len(items) - limit} 个")
-
-
-def _looks_like_challenge(html: str) -> bool:
-    content = html.lower()
-    markers = (
-        "cf-browser-verification",
-        "challenge-platform",
-        "cloudflare ray id",
-        "attention required",
-        "just a moment",
-    )
-    return any(marker in content for marker in markers)
 
 
 async def _wait_for_challenge_clear(page, timeout_ms: int) -> None:
@@ -111,7 +59,7 @@ async def _wait_for_challenge_clear(page, timeout_ms: int) -> None:
                 raise RuntimeError("验证未完成，请增加等待时间或稍后重试")
             await page.wait_for_timeout(poll_ms)
             continue
-        if not _looks_like_challenge(html):
+        if not looks_like_challenge(html):
             return
         if not warned:
             click.echo("检测到 Cloudflare 验证页，等待完成...")
