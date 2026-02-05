@@ -31,5 +31,5 @@ P2：Scraper/Parser/CLI（阶段 C）
 - [x] CLI 入口统一 `main.py` — `scripts/cli.py` 薄封装、`batch_translate.py` 移除 CLI。
 
 P3：前端与工具（阶段 D）
-- [ ] FastAPI 前端仅 dev 模式提供 — `SERVE_FRONTEND=dev` + 删除残留静态资源。
+- [x] FastAPI 前端仅 dev 模式提供 — `SERVE_FRONTEND=dev` gate + 删除残留静态资源。
 - [ ] Tk GUI 脚本迁移至 `tools/` 或 `legacy/` 并注明 deprecated。
