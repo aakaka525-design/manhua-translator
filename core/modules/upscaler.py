@@ -156,7 +156,7 @@ class UpscaleModule(BaseModule):
         raise ValueError(f"Unsupported UPSCALE_BACKEND: {backend}")
 
     def _run_ncnn(self, context: TaskContext, output_path: Path) -> TaskContext:
-        binary = self._resolve_binary()
+        binary = self._resolve_binary().expanduser().resolve()
         if not binary.exists():
             raise FileNotFoundError(
                 f"Upscale binary not found: {binary}. Run scripts/setup_local.sh or rebuild Docker image."
@@ -165,7 +165,13 @@ class UpscaleModule(BaseModule):
             raise PermissionError(f"Upscale binary not executable: {binary}")
 
         model = os.getenv("UPSCALE_MODEL", DEFAULT_MODEL)
+        model_dir = Path(os.getenv("UPSCALE_NCNN_MODEL_DIR", "tools/bin/models")).expanduser().resolve()
+        if not model_dir.exists():
+            raise FileNotFoundError(
+                f"Upscale model dir not found: {model_dir}. Provide UPSCALE_NCNN_MODEL_DIR or run scripts/setup_local.sh."
+            )
         scale = int(os.getenv("UPSCALE_SCALE", str(DEFAULT_SCALE)))
+        tile = int(os.getenv("UPSCALE_TILE", str(DEFAULT_TILE)))
         timeout = int(os.getenv("UPSCALE_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
         input_path = output_path.resolve()
@@ -195,13 +201,23 @@ class UpscaleModule(BaseModule):
             str(input_path),
             "-o",
             str(tmp_path),
+            "-m",
+            str(model_dir),
             "-n",
             model,
             "-s",
             str(scale),
         ]
+        if tile > 0:
+            cmd.extend(["-t", str(tile)])
 
-        logger.info("[%s] Upscaler start (ncnn): model=%s scale=%s", context.task_id, model, scale)
+        logger.info(
+            "[%s] Upscaler start (ncnn): model=%s scale=%s tile=%s",
+            context.task_id,
+            model,
+            scale,
+            tile,
+        )
         overall_start = time.perf_counter()
         try:
             result = subprocess.run(
@@ -245,6 +261,7 @@ class UpscaleModule(BaseModule):
             "duration_ms": round(duration_ms, 2),
             "model": model,
             "scale": scale,
+            "tile": tile,
             "backend": "ncnn",
         }
         context.output_path = str(output_path)

@@ -48,6 +48,10 @@ def test_upscaler_replaces_output_with_temp(monkeypatch, tmp_path):
     binary.write_text("bin")
     binary.chmod(0o755)
 
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("UPSCALE_NCNN_MODEL_DIR", str(model_dir))
+
     ctx = _make_context(tmp_path)
     module = UpscaleModule(binary_path=str(binary))
     calls = {}
@@ -77,6 +81,10 @@ def test_upscaler_ncnn_uses_absolute_paths(monkeypatch, tmp_path):
     binary.write_text("bin")
     binary.chmod(0o755)
 
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("UPSCALE_NCNN_MODEL_DIR", str(model_dir))
+
     out_dir = tmp_path / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "translated.png"
@@ -102,6 +110,82 @@ def test_upscaler_ncnn_uses_absolute_paths(monkeypatch, tmp_path):
     output_path = Path(calls["cmd"][calls["cmd"].index("-o") + 1])
     assert input_path.is_absolute()
     assert output_path.is_absolute()
+
+
+def test_upscaler_ncnn_passes_model_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
+    monkeypatch.setenv("UPSCALE_MODEL", "realesrgan-x4plus-anime")
+    monkeypatch.setenv("UPSCALE_SCALE", "2")
+
+    binary = tmp_path / "realesrgan-ncnn-vulkan"
+    binary.write_text("bin")
+    binary.chmod(0o755)
+
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("UPSCALE_NCNN_MODEL_DIR", str(model_dir))
+
+    out_path = tmp_path / "translated.png"
+    out_path.write_bytes(b"fake")
+
+    ctx = TaskContext(image_path=str(out_path), output_path=str(out_path))
+    module = UpscaleModule(binary_path=str(binary))
+    calls = {}
+
+    def _fake_run(cmd, capture_output, text, check, timeout, cwd=None):
+        calls["cmd"] = cmd
+        out_path = Path(cmd[cmd.index("-o") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"upscaled")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    asyncio.run(module.process(ctx))
+
+    assert "-m" in calls["cmd"]
+    model_arg = Path(calls["cmd"][calls["cmd"].index("-m") + 1])
+    assert model_arg.is_absolute()
+    assert model_arg == model_dir
+
+
+def test_upscaler_ncnn_uses_tile_flag(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
+    monkeypatch.setenv("UPSCALE_MODEL", "realesr-animevideov3-x4")
+    monkeypatch.setenv("UPSCALE_SCALE", "4")
+    monkeypatch.setenv("UPSCALE_TILE", "256")
+
+    binary = tmp_path / "realesrgan-ncnn-vulkan"
+    binary.write_text("bin")
+    binary.chmod(0o755)
+
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("UPSCALE_NCNN_MODEL_DIR", str(model_dir))
+
+    out_path = tmp_path / "translated.png"
+    out_path.write_bytes(b"fake")
+
+    ctx = TaskContext(image_path=str(out_path), output_path=str(out_path))
+    module = UpscaleModule(binary_path=str(binary))
+    calls = {}
+
+    def _fake_run(cmd, capture_output, text, check, timeout, cwd=None):
+        calls["cmd"] = cmd
+        out_path = Path(cmd[cmd.index("-o") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"upscaled")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    asyncio.run(module.process(ctx))
+
+    assert "-t" in calls["cmd"]
+    idx = calls["cmd"].index("-t")
+    assert calls["cmd"][idx + 1] == "256"
 
 
 def test_upscaler_pytorch_missing_model_raises(monkeypatch, tmp_path):
