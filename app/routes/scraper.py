@@ -14,7 +14,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence, cast
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import (
@@ -36,6 +35,8 @@ from scraper.base import safe_name, normalize_url, load_storage_state_cookies
 from scraper.downloader import AsyncDownloader, DownloadConfig
 from scraper.implementations import MangaForFreeScraper, ToonGodScraper
 from scraper.implementations.generic_playwright import CloudflareChallengeError
+from scraper.url_utils import infer_id as _infer_id
+from scraper.url_utils import infer_url as _infer_url
 
 from ..deps import get_settings
 
@@ -425,31 +426,6 @@ async def _fetch_image_playwright(
         return float(str(value))
     except (TypeError, ValueError):
         return None
-
-
-def _infer_id(value: str) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        path = urlparse(value).path.rstrip("/")
-        return path.split("/")[-1]
-    return value
-
-
-def _infer_url(
-    base_url: str,
-    value: str,
-    kind: str,
-    manga_id: str | None = None,
-) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        return value
-    path = "manga" if "mangaforfree.com" in base_url else "webtoon"
-    if kind == "manga":
-        return f"{base_url.rstrip('/')}/{path}/{value}"
-    if kind == "chapter":
-        if not manga_id:
-            raise ValueError("chapter 需要 manga_id")
-        return f"{base_url.rstrip('/')}/{path}/{manga_id}/{value}/"
-    raise ValueError(f"unknown kind: {kind}")
 
 
 def _coerce_concurrency(value: int) -> int:

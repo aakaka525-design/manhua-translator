@@ -5,11 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 # Add project root for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,6 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scraper import Chapter, EngineConfig, Manga, ScraperConfig, ScraperEngine
 from scraper.downloader import AsyncDownloader, DownloadConfig
 from scraper.implementations import ToonGodScraper
+from scraper.url_utils import infer_id as _infer_id
+from scraper.url_utils import infer_url as _infer_url
+from scraper.url_utils import parse_chapter_range as _parse_chapter_range
 
 
 def _load_cookies(path: str | None) -> dict[str, str] | None:
@@ -26,40 +27,6 @@ def _load_cookies(path: str | None) -> dict[str, str] | None:
     if not isinstance(payload, dict):
         raise ValueError("cookies 必须是 JSON 对象")
     return {str(key): str(value) for key, value in payload.items()}
-
-
-def _infer_id(value: str) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        path = urlparse(value).path.rstrip("/")
-        return path.split("/")[-1]
-    return value
-
-
-def _infer_url(
-    base_url: str, value: str, kind: str, manga_id: str | None = None
-) -> str:
-    if value.startswith("http://") or value.startswith("https://"):
-        return value
-    if kind == "manga":
-        return f"{base_url.rstrip('/')}/webtoon/{value}"
-    if kind == "chapter":
-        if not manga_id:
-            raise ValueError("chapter 需要 manga_id")
-        return f"{base_url.rstrip('/')}/webtoon/{manga_id}/{value}/"
-    raise ValueError(f"unknown kind: {kind}")
-
-
-def _parse_chapter_range(value: str) -> tuple[int, int]:
-    match = re.match(r"^\s*(\d+)\s*[-:]\s*(\d+)\s*$", value)
-    if not match:
-        raise ValueError("章节范围格式应为 1-10")
-    start = int(match.group(1))
-    end = int(match.group(2))
-    if start <= 0 or end <= 0:
-        raise ValueError("章节范围必须为正整数")
-    if start > end:
-        start, end = end, start
-    return start, end
 
 
 async def _bootstrap_state(
