@@ -32,29 +32,6 @@ os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"  # 跳过模型连�
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# 抑制 macOS NSLog 输出 (Error creating directory)
-# 在 OS 文件描述符级别重定向 stderr
-import contextlib
-
-@contextlib.contextmanager
-def suppress_native_stderr():
-    """在 OS 级别抑制 stderr（包括 C/ObjC 的 NSLog）"""
-    # 保存原始 stderr 文件描述符
-    stderr_fd = sys.stderr.fileno()
-    saved_stderr = os.dup(stderr_fd)
-    
-    # 打开 /dev/null 并重定向 stderr
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    os.dup2(devnull, stderr_fd)
-    os.close(devnull)
-    
-    try:
-        yield
-    finally:
-        # 恢复原始 stderr
-        os.dup2(saved_stderr, stderr_fd)
-        os.close(saved_stderr)
-
 import argparse
 import asyncio
 from pathlib import Path

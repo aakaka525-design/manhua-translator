@@ -1,7 +1,8 @@
 """OCR subpackage exposing engines and utilities."""
 
 from .base import OCREngine
-from .cache import get_cached_ocr, suppress_native_stderr
+from .cache import get_cached_ocr
+from ...utils.stderr_suppressor import suppress_native_stderr
 from .paddle_engine import PaddleOCREngine, MockOCREngine
 
 __all__ = [
