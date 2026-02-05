@@ -14,6 +14,8 @@ ARG REALESRGAN_VERSION=0.2.5.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
+    libvulkan1 \
+    mesa-vulkan-drivers \
     libglib2.0-0 \
     ffmpeg \
     fonts-noto-cjk \
