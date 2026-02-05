@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from typing import Literal, Union
@@ -41,6 +42,50 @@ def compute_webp_slices(height: int, slice_height: int, overlap: int) -> list[tu
     return slices
 
 
+def _save_webp_slices(
+    image: Union[Image.Image, np.ndarray],
+    out_path: Path,
+    *,
+    slice_height: int = 16000,
+    overlap: int = 32,
+) -> str:
+    if isinstance(image, Image.Image):
+        pil = image
+        width, height = pil.size
+    else:
+        height, width = image.shape[:2]
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb)
+
+    slices = compute_webp_slices(height, slice_height, overlap)
+    slices_dir = out_path.parent / f"{out_path.stem}_slices"
+    slices_dir.mkdir(parents=True, exist_ok=True)
+
+    entries = []
+    for idx, (start, end) in enumerate(slices):
+        filename = f"slice_{idx:03d}.webp"
+        crop = pil.crop((0, start, width, end))
+        crop.save(slices_dir / filename, format="WEBP", quality=int(os.getenv("WEBP_QUALITY_FINAL", "90")))
+        entries.append({"file": filename, "y": start, "height": end - start})
+
+    index_path = out_path.parent / f"{out_path.stem}_slices.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "original_width": width,
+                "original_height": height,
+                "slice_height": slice_height,
+                "overlap": overlap,
+                "slices": entries,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return str(index_path)
+
+
 def save_image(
     image: Union[Image.Image, np.ndarray],
     path: str,
@@ -56,7 +101,12 @@ def save_image(
             width, height = image.size
         else:
             height, width = image.shape[:2]
-        if width > 16383 or height > 16383:
+        if height > 16383:
+            if purpose == "final" and width <= 16383:
+                return _save_webp_slices(image, out_path)
+            fmt = "png"
+            out_path = out_path.with_suffix(".png")
+        elif width > 16383:
             fmt = "png"
             out_path = out_path.with_suffix(".png")
     if fmt == "webp":

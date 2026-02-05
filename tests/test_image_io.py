@@ -32,3 +32,37 @@ def test_save_image_supports_ndarray(tmp_path, monkeypatch):
     saved = save_image(arr, str(path), purpose="intermediate")
     assert saved.endswith(".webp")
     assert Path(saved).exists()
+
+
+def test_save_image_ndarray_webp_uses_pil(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    arr = np.zeros((4, 4, 3), dtype=np.uint8)
+    path = tmp_path / "out.jpg"
+
+    import core.image_io as image_io
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("cv2.imwrite should not be called for webp ndarray")
+
+    monkeypatch.setattr(image_io.cv2, "imwrite", _boom)
+    saved = save_image(arr, str(path), purpose="final")
+    assert saved.endswith(".webp")
+    assert Path(saved).exists()
+
+
+def test_save_image_webp_too_large_falls_back_to_png(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    arr = np.zeros((10, 20000, 3), dtype=np.uint8)
+    path = tmp_path / "out.jpg"
+    saved = save_image(arr, str(path), purpose="final")
+    assert saved.endswith(".png")
+    assert Path(saved).exists()
+
+
+def test_save_image_webp_oversize_slices(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+    path = tmp_path / "out.png"
+    saved = save_image(arr, str(path), purpose="final")
+    assert saved.endswith("_slices.json")
+    assert (tmp_path / "out_slices").exists()
