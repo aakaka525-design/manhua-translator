@@ -157,6 +157,9 @@ NCNN 说明：
 - `UPSCALE_STRIPE_HEIGHT` 控制每段高度
 - `UPSCALE_STRIPE_OVERLAP` 控制段间重叠（避免接缝）
 
+分块推理（NCNN/PyTorch 通用）：
+- `UPSCALE_TILE>0` 时启用分块推理（NCNN 对应 `-t`，PyTorch 用于 tile 推理）
+
 输出格式（默认 WebP）：
 
 ```bash
