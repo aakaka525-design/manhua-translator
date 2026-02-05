@@ -58,6 +58,7 @@ class ToonGodScraper(GenericPlaywrightScraper):
                 async with self._browser_context() as context:
                     page = await context.new_page()
                     await page.route("**/*", self._block_search_resources)
+                    await self._acquire_rate_slot()
                     await page.goto(
                         url,
                         wait_until="domcontentloaded",
@@ -97,6 +98,7 @@ class ToonGodScraper(GenericPlaywrightScraper):
                     page_obj = await context.new_page()
                     if not self.config.manual_challenge:
                         await page_obj.route("**/*", self._block_search_resources)
+                    await self._acquire_rate_slot()
                     await page_obj.goto(
                         url,
                         wait_until="domcontentloaded",
@@ -174,6 +176,7 @@ class ToonGodScraper(GenericPlaywrightScraper):
         cookies = self._merge_cookies()
         timeout = aiohttp.ClientTimeout(total=self.config.http_timeout_sec)
         async with aiohttp.ClientSession(timeout=timeout, cookies=cookies) as session:
+            await self._acquire_rate_slot()
             async with session.get(url, headers=headers) as response:
                 response.raise_for_status()
                 html = await response.text()

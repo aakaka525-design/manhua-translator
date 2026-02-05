@@ -15,6 +15,7 @@ from playwright.async_api import BrowserContext, async_playwright
 from ..base import BaseScraper, Chapter, Manga, ScraperConfig, normalize_url
 from ..challenge import looks_like_challenge
 from ..downloader import AsyncDownloader, DownloadConfig, DownloadItem, DownloadReport
+from ..rate_limit import RequestRateLimiter
 
 
 class GenericPlaywrightScraper(BaseScraper):
@@ -40,8 +41,13 @@ class GenericPlaywrightScraper(BaseScraper):
         }
         if selectors:
             self.selectors.update(selectors)
+        self.request_limiter = config.request_limiter or RequestRateLimiter(
+            config.rate_limit_rps
+        )
         self.downloader = downloader or AsyncDownloader(
-            DownloadConfig(concurrency=6), self.user_agent_pool
+            DownloadConfig(concurrency=6, rate_limit_rps=config.rate_limit_rps),
+            self.user_agent_pool,
+            request_limiter=self.request_limiter,
         )
 
     async def search_manga(self, keyword: str):
@@ -50,6 +56,7 @@ class GenericPlaywrightScraper(BaseScraper):
         )
         async with self._browser_context() as context:
             page = await context.new_page()
+            await self._acquire_rate_slot()
             await page.goto(
                 url, wait_until="domcontentloaded", timeout=self.config.timeout_ms
             )
@@ -64,6 +71,7 @@ class GenericPlaywrightScraper(BaseScraper):
     ) -> Manga | None:
         async with self._browser_context() as context:
             page = await context.new_page()
+            await self._acquire_rate_slot()
             await page.goto(
                 url, wait_until="domcontentloaded", timeout=self.config.timeout_ms
             )
@@ -157,6 +165,7 @@ class GenericPlaywrightScraper(BaseScraper):
         )
         async with self._browser_context() as context:
             page = await context.new_page()
+            await self._acquire_rate_slot()
             await page.goto(
                 target, wait_until="domcontentloaded", timeout=self.config.timeout_ms
             )
@@ -190,6 +199,7 @@ class GenericPlaywrightScraper(BaseScraper):
                 network_urls.append(response.url)
 
         page.on("response", handle_response)
+        await self._acquire_rate_slot()
         await page.goto(
             reader_url,
             wait_until="domcontentloaded",
@@ -284,6 +294,9 @@ class GenericPlaywrightScraper(BaseScraper):
         script_urls = self._extract_script_image_urls(html)
         normalized = [normalize_url(self.config.base_url, url) for url in script_urls]
         return self._dedupe_keep_order(normalized)
+
+    async def _acquire_rate_slot(self) -> None:
+        await self.request_limiter.acquire()
 
     async def _auto_scroll(self, page) -> None:
         last_height = 0

@@ -64,6 +64,7 @@ class MangaForFreeScraper(GenericPlaywrightScraper):
         else:
             async with self._browser_context() as context:
                 page_obj = await context.new_page()
+                await self._acquire_rate_slot()
                 await page_obj.goto(
                     url, wait_until="domcontentloaded", timeout=self.config.timeout_ms
                 )
@@ -125,6 +126,7 @@ class MangaForFreeScraper(GenericPlaywrightScraper):
         cookies = self._merge_cookies()
         timeout = aiohttp.ClientTimeout(total=self.config.http_timeout_sec)
         async with aiohttp.ClientSession(timeout=timeout, cookies=cookies) as session:
+            await self._acquire_rate_slot()
             async with session.get(url, headers=headers) as response:
                 response.raise_for_status()
                 html = await response.text()
@@ -146,6 +148,7 @@ class MangaForFreeScraper(GenericPlaywrightScraper):
         timeout = aiohttp.ClientTimeout(total=self.config.http_timeout_sec)
         data = {"action": "manga_get_chapters", "manga": manga_id}
         async with aiohttp.ClientSession(timeout=timeout, cookies=cookies) as session:
+            await self._acquire_rate_slot()
             async with session.post(
                 urljoin(self.config.base_url, "/wp-admin/admin-ajax.php"),
                 headers=headers,

@@ -12,6 +12,7 @@ from typing import Awaitable, Callable, Iterable
 import aiohttp
 
 from .base import Chapter, Manga, UserAgentPool
+from .rate_limit import RequestRateLimiter
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ class DownloadConfig:
     backoff_factor: float = 2.0
     backoff_max: float = 10.0
     queue_maxsize: int = 120
+    rate_limit_rps: float = 2.0
 
 
 @dataclass
@@ -70,9 +72,13 @@ class AsyncDownloader:
         self,
         config: DownloadConfig | None = None,
         user_agent_pool: UserAgentPool | None = None,
+        request_limiter: RequestRateLimiter | None = None,
     ) -> None:
         self.config = config or DownloadConfig()
         self.user_agent_pool = user_agent_pool or UserAgentPool()
+        self.request_limiter = request_limiter or RequestRateLimiter(
+            self.config.rate_limit_rps
+        )
         self.logger = logging.getLogger(__name__)
 
     async def download_all(
@@ -224,6 +230,7 @@ class AsyncDownloader:
             if referer:
                 request_headers["Referer"] = referer
             try:
+                await self.request_limiter.acquire()
                 async with session.get(url, headers=request_headers) as response:
                     if response.status in {403, 429}:
                         raise TransientHttpError(response.status)

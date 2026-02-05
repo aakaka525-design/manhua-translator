@@ -113,6 +113,7 @@ export const useScraperStore = defineStore('scraper', () => {
         userAgent: '',
         useChromeChannel: true,
         concurrency: 6,
+        rateLimitRps: 2,
         keyword: '',
         view: 'search'
     })
@@ -300,6 +301,7 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     function getPayload() {
+        const rateLimitRps = normalizeRateLimitRps(state.rateLimitRps)
         return {
             base_url: state.baseUrl,
             http_mode: state.httpMode,
@@ -309,12 +311,14 @@ export const useScraperStore = defineStore('scraper', () => {
             user_data_dir: state.useProfile ? (state.userDataDir || null) : null,
             user_agent: state.lockUserAgent ? (state.userAgent || null) : null,
             browser_channel: (!state.httpMode && state.useChromeChannel) ? 'chrome' : null,
-            concurrency: state.concurrency
+            concurrency: state.concurrency,
+            rate_limit_rps: rateLimitRps
         }
     }
 
     function getParserPayload(context = parser.context) {
         const httpMode = parser.mode === 'http'
+        const rateLimitRps = normalizeRateLimitRps(state.rateLimitRps)
         return {
             base_url: context.baseUrl || '',
             http_mode: httpMode,
@@ -324,8 +328,15 @@ export const useScraperStore = defineStore('scraper', () => {
             user_data_dir: context.userDataDir || null,
             user_agent: null,
             browser_channel: null,
-            concurrency: state.concurrency
+            concurrency: state.concurrency,
+            rate_limit_rps: rateLimitRps
         }
+    }
+
+    function normalizeRateLimitRps(value) {
+        const numeric = Number(value)
+        if (!Number.isFinite(numeric)) return 2
+        return Math.max(0.2, Math.min(20, numeric))
     }
 
     function getActivePayload() {

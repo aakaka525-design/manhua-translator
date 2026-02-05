@@ -36,6 +36,7 @@ from scraper.base import safe_name, normalize_url, load_storage_state_cookies
 from scraper.downloader import AsyncDownloader, DownloadConfig
 from scraper.implementations import MangaForFreeScraper, ToonGodScraper
 from scraper.implementations.generic_playwright import CloudflareChallengeError
+from scraper.rate_limit import RequestRateLimiter
 from scraper.url_utils import infer_id as _infer_id
 from scraper.url_utils import infer_url as _infer_url
 from scraper.url_utils import normalize_base_url as _normalize_base_url
@@ -76,6 +77,7 @@ class ScraperBaseRequest(BaseModel):
     browser_channel: Optional[str] = None
     cookies: Optional[dict[str, str]] = None
     concurrency: int = 6
+    rate_limit_rps: float = 2.0
     user_agent: Optional[str] = None
 
 
@@ -411,6 +413,14 @@ def _coerce_concurrency(value: int) -> int:
     return max(1, min(value, 12))
 
 
+def _coerce_rate_limit_rps(value: float) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 2.0
+    return max(0.2, min(numeric, 20.0))
+
+
 def _ensure_storage_path(path: Optional[str]) -> Optional[str]:
     if not path:
         return None
@@ -475,6 +485,8 @@ def _build_engine(
     if storage_state_path and not Path(storage_state_path).exists():
         storage_state_path = None
     output_root = _resolve_output_root(output_root)
+    rate_limit_rps = _coerce_rate_limit_rps(request.rate_limit_rps)
+    request_limiter = RequestRateLimiter(rate_limit_rps)
     config = ScraperConfig(
         base_url=base_url,
         http_mode=request.http_mode,
@@ -485,9 +497,15 @@ def _build_engine(
         storage_state_path=storage_state_path,
         cookies=request.cookies,
         user_agent=request.user_agent,
+        rate_limit_rps=rate_limit_rps,
+        request_limiter=request_limiter,
     )
     downloader = AsyncDownloader(
-        DownloadConfig(concurrency=_coerce_concurrency(request.concurrency))
+        DownloadConfig(
+            concurrency=_coerce_concurrency(request.concurrency),
+            rate_limit_rps=rate_limit_rps,
+        ),
+        request_limiter=request_limiter,
     )
     if "mangaforfree.com" in base_url:
         scraper = MangaForFreeScraper(config, downloader=downloader)

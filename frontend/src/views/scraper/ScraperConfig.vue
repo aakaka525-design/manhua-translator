@@ -2,6 +2,19 @@
 import { useScraperStore } from '@/stores/scraper'
 
 const scraper = useScraperStore()
+const ratePresets = [
+  { key: 'conservative', label: '保守', value: 0.5, hint: '更稳，减少风控' },
+  { key: 'balanced', label: '平衡', value: 1, hint: '推荐默认' },
+  { key: 'fast', label: '快速', value: 1.5, hint: '速度优先（更稳）' }
+]
+
+function applyRatePreset(value) {
+  scraper.state.rateLimitRps = value
+}
+
+function isRatePresetActive(value) {
+  return Math.abs(Number(scraper.state.rateLimitRps || 0) - value) < 0.01
+}
 
 defineProps({
   mobileConfigOpen: Boolean
@@ -153,6 +166,36 @@ const emit = defineEmits(['toggle-mobile'])
               <label class="text-xs text-text-secondary">并发</label>
               <input type="number" min="1" max="12" v-model.number="scraper.state.concurrency"
                 class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none" />
+            </div>
+            <div>
+              <label class="text-xs text-text-secondary">自定义速率（每秒请求）</label>
+              <input
+                type="number"
+                min="0.2"
+                max="20"
+                step="0.1"
+                v-model.number="scraper.state.rateLimitRps"
+                class="mt-1 w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+              />
+              <p class="mt-1 text-[10px] text-text-secondary opacity-70">建议 0.5~3，站点风控严格时可继续降低</p>
+              <div class="mt-2">
+                <p class="text-[10px] text-text-secondary opacity-70">速率预设</p>
+                <div class="mt-1 grid grid-cols-3 gap-2">
+                  <button
+                    v-for="preset in ratePresets"
+                    :key="preset.key"
+                    type="button"
+                    @click="applyRatePreset(preset.value)"
+                    class="rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-colors"
+                    :class="isRatePresetActive(preset.value)
+                      ? 'border-accent-1 bg-accent-1/20 text-accent-1'
+                      : 'border-border-subtle bg-bg-secondary text-text-secondary hover:border-accent-1 hover:text-text-main'"
+                    :title="preset.hint"
+                  >
+                    {{ preset.label }}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </details>

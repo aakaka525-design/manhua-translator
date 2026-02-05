@@ -9,6 +9,8 @@ import random
 import re
 from urllib.parse import urljoin
 
+from .rate_limit import RequestRateLimiter
+
 
 DEFAULT_USER_AGENTS = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -61,6 +63,8 @@ class ScraperConfig:
     storage_state_path: str | None = None
     cookies: dict[str, str] | None = None
     extra_headers: dict[str, str] = field(default_factory=dict)
+    rate_limit_rps: float = 2.0
+    request_limiter: RequestRateLimiter | None = None
 
 
 class UserAgentPool:
