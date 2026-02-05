@@ -164,7 +164,7 @@ NCNN 说明：
 
 ```bash
 OUTPUT_FORMAT=webp
-WEBP_QUALITY_FINAL=90
+WEBP_QUALITY_FINAL=80
 WEBP_LOSSLESS_INTERMEDIATE=1
 ```
 
@@ -173,6 +173,9 @@ WEBP_LOSSLESS_INTERMEDIATE=1
 - 前端应按 `slices.json` 列表顺序堆叠渲染
 - `WEBP_SLICE_OVERLAP` 控制切片重叠像素（默认 10）
 - `WEBP_SLICES_LOSSLESS=1` 时切片以无损 WebP 保存
+
+体积优化默认建议：
+- 默认 `WEBP_QUALITY_FINAL=80`，`WEBP_SLICES_LOSSLESS=0`（切片不使用无损）
 
 评估脚本（OCR 置信度对比）：
 
