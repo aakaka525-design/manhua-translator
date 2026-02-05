@@ -17,40 +17,6 @@ class OCRPostProcessor:
         (re.compile(r"운요"), "은요"),
     ]
     
-    # 中文拟声词白名单（更精准，避免误判普通短语）
-    _SFX_CN_WORDS = {"砰", "咔", "咔嚓", "嗖", "嘭", "哗", "呼", "啪", "嘎", "轰", "嘶", "咚", "叮", "嗡", "嘀", "哐", "咣", "嘣", "噗", "咻", "唰"}
-    _SFX_CJK_RE = re.compile(r"^(砰|咔嚓|咔|嗖|嘭|哗|呼|啪|嘎|轰|嘶|咚|叮|嗡|嘀|哐|咣|嘣|噗|咻|唰)+[！!]*$")
-    _SFX_JP_RE = re.compile(r"^[\u3040-\u30ff]{2,8}[!！]?$")
-    _SFX_KO_WORDS = {
-        "쾅",
-        "쿵",
-        "탕",
-        "펑",
-        "퍽",
-        "두근두근",
-        "덜컹덜컹",
-        "철컹철컹",
-        "우두둑",
-        "슥",
-        "슥슥",
-        "쓱",
-        "쓱쓱",
-        "파닥",
-        "파닥파닥",
-        "팡",
-        "딱",
-        "헉",
-        "윽",
-        "흑",
-        "으악",
-        "휴",
-        "후",
-        "휙",
-    }
-    # Removed: _SFX_KO_EXCL_RE = re.compile(r"^[\uac00-\ud7a3]{1,4}[!！]+$")
-    # This was too broad and matched names like 이수희!!
-    _SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,2})\1+$")
-
     def _normalize(self, text: str) -> str:
         if not text:
             return ""
@@ -59,19 +25,7 @@ class OCRPostProcessor:
     def _is_sfx(self, text: str) -> bool:
         if not text:
             return False
-        if _is_sfx_translator(text):
-            return True
-        t = text.strip()
-        if self._SFX_CJK_RE.match(t):
-            return True
-        if self._SFX_JP_RE.match(t):
-            return True
-        if t in self._SFX_KO_WORDS:
-            return True
-        # Removed _SFX_KO_EXCL_RE check - was too broad
-        if self._SFX_KO_REPEAT_RE.match(t):
-            return True
-        return False
+        return _is_sfx_translator(text)
 
     def _fix_korean(self, text: str) -> str:
         out = text

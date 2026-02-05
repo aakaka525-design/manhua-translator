@@ -48,6 +48,38 @@ SFX_EXCLUSIONS = {"TEL", "VIP", "SMS", "ID", "NO", "OK", "TV", "VS", "FM", "AM",
 # OCR 噪音白名单（避免误判短词）
 NOISE_ALLOWLIST = set(SFX_EXCLUSIONS) | {"YES", "OKAY", "USA", "UK", "EU", "IOS"}
 
+# CJK/Korean/Japanese SFX helpers
+_SFX_CN_WORDS = {"砰", "咔", "咔嚓", "嗖", "嘭", "哗", "呼", "啪", "嘎", "轰", "嘶", "咚", "叮", "嗡", "嘀", "哐", "咣", "嘣", "噗", "咻", "唰"}
+_SFX_CJK_RE = re.compile(r"^(砰|咔嚓|咔|嗖|嘭|哗|呼|啪|嘎|轰|嘶|咚|叮|嗡|嘀|哐|咣|嘣|噗|咻|唰)+[！!]*$")
+_SFX_JP_RE = re.compile(r"^[\u3040-\u30ff]{2,8}[!！]?$")
+_SFX_KO_WORDS = {
+    "쾅",
+    "쿵",
+    "탕",
+    "펑",
+    "퍽",
+    "두근두근",
+    "덜컹덜컹",
+    "철컹철컹",
+    "우두둑",
+    "슥",
+    "슥슥",
+    "쓱",
+    "쓱쓱",
+    "파닥",
+    "파닥파닥",
+    "팡",
+    "딱",
+    "헉",
+    "윽",
+    "흑",
+    "으악",
+    "휴",
+    "후",
+    "휙",
+}
+_SFX_KO_REPEAT_RE = re.compile(r"^([\uac00-\ud7a3]{1,2})\1+$")
+
 
 def _is_sfx(text: str) -> bool:
     """Check if text is likely a sound effect."""
@@ -88,6 +120,18 @@ def _is_sfx(text: str) -> bool:
     for pattern in SFX_PATTERNS:
         if _re.match(pattern, upper, _re.IGNORECASE):
             return True
+
+    # CJK/Korean/Japanese SFX rules
+    if base in _SFX_CN_WORDS:
+        return True
+    if _SFX_CJK_RE.match(raw):
+        return True
+    if _SFX_JP_RE.match(raw):
+        return True
+    if base in _SFX_KO_WORDS:
+        return True
+    if _SFX_KO_REPEAT_RE.match(base):
+        return True
 
     if _looks_like_hangul_sfx(raw):
         return True

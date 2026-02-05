@@ -1,7 +1,7 @@
 import asyncio
 
 from core.models import Box2D, RegionData, TaskContext
-from core.modules.translator import TranslatorModule
+from core.modules.translator import TranslatorModule, _is_sfx
 
 
 def _run_translate(regions):
@@ -56,3 +56,9 @@ def test_translator_sfx_unknown_korean_preserved():
     )
     # Now returns original Korean instead of romanization
     assert result.regions[0].target_text == "텅"
+
+
+def test_translator_sfx_cjk_and_jp_ko_rules():
+    assert _is_sfx("砰")
+    assert _is_sfx("カンッ")
+    assert _is_sfx("쿵")
