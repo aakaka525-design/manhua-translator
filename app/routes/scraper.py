@@ -194,26 +194,10 @@ def _cookie_expires(cookie: dict) -> float | None:
 
 
 def _build_cookie_header(storage_state_path: Optional[str], host: str) -> str:
-    if not storage_state_path:
+    cookies = load_storage_state_cookies(storage_state_path, domain_filter=host or None)
+    if not cookies:
         return ""
-    path = Path(storage_state_path)
-    if not path.exists():
-        return ""
-    payload = json.loads(path.read_text())
-    cookies = payload.get("cookies", []) if isinstance(payload, dict) else []
-    pairs = []
-    for cookie in cookies:
-        if not isinstance(cookie, dict):
-            continue
-        name = cookie.get("name")
-        value = cookie.get("value")
-        domain = str(cookie.get("domain", ""))
-        if not name or value is None:
-            continue
-        if host and domain and host not in domain:
-            continue
-        pairs.append(f"{name}={value}")
-    return "; ".join(pairs)
+    return "; ".join(f"{name}={value}" for name, value in cookies.items())
 
 
 def _default_state_path(base_url: str) -> Path:
