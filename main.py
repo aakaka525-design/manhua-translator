@@ -40,7 +40,7 @@ from pathlib import Path
 def translate_image_cmd(args):
     """翻译单张图片"""
     from core.pipeline import translate_image
-    # 注意：OCR 缓存由 ocr_engine 模块自动管理，无需手动清空
+    # 注意：OCR 缓存由 core.vision.ocr 自动管理，无需手动清空
     
     async def run():
         print(f"翻译图片: {args.image}")

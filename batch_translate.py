@@ -34,7 +34,7 @@ async def translate_chapter(
         dict: 统计信息
     """
     from core.pipeline import translate_image
-    # 注意：OCR 缓存由 ocr_engine 模块自动管理，无需手动清空
+        # 注意：OCR 缓存由 core.vision.ocr 自动管理，无需手动清空
     
     # 创建输出目录（安全处理，不自动删除已有内容）
     output_path = Path(output_dir)
