@@ -19,6 +19,14 @@ const availableModels = [
     { id: 'gpt-4o', name: 'GPT-4o', desc: 'OpenAI 模型' }
 ]
 
+const availableUpscaleModels = [
+    { id: 'realesrgan-x4plus-anime', name: 'RealESRGAN Anime x4', desc: '动漫风格优化' },
+    { id: 'realesrgan-x4plus', name: 'RealESRGAN x4plus', desc: '通用高清放大' },
+    { id: 'realesr-animevideov3-x4', name: 'AnimeVideo v3 x4', desc: '视频动漫优化' }
+]
+
+const availableUpscaleScales = [2, 4]
+
 export const useSettingsStore = defineStore('settings', () => {
     const showModal = ref(false)
     const showLogsModal = ref(false)
@@ -30,7 +38,9 @@ export const useSettingsStore = defineStore('settings', () => {
         aiModelName: 'GLM-4.7 Flash',
         sourceLang: 'en',
         targetLang: 'zh',
-        theme: 'default' // default (dark) or pop (light)
+        theme: 'default', // default (dark) or pop (light)
+        upscaleModel: 'realesrgan-x4plus-anime',
+        upscaleScale: 2
     })
 
     function applyTheme() {
@@ -83,6 +93,40 @@ export const useSettingsStore = defineStore('settings', () => {
         }
     }
 
+    async function selectUpscaleModel(model) {
+        settings.upscaleModel = model.id
+        saveSettings()
+        try {
+            await fetch('/api/v1/settings/upscale', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: settings.upscaleModel,
+                    scale: settings.upscaleScale
+                })
+            })
+        } catch (e) {
+            console.error('Failed to update upscale model:', e)
+        }
+    }
+
+    async function selectUpscaleScale(scale) {
+        settings.upscaleScale = scale
+        saveSettings()
+        try {
+            await fetch('/api/v1/settings/upscale', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: settings.upscaleModel,
+                    scale: settings.upscaleScale
+                })
+            })
+        } catch (e) {
+            console.error('Failed to update upscale scale:', e)
+        }
+    }
+
     async function fetchLogs() {
         loading.value = true
         try {
@@ -116,8 +160,12 @@ export const useSettingsStore = defineStore('settings', () => {
         loading,
         settings,
         availableModels,
+        availableUpscaleModels,
+        availableUpscaleScales,
         saveSettings,
         selectModel,
+        selectUpscaleModel,
+        selectUpscaleScale,
         openLogs,
         fetchLogs,
         toggleTheme
