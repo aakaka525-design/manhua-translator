@@ -1,0 +1,1 @@
+EDGE_BAND_RATIO = 0.12

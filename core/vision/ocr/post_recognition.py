@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from ...constants import EDGE_BAND_RATIO
 from ...models import Box2D, RegionData
 
 
 LINE_GAP_RATIO = 0.6
 LOW_CONF_THRESHOLD = 0.6
-EDGE_BAND_RATIO = 0.15
 EDGE_BAND_MIN = 128
 EDGE_BAND_MAX = 256
 
