@@ -32,20 +32,23 @@ if [[ "$BACKEND" == "ncnn" ]]; then
   curl -L "$URL" -o "$TMP_DIR/$ZIP_NAME"
   unzip -q "$TMP_DIR/$ZIP_NAME" -d "$TMP_DIR/extract"
 
-  BIN_SRC="$(find "$TMP_DIR/extract" -type f -name realesrgan-ncnn-vulkan -not -path "*/__MACOSX/*" -size +1024c | head -n 1)"
-  MODEL_SRC="$(find "$TMP_DIR/extract" -type d -name models -not -path "*/__MACOSX/*" | head -n 1)"
-
-  if [[ -z "$BIN_SRC" ]]; then
-    echo "Binary not found in zip"
-    exit 1
+  SRC_ROOT="$(find "$TMP_DIR/extract" -mindepth 1 -maxdepth 1 -type d -not -name "__MACOSX" | head -n 1)"
+  if [[ -z "$SRC_ROOT" ]]; then
+    SRC_ROOT="$TMP_DIR/extract"
   fi
 
-  cp "$BIN_SRC" "$BIN_DIR/realesrgan-ncnn-vulkan"
+  rm -rf "$SRC_ROOT/__MACOSX"
+  cp -R "$SRC_ROOT"/* "$BIN_DIR"/
+
+  if [[ ! -f "$BIN_DIR/realesrgan-ncnn-vulkan" ]]; then
+    echo "Binary not found in extracted archive"
+    exit 1
+  fi
   chmod +x "$BIN_DIR/realesrgan-ncnn-vulkan"
 
-  if [[ -n "$MODEL_SRC" ]]; then
-    rm -rf "$BIN_DIR/models"
-    cp -R "$MODEL_SRC" "$BIN_DIR/models"
+  if [[ ! -d "$BIN_DIR/models" ]]; then
+    echo "Models directory not found in extracted archive"
+    exit 1
   fi
 
   echo "✅ Real-ESRGAN (ncnn) installed to $BIN_DIR"

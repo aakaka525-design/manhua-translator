@@ -23,3 +23,9 @@ def test_setup_local_script_filters_macosx_artifacts():
     content = Path("scripts/setup_local.sh").read_text(encoding="utf-8")
     assert "__MACOSX" in content
     assert "realesrgan-ncnn-vulkan" in content
+
+
+def test_setup_local_script_copies_extracted_root():
+    content = Path("scripts/setup_local.sh").read_text(encoding="utf-8")
+    assert "SRC_ROOT" in content
+    assert "cp -R \"$SRC_ROOT\"/* \"$BIN_DIR\"/" in content
