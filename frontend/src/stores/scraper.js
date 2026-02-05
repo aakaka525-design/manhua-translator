@@ -121,6 +121,8 @@ export const useScraperStore = defineStore('scraper', () => {
     const error = ref('')
     const results = ref([])
     const selectedManga = ref(null)
+    const selectedMangaSource = ref('scraper')
+    const selectedMangaContext = ref(null)
     const chapters = ref([])
     const selectedIds = ref([])
     const queue = ref([])
@@ -311,6 +313,28 @@ export const useScraperStore = defineStore('scraper', () => {
         }
     }
 
+    function getParserPayload(context = parser.context) {
+        const httpMode = parser.mode === 'http'
+        return {
+            base_url: context.baseUrl || '',
+            http_mode: httpMode,
+            headless: !httpMode,
+            manual_challenge: false,
+            storage_state_path: context.storageStatePath || null,
+            user_data_dir: context.userDataDir || null,
+            user_agent: null,
+            browser_channel: null,
+            concurrency: state.concurrency
+        }
+    }
+
+    function getActivePayload() {
+        if (selectedMangaSource.value === 'parser') {
+            return getParserPayload(selectedMangaContext.value || parser.context)
+        }
+        return getPayload()
+    }
+
     function proxyImageUrl(url) {
         if (!url) return ''
         if (url.startsWith('data:') || url.startsWith('blob:')) return url
@@ -448,6 +472,8 @@ export const useScraperStore = defineStore('scraper', () => {
     async function selectManga(manga) {
         const toast = useToastStore()
         selectedManga.value = manga
+        selectedMangaSource.value = 'scraper'
+        selectedMangaContext.value = null
         loading.value = true
         error.value = ''
         chapters.value = []
@@ -469,7 +495,28 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     async function selectMangaFromParser(manga) {
-        return selectManga(manga)
+        const toast = useToastStore()
+        selectedManga.value = manga
+        selectedMangaSource.value = 'parser'
+        selectedMangaContext.value = { ...parser.context }
+        loading.value = true
+        error.value = ''
+        chapters.value = []
+        selectedIds.value = []
+        try {
+            chapters.value = await api.chapters({ ...getParserPayload(selectedMangaContext.value), manga })
+            chapters.value = chapters.value.map(chapter => ({
+                ...chapter,
+                downloaded: !!chapter.downloaded,
+                downloaded_count: chapter.downloaded_count || 0,
+                downloaded_total: chapter.downloaded_total || 0
+            }))
+        } catch (e) {
+            toast.show(`获取章节失败: ${e.message}`, 'error')
+            error.value = e.message
+        } finally {
+            loading.value = false
+        }
     }
 
     async function loadCatalog(reset = false) {
@@ -722,7 +769,7 @@ export const useScraperStore = defineStore('scraper', () => {
         error.value = ''
         updateTask(chapter.id, { status: 'pending', message: '提交下载任务中...', report: null })
         try {
-            const data = await api.download({ ...getPayload(), manga: selectedManga.value, chapter })
+            const data = await api.download({ ...getActivePayload(), manga: selectedManga.value, chapter })
             task.id = data.task_id
             task.status = data.status
             task.message = data.message || '已提交下载任务'
@@ -863,6 +910,8 @@ export const useScraperStore = defineStore('scraper', () => {
         error,
         results,
         selectedManga,
+        selectedMangaSource,
+        selectedMangaContext,
         chapters,
         selectedIds,
         queue,
@@ -897,6 +946,7 @@ export const useScraperStore = defineStore('scraper', () => {
         stateInfoClass,
         accessInfoLabel,
         accessInfoClass,
+        getActivePayload,
         download,
         downloadSelected,
         toggleSelection,
