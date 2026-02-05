@@ -29,3 +29,15 @@ def test_setup_local_script_copies_extracted_root():
     content = Path("scripts/setup_local.sh").read_text(encoding="utf-8")
     assert "SRC_ROOT" in content
     assert "cp -R \"$SRC_ROOT\"/* \"$BIN_DIR\"/" in content
+
+
+def test_setup_local_script_sources_env():
+    content = Path("scripts/setup_local.sh").read_text(encoding="utf-8")
+    assert "source \"$ROOT_DIR/.env\"" in content
+    assert "set -a" in content
+
+
+def test_setup_local_script_handles_root_files():
+    content = Path("scripts/setup_local.sh").read_text(encoding="utf-8")
+    assert "TOP_LEVEL_ENTRIES" in content
+    assert "SRC_ROOT=\"$TMP_DIR/extract\"" in content

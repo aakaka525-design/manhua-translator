@@ -10,6 +10,13 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="python"
 fi
 
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
 BACKEND="${UPSCALE_BACKEND:-pytorch}"
 
 $PYTHON_BIN -m pip install -r "$ROOT_DIR/requirements.txt"
@@ -32,12 +39,18 @@ if [[ "$BACKEND" == "ncnn" ]]; then
   curl -L "$URL" -o "$TMP_DIR/$ZIP_NAME"
   unzip -q "$TMP_DIR/$ZIP_NAME" -d "$TMP_DIR/extract"
 
-  SRC_ROOT="$(find "$TMP_DIR/extract" -mindepth 1 -maxdepth 1 -type d -not -name "__MACOSX" | head -n 1)"
-  if [[ -z "$SRC_ROOT" ]]; then
+  TOP_LEVEL_ENTRIES=()
+  while IFS= read -r entry; do
+    TOP_LEVEL_ENTRIES+=("$entry")
+  done < <(find "$TMP_DIR/extract" -mindepth 1 -maxdepth 1 -not -name "__MACOSX")
+
+  if [[ ${#TOP_LEVEL_ENTRIES[@]} -eq 1 && -d "${TOP_LEVEL_ENTRIES[0]}" ]]; then
+    SRC_ROOT="${TOP_LEVEL_ENTRIES[0]}"
+  else
     SRC_ROOT="$TMP_DIR/extract"
   fi
 
-  rm -rf "$SRC_ROOT/__MACOSX"
+  rm -rf "$TMP_DIR/extract/__MACOSX"
   cp -R "$SRC_ROOT"/* "$BIN_DIR"/
 
   if [[ ! -f "$BIN_DIR/realesrgan-ncnn-vulkan" ]]; then
