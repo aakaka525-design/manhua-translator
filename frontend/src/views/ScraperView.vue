@@ -168,8 +168,8 @@ onUnmounted(() => {
 
       <!-- Mobile Tabs -->
       <div class="flex xl:hidden flex-wrap gap-2 mb-4">
-        <button v-for="tab in [{k:'browse',l:'浏览'}, {k:'chapters',l:'章节'}, {k:'settings',l:'设置'}]" :key="tab.k"
-          @click="mobileTab = tab.k"
+        <button v-for="tab in [{k:'browse',l:'浏览'}, {k:'catalog',l:'站点目录', view: 'catalog'}, {k:'parser',l:'URL解析', view: 'parser'}, {k:'chapters',l:'章节'}, {k:'settings',l:'设置'}]" :key="tab.k"
+          @click="tab.view ? (scraper.setView(tab.view), mobileTab = 'browse') : (mobileTab = tab.k)"
           class="px-3 py-1 text-xs font-semibold rounded-full border transition-all duration-300"
           :class="mobileTab === tab.k
             ? 'bg-accent-1/20 text-accent-1 border-accent-1/50 shadow-sm scale-105'
@@ -231,7 +231,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Sticky Toolbar (Has Results) -->
-            <div v-else class="flex flex-col h-full">
+            <div v-else class="flex flex-col xl:h-full">
                 <div class="flex items-center gap-3 mb-4 p-2 bg-bg-secondary/30 rounded-xl border border-white/5 backdrop-blur-sm sticky top-0 z-10">
                    <div class="flex-1 relative">
                         <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50 text-xs"></i>
@@ -247,7 +247,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Grid Layout -->
-                <div class="grid gap-3 transition-all duration-500 overflow-y-auto custom-scrollbar flex-1 content-start"
+                <div class="grid gap-3 transition-all duration-500 content-start xl:overflow-y-auto xl:custom-scrollbar xl:flex-1 xl:min-h-0"
                     :class="scraper.selectedManga ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'">
                 <MangaListItem 
                     v-for="manga in scraper.results" 
