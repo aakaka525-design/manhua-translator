@@ -491,52 +491,6 @@ def merge_line_regions_geometric(
     return merged
 
 
-def merge_line_regions(
-    regions: list[RegionData],
-    y_tolerance: float = 0.5,
-) -> list[RegionData]:
-    """Merge regions on the same line (legacy variant)."""
-    if len(regions) <= 1:
-        return regions
-
-    valid_regions = [r for r in regions if r.box_2d and r.source_text]
-    if not valid_regions:
-        return regions
-
-    groups: list[list[RegionData]] = []
-    for region in valid_regions:
-        box = _box(region)
-        center_y = (box.y1 + box.y2) / 2
-
-        matched_group = None
-        for group in groups:
-            for member in group:
-                member_box = _box(member)
-                member_center_y = (member_box.y1 + member_box.y2) / 2
-                avg_height = (box.height + member_box.height) / 2
-                y_diff = abs(center_y - member_center_y)
-                if y_diff < avg_height * y_tolerance:
-                    matched_group = group
-                    break
-            if matched_group:
-                break
-
-        if matched_group:
-            matched_group.append(region)
-        else:
-            groups.append([region])
-
-    merged: list[RegionData] = []
-    for group in groups:
-        if len(group) == 1:
-            merged.append(group[0])
-        else:
-            sorted_group = sorted(group, key=lambda r: cast(Box2D, r.box_2d).x1)
-            merged.append(merge_group(sorted_group))
-
-    return merged
-
-
 def merge_paragraph_regions(
     regions: list[RegionData],
     y_gap_ratio: float = 3.0,
