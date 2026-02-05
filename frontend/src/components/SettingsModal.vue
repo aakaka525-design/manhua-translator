@@ -2,12 +2,27 @@
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
+
+const onUpscaleModelChange = (event) => {
+  const value = event?.target?.value
+  const model = settingsStore.availableUpscaleModels.find((item) => item.id === value)
+  if (model) {
+    settingsStore.selectUpscaleModel(model)
+  }
+}
+
+const onUpscaleScaleChange = (event) => {
+  const value = Number(event?.target?.value)
+  if (!Number.isNaN(value)) {
+    settingsStore.selectUpscaleScale(value)
+  }
+}
 </script>
 
 <template>
   <!-- Settings Modal -->
-  <Teleport to="body">
-    <div v-if="settingsStore.showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+  <Teleport to="body" :disabled="!settingsStore.showModal">
+    <div v-show="settingsStore.showModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="settingsStore.showModal = false"></div>
       <div class="bg-surface border border-border-main w-full max-w-lg rounded-2xl p-6 relative z-10 shadow-2xl">
         <div class="flex items-center justify-between mb-6">
@@ -73,6 +88,39 @@ const settingsStore = useSettingsStore()
                     :class="settingsStore.settings.aiModel === model.id ? 'scale-100' : 'scale-0'"></div>
                 </div>
               </button>
+            </div>
+          </div>
+
+          <!-- Upscale -->
+          <div>
+            <h4 class="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wider">高清放大</h4>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="text-xs text-text-secondary opacity-70 mb-1 block">放大模型</label>
+                <select
+                  v-model="settingsStore.settings.upscaleModel"
+                  data-test="upscale-model-select"
+                  @change="onUpscaleModelChange"
+                  class="w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                >
+                  <option v-for="model in settingsStore.availableUpscaleModels" :key="model.id" :value="model.id">
+                    {{ model.name }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-text-secondary opacity-70 mb-1 block">放大倍率</label>
+                <select
+                  v-model.number="settingsStore.settings.upscaleScale"
+                  data-test="upscale-scale-select"
+                  @change="onUpscaleScaleChange"
+                  class="w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                >
+                  <option v-for="scale in settingsStore.availableUpscaleScales" :key="scale" :value="scale">
+                    x{{ scale }}
+                  </option>
+                </select>
+              </div>
             </div>
           </div>
 
