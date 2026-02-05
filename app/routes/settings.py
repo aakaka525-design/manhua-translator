@@ -21,6 +21,11 @@ class ModelUpdateRequest(BaseModel):
     model: str
 
 
+class LanguageUpdateRequest(BaseModel):
+    source_language: str
+    target_language: str
+
+
 class SettingsResponse(BaseModel):
     source_language: str
     target_language: str
@@ -64,6 +69,20 @@ async def set_ai_model(request: ModelUpdateRequest):
         "message": f"AI model updated to {request.model}",
         "model": request.model
     }
+
+
+@router.post("/language")
+async def update_language(request: LanguageUpdateRequest, settings=Depends(get_settings)):
+    """Update runtime language settings and persist to .env."""
+    settings.source_language = request.source_language
+    settings.target_language = request.target_language
+
+    from app.utils.env_file import update_env_file
+
+    update_env_file("SOURCE_LANGUAGE", request.source_language)
+    update_env_file("TARGET_LANGUAGE", request.target_language)
+
+    return {"status": "ok"}
 
 
 def get_current_model() -> Optional[str]:
