@@ -64,15 +64,23 @@ export const useTranslateStore = defineStore('translate', () => {
         } else if (data.type === 'chapter_complete') {
             const chapter = findChapter(data.manga_id, data.chapter_id)
             if (chapter) {
-                const successCount = data.success_count !== undefined ? data.success_count : chapter.page_count;
+                const successCount = data.success_count !== undefined ? data.success_count : 0;
                 const totalCount = data.total_count !== undefined ? data.total_count : chapter.page_count;
-                const isFullSuccess = successCount === totalCount;
+                const failedCount = data.failed_count !== undefined
+                    ? data.failed_count
+                    : Math.max(totalCount - successCount, 0);
 
                 chapter.isTranslating = false
                 chapter.has_translated = successCount > 0
-                chapter.isComplete = isFullSuccess
+                chapter.isComplete = successCount > 0 && successCount === totalCount
                 chapter.translated_count = successCount
-                chapter.statusText = isFullSuccess ? '已完成' : `已完成 (${successCount}/${totalCount})`
+                if (successCount <= 0) {
+                    chapter.statusText = '失败'
+                } else if (failedCount > 0) {
+                    chapter.statusText = `部分完成 (${successCount}/${totalCount})`
+                } else {
+                    chapter.statusText = '已完成'
+                }
                 chapter.progress = 100
             }
         } else if (data.type === 'page_complete') {

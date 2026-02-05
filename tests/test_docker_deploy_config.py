@@ -10,3 +10,8 @@ def test_dockerfile_includes_vulkan_libs():
     dockerfile = Path("docker/Dockerfile.api").read_text(encoding="utf-8")
     assert "libvulkan1" in dockerfile
     assert "mesa-vulkan-drivers" in dockerfile
+
+
+def test_docker_cpu_requirements_include_google_genai():
+    reqs = Path("docker/requirements-docker-cpu.txt").read_text(encoding="utf-8")
+    assert "google-genai" in reqs

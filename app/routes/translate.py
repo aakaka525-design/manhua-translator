@@ -185,22 +185,51 @@ async def translate_chapter_endpoint(
             contexts, status_callback=pipeline_status_callback
         )
 
-        success_count = sum(1 for r in results if r.success)
         total_count = len(contexts)
         from app.services.page_status import find_translated_file
 
-        saved_count = sum(
-            1
-            for img_path in image_files
-            if find_translated_file(output_base, img_path.stem)
-        )
+        saved_count = 0
+        effective_success_count = 0
+        pipeline_success_count = 0
+        failed_translation_count = 0
+        failed_pipeline_count = 0
+
+        for img_path, result in zip(image_files, results):
+            translated_file = find_translated_file(output_base, img_path.stem)
+            has_output_file = bool(translated_file)
+            if has_output_file:
+                saved_count += 1
+
+            if result.success:
+                pipeline_success_count += 1
+
+            has_failure_marker = any(
+                (region.target_text or "").strip().startswith("[翻译失败]")
+                for region in (result.task.regions or [])
+            )
+            if has_failure_marker:
+                failed_translation_count += 1
+
+            is_effective_success = result.success and has_output_file and not has_failure_marker
+            if is_effective_success:
+                effective_success_count += 1
+            elif not result.success:
+                failed_pipeline_count += 1
+
+        failed_count = total_count - effective_success_count
 
         await broadcast_event(
             {
                 "type": "chapter_complete",
                 "manga_id": request.manga_id,
                 "chapter_id": request.chapter_id,
-                "success_count": success_count,
+                # success_count for frontend should represent effective success
+                # (pipeline success + output exists + no explicit failure marker).
+                "success_count": effective_success_count,
+                "pipeline_success_count": pipeline_success_count,
+                "failed_pipeline_count": failed_pipeline_count,
+                "failed_translation_count": failed_translation_count,
+                "failed_count": failed_count,
                 "saved_count": saved_count,
                 "total_count": total_count,
             }
