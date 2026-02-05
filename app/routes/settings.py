@@ -53,18 +53,7 @@ async def set_ai_model(request: ModelUpdateRequest):
     """
     global _model_override
     _model_override = request.model
-    
-    # Also update the AITranslator instance
-    from core.ai_translator import AITranslator
-    
-    # Update the global translator model
-    try:
-        # Get existing translators and update their model
-        import os
-        os.environ['PPIO_MODEL'] = request.model
-    except Exception as e:
-        print(f"Warning: Could not update environment variable: {e}")
-    
+
     return {
         "message": f"AI model updated to {request.model}",
         "model": request.model
