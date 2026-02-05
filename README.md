@@ -168,6 +168,7 @@ WEBP_LOSSLESS_INTERMEDIATE=1
 超长图 WebP 切片（自动）：
 - 当 `OUTPUT_FORMAT=webp` 且高度 > 16383 时，输出为 `*_slices/` + `*_slices.json`
 - 前端应按 `slices.json` 列表顺序堆叠渲染
+- `WEBP_SLICE_OVERLAP` 控制切片重叠像素（默认 10）
 
 评估脚本（OCR 置信度对比）：
 
