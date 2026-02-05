@@ -99,6 +99,18 @@ if _should_serve_frontend() and (dist_dir / "assets").exists():
     app.mount("/assets", StaticFiles(directory=dist_dir / "assets"), name="assets")
 
 
+@app.get("/")
+async def root():
+    """Root endpoint - API information."""
+    return {
+        "name": "Manhua Translation API",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "health": "/health",
+        "api": "/api/v1",
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
