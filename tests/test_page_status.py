@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 
-from app.services.page_status import compute_page_status
+from app.services.page_status import compute_page_status, find_translated_file
 
 
 def _write_report(path: Path, regions):
@@ -81,3 +81,25 @@ def test_status_success(tmp_path: Path):
         low_quality_ratio=0.3,
     )
     assert status["status"] == "success"
+
+
+def test_find_translated_file_prefers_webp(tmp_path: Path):
+    png_path = tmp_path / "1.png"
+    webp_path = tmp_path / "1.webp"
+    png_path.write_bytes(b"png")
+    webp_path.write_bytes(b"webp")
+
+    picked = find_translated_file(tmp_path, "1")
+    assert picked == webp_path
+
+
+def test_find_translated_file_prefers_slices(tmp_path: Path):
+    slices_dir = tmp_path / "page_slices"
+    slices_dir.mkdir()
+    slices_index = tmp_path / "page_slices.json"
+    slices_index.write_text("{}")
+    png_path = tmp_path / "page.png"
+    png_path.write_bytes(b"png")
+
+    picked = find_translated_file(tmp_path, "page")
+    assert picked == slices_index

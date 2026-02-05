@@ -4,6 +4,19 @@ from pathlib import Path
 import json
 
 
+def find_translated_file(output_dir: Path, stem: str) -> Path | None:
+    slices_index = output_dir / f"{stem}_slices.json"
+    if slices_index.exists():
+        return slices_index
+    candidates = list(output_dir.glob(f"{stem}.*"))
+    if not candidates:
+        return None
+    webps = [p for p in candidates if p.suffix.lower() == ".webp"]
+    if webps:
+        return max(webps, key=lambda p: p.stat().st_mtime)
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
 def _load_latest_report(report_paths: list[Path]) -> dict | None:
     if not report_paths:
         return None

@@ -183,8 +183,12 @@ async def translate_chapter_endpoint(
 
         success_count = sum(1 for r in results if r.success)
         total_count = len(contexts)
+        from app.services.page_status import find_translated_file
+
         saved_count = sum(
-            1 for img_path in image_files if (output_base / img_path.name).exists()
+            1
+            for img_path in image_files
+            if find_translated_file(output_base, img_path.stem)
         )
 
         await broadcast_event(
@@ -261,13 +265,14 @@ async def retranslate_page(
     _tasks[result.task.task_id] = result.task
 
     # Notify completion
+    translated_name = Path(result.task.output_path).name if result.task.output_path else request.image_name
     await broadcast_event(
         {
             "type": "page_complete",
             "manga_id": request.manga_id,
             "chapter_id": request.chapter_id,
             "image_name": request.image_name,
-            "url": f"/output/{request.manga_id}/{request.chapter_id}/{request.image_name}?t={asyncio.get_running_loop().time()}",
+            "url": f"/output/{request.manga_id}/{request.chapter_id}/{translated_name}?t={asyncio.get_running_loop().time()}",
         }
     )
 

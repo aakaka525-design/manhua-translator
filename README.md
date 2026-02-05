@@ -76,8 +76,8 @@ docker compose down
 ### 安装
 
 ```bash
-# 后端依赖
-pip install -r requirements.txt
+# 本地依赖 + Real-ESRGAN（二进制）
+./scripts/setup_local.sh
 
 # CPU-only OCR 依赖（Linux 服务器）
 pip install -r requirements-cpu.txt
@@ -121,6 +121,72 @@ AUTO_SETUP_MODELS=on
 MODEL_WARMUP_TIMEOUT=300
 OCR_WARMUP_LANGS=korean
 LAMA_DEVICE=cpu
+```
+
+### 超分（可选）
+
+默认关闭，启用后会在**渲染完成后**对最终图进行超分处理并覆盖输出：
+
+```env
+UPSCALE_ENABLE=1
+UPSCALE_BACKEND=pytorch
+UPSCALE_DEVICE=auto
+UPSCALE_BINARY_PATH=tools/bin/realesrgan-ncnn-vulkan
+UPSCALE_NCNN_MODEL_DIR=tools/bin/models
+UPSCALE_MODEL_PATH=tools/bin/RealESRGAN_x4plus.pth
+UPSCALE_MODEL=realesrgan-x4plus-anime
+UPSCALE_SCALE=2
+UPSCALE_TIMEOUT=120
+UPSCALE_TILE=0
+UPSCALE_STRIPE_ENABLE=0
+UPSCALE_STRIPE_THRESHOLD=4000
+UPSCALE_STRIPE_HEIGHT=2000
+UPSCALE_STRIPE_OVERLAP=64
+```
+
+设备说明：
+- `UPSCALE_DEVICE=auto`：优先 MPS（可用时），否则回退 CPU
+- `UPSCALE_DEVICE=mps`：强制 MPS（不可用时直接报错）
+- `UPSCALE_DEVICE=cpu`：固定 CPU
+
+NCNN 说明：
+- `UPSCALE_BACKEND=ncnn`：使用外部二进制与模型目录（`UPSCALE_BINARY_PATH` / `UPSCALE_NCNN_MODEL_DIR`）
+
+条带分块（用于超长图加速）：
+- `UPSCALE_STRIPE_ENABLE=1` 且 `H > UPSCALE_STRIPE_THRESHOLD` 时启用
+- `UPSCALE_STRIPE_HEIGHT` 控制每段高度
+- `UPSCALE_STRIPE_OVERLAP` 控制段间重叠（避免接缝）
+
+分块推理（NCNN/PyTorch 通用）：
+- `UPSCALE_TILE>0` 时启用分块推理（NCNN 对应 `-t`，PyTorch 用于 tile 推理）
+
+输出格式（默认 WebP）：
+
+```bash
+OUTPUT_FORMAT=webp
+WEBP_QUALITY_FINAL=80
+WEBP_LOSSLESS_INTERMEDIATE=1
+```
+
+超长图 WebP 切片（自动）：
+- 当 `OUTPUT_FORMAT=webp` 且高度 > 16383 时，输出为 `*_slices/` + `*_slices.json`
+- 前端应按 `slices.json` 列表顺序堆叠渲染
+- `WEBP_SLICE_OVERLAP` 控制切片重叠像素（默认 10）
+- `WEBP_SLICES_LOSSLESS=1` 时切片以无损 WebP 保存
+
+体积优化默认建议：
+- 默认 `WEBP_QUALITY_FINAL=80`，`WEBP_SLICES_LOSSLESS=0`（切片不使用无损）
+
+评估脚本（OCR 置信度对比）：
+
+```bash
+/Users/xa/Desktop/projiect/manhua/.venv/bin/python scripts/upscale_eval.py data/raw/sexy-woman/chapter-1/1.jpg --lang korean
+```
+
+评估脚本（固定检测框一致性）：
+
+```bash
+/Users/xa/Desktop/projiect/manhua/.venv/bin/python scripts/ocr_consistency_eval.py --orig input.jpg --upscaled output.jpg --lang korean --out output/consistency_eval/report.json
 ```
 
 **模型选择说明**

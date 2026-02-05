@@ -86,6 +86,15 @@ const parserApi = {
         })
         if (!res.ok) throw new Error((await res.json()).detail || 'Parse failed')
         return res.json()
+    },
+    async list(url, mode) {
+        const res = await fetch('/api/v1/parser/list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, mode })
+        })
+        if (!res.ok) throw new Error((await res.json()).detail || 'Parse list failed')
+        return res.json()
     }
 }
 
@@ -112,6 +121,8 @@ export const useScraperStore = defineStore('scraper', () => {
     const error = ref('')
     const results = ref([])
     const selectedManga = ref(null)
+    const selectedMangaSource = ref('scraper')
+    const selectedMangaContext = ref(null)
     const chapters = ref([])
     const selectedIds = ref([])
     const queue = ref([])
@@ -154,7 +165,16 @@ export const useScraperStore = defineStore('scraper', () => {
         loading: false,
         error: '',
         result: null,
-        showAll: false
+        showAll: false,
+        context: {
+            baseUrl: '',
+            host: '',
+            site: '',
+            recognized: false,
+            downloadable: false,
+            storageStatePath: null,
+            userDataDir: null
+        }
     })
     const downloadSummary = computed(() => {
         const total = chapters.value.length
@@ -293,6 +313,28 @@ export const useScraperStore = defineStore('scraper', () => {
         }
     }
 
+    function getParserPayload(context = parser.context) {
+        const httpMode = parser.mode === 'http'
+        return {
+            base_url: context.baseUrl || '',
+            http_mode: httpMode,
+            headless: !httpMode,
+            manual_challenge: false,
+            storage_state_path: context.storageStatePath || null,
+            user_data_dir: context.userDataDir || null,
+            user_agent: null,
+            browser_channel: null,
+            concurrency: state.concurrency
+        }
+    }
+
+    function getActivePayload() {
+        if (selectedMangaSource.value === 'parser') {
+            return getParserPayload(selectedMangaContext.value || parser.context)
+        }
+        return getPayload()
+    }
+
     function proxyImageUrl(url) {
         if (!url) return ''
         if (url.startsWith('data:') || url.startsWith('blob:')) return url
@@ -312,6 +354,82 @@ export const useScraperStore = defineStore('scraper', () => {
             params.set('user_agent', state.userAgent)
         }
         return `/api/v1/scraper/image?${params.toString()}`
+    }
+
+    function proxyParserImageUrl(url) {
+        if (!url) return ''
+        if (url.startsWith('data:') || url.startsWith('blob:')) return url
+        if (url.startsWith(window.location.origin)) return url
+        const params = new URLSearchParams({
+            url,
+            base_url: parser.context.baseUrl || state.baseUrl,
+            storage_state_path: parser.context.storageStatePath || ''
+        })
+        if (parser.context.userDataDir) {
+            params.set('user_data_dir', parser.context.userDataDir)
+        }
+        return `/api/v1/scraper/image?${params.toString()}`
+    }
+
+    function normalizeUrlInput(value) {
+        const raw = (value || '').trim()
+        if (!raw) return ''
+        if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+        return `https://${raw}`
+    }
+
+    function getParserDefaults(site) {
+        if (site === 'mangaforfree') {
+            return {
+                storage_state_path: 'data/mangaforfree_state.json',
+                user_data_dir: 'data/mangaforfree_profile'
+            }
+        }
+        if (site === 'toongod') {
+            return {
+                storage_state_path: 'data/toongod_state.json',
+                user_data_dir: 'data/toongod_profile'
+            }
+        }
+        return { storage_state_path: null, user_data_dir: null }
+    }
+
+    function deriveParserContext(url, listResult) {
+        let host = ''
+        let baseUrl = ''
+        try {
+            const parsed = new URL(url)
+            host = parsed.hostname || ''
+            baseUrl = parsed.origin || ''
+        } catch (e) {
+            host = ''
+            baseUrl = ''
+        }
+        const site = listResult?.site || listResult?.parser?.site || ''
+        const recognized = listResult?.recognized ?? listResult?.parser?.recognized ?? false
+        const downloadable = listResult?.downloadable ?? listResult?.parser?.downloadable ?? false
+        const defaults = getParserDefaults(site)
+        return {
+            baseUrl,
+            host,
+            site,
+            recognized,
+            downloadable,
+            storageStatePath: defaults.storage_state_path,
+            userDataDir: defaults.user_data_dir
+        }
+    }
+
+    function resetParserContext() {
+        Object.assign(parser.context, {
+            baseUrl: '',
+            host: '',
+            site: '',
+            recognized: false,
+            downloadable: false,
+            storageStatePath: null,
+            userDataDir: null
+        })
     }
 
     async function search() {
@@ -354,12 +472,39 @@ export const useScraperStore = defineStore('scraper', () => {
     async function selectManga(manga) {
         const toast = useToastStore()
         selectedManga.value = manga
+        selectedMangaSource.value = 'scraper'
+        selectedMangaContext.value = null
         loading.value = true
         error.value = ''
         chapters.value = []
         selectedIds.value = []
         try {
             chapters.value = await api.chapters({ ...getPayload(), manga })
+            chapters.value = chapters.value.map(chapter => ({
+                ...chapter,
+                downloaded: !!chapter.downloaded,
+                downloaded_count: chapter.downloaded_count || 0,
+                downloaded_total: chapter.downloaded_total || 0
+            }))
+        } catch (e) {
+            toast.show(`获取章节失败: ${e.message}`, 'error')
+            error.value = e.message
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function selectMangaFromParser(manga) {
+        const toast = useToastStore()
+        selectedManga.value = manga
+        selectedMangaSource.value = 'parser'
+        selectedMangaContext.value = { ...parser.context }
+        loading.value = true
+        error.value = ''
+        chapters.value = []
+        selectedIds.value = []
+        try {
+            chapters.value = await api.chapters({ ...getParserPayload(selectedMangaContext.value), manga })
             chapters.value = chapters.value.map(chapter => ({
                 ...chapter,
                 downloaded: !!chapter.downloaded,
@@ -494,10 +639,11 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     async function parseUrl() {
-        const url = (parser.url || '').trim()
+        const url = normalizeUrlInput(parser.url)
         if (!url) {
             parser.error = '请输入 URL'
             parser.result = null
+            resetParserContext()
             return
         }
         parser.loading = true
@@ -506,7 +652,18 @@ export const useScraperStore = defineStore('scraper', () => {
         parser.showAll = false
         try {
             const toast = useToastStore()
-            parser.result = await parserApi.parse(url, parser.mode)
+            const listResult = await parserApi.list(url, parser.mode)
+            const context = deriveParserContext(url, listResult)
+            Object.assign(parser.context, context)
+            const items = Array.isArray(listResult?.items) ? listResult.items : []
+            if (items.length > 1) {
+                parser.result = listResult
+                parser.showAll = true
+            } else if (items.length === 1 && items[0]?.url) {
+                parser.result = await parserApi.parse(items[0].url, parser.mode)
+            } else {
+                parser.result = await parserApi.parse(url, parser.mode)
+            }
         } catch (e) {
             const toast = useToastStore()
             toast.show(`解析失败: ${e.message}`, 'error')
@@ -612,7 +769,7 @@ export const useScraperStore = defineStore('scraper', () => {
         error.value = ''
         updateTask(chapter.id, { status: 'pending', message: '提交下载任务中...', report: null })
         try {
-            const data = await api.download({ ...getPayload(), manga: selectedManga.value, chapter })
+            const data = await api.download({ ...getActivePayload(), manga: selectedManga.value, chapter })
             task.id = data.task_id
             task.status = data.status
             task.message = data.message || '已提交下载任务'
@@ -753,6 +910,8 @@ export const useScraperStore = defineStore('scraper', () => {
         error,
         results,
         selectedManga,
+        selectedMangaSource,
+        selectedMangaContext,
         chapters,
         selectedIds,
         queue,
@@ -772,8 +931,10 @@ export const useScraperStore = defineStore('scraper', () => {
         syncUserAgent,
         ensureUserAgent,
         proxyImageUrl,
+        proxyParserImageUrl,
         search,
         selectManga,
+        selectMangaFromParser,
         loadCatalog,
         loadMoreCatalog,
         checkStateInfo,
@@ -785,6 +946,7 @@ export const useScraperStore = defineStore('scraper', () => {
         stateInfoClass,
         accessInfoLabel,
         accessInfoClass,
+        getActivePayload,
         download,
         downloadSelected,
         toggleSelection,

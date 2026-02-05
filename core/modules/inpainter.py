@@ -136,9 +136,10 @@ class InpainterModule(BaseModule):
             dilation=self.dilation,
         )
         if isinstance(result, tuple):
-            _, mask_path = result
+            inpainted_path_str, mask_path = result
         else:
-            mask_path = None
+            inpainted_path_str, mask_path = result, None
+        inpainted_path = Path(inpainted_path_str)
 
         duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(f"[{context.task_id}] Inpainter 完成: 输出 {inpainted_path.name}, 耗时 {duration_ms:.0f}ms")

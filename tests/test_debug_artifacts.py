@@ -5,7 +5,8 @@ from PIL import Image, ImageDraw
 from core.models import Box2D, RegionData, TaskContext
 
 
-def test_debug_writer_outputs_ocr_boxes(tmp_path: Path):
+def test_debug_writer_outputs_ocr_boxes(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
     img_path = tmp_path / "blank.png"
     Image.new("RGB", (200, 100), "white").save(img_path)
 
@@ -24,10 +25,12 @@ def test_debug_writer_outputs_ocr_boxes(tmp_path: Path):
     writer = DebugArtifactWriter(output_dir=tmp_path, enabled=True)
     output = writer.write_ocr(ctx, image_path=str(img_path))
 
-    assert output.exists()
+    assert Path(output).exists()
+    assert str(output).endswith(".webp")
 
 
-def test_debug_writer_outputs_translation_boxes(tmp_path: Path):
+def test_debug_writer_outputs_translation_boxes(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
     img_path = tmp_path / "blank.png"
     Image.new("RGB", (200, 100), "white").save(img_path)
 
@@ -44,7 +47,8 @@ def test_debug_writer_outputs_translation_boxes(tmp_path: Path):
     writer = DebugArtifactWriter(output_dir=tmp_path, enabled=True)
     out_path = writer.write_translation(ctx, image_path=str(img_path))
 
-    assert out_path.exists()
+    assert Path(out_path).exists()
+    assert str(out_path).endswith(".webp")
 
 
 def test_debug_writer_disabled_no_output(tmp_path: Path):
@@ -54,7 +58,8 @@ def test_debug_writer_disabled_no_output(tmp_path: Path):
     assert writer.write_ocr(TaskContext(image_path="x"), "x") is None
 
 
-def test_debug_writer_outputs_mask_overlay(tmp_path: Path):
+def test_debug_writer_outputs_mask_overlay(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
     img_path = tmp_path / "blank.png"
     mask_path = tmp_path / "mask.png"
     Image.new("RGB", (120, 80), "white").save(img_path)
@@ -73,12 +78,13 @@ def test_debug_writer_outputs_mask_overlay(tmp_path: Path):
     writer = DebugArtifactWriter(output_dir=tmp_path, enabled=True)
     out_path = writer.write_mask(ctx)
 
-    assert out_path.exists()
-    overlay_path = tmp_path / str(ctx.task_id) / "05_inpaint_mask_cc_overlay.png"
-    assert overlay_path.exists()
+    assert Path(out_path).exists()
+    overlay_paths = list((tmp_path / str(ctx.task_id)).glob("05_inpaint_mask_cc_overlay.*"))
+    assert overlay_paths
 
 
-def test_debug_writer_outputs_grouped_mask_overlay(tmp_path: Path):
+def test_debug_writer_outputs_grouped_mask_overlay(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
     img_path = tmp_path / "blank.png"
     mask_path = tmp_path / "mask.png"
     Image.new("RGB", (120, 80), "white").save(img_path)
@@ -101,5 +107,5 @@ def test_debug_writer_outputs_grouped_mask_overlay(tmp_path: Path):
     writer = DebugArtifactWriter(output_dir=tmp_path, enabled=True)
     writer.write_mask(ctx)
 
-    grouped_path = tmp_path / str(ctx.task_id) / "05_inpaint_mask_cc_grouped_overlay.png"
-    assert grouped_path.exists()
+    grouped_paths = list((tmp_path / str(ctx.task_id)).glob("05_inpaint_mask_cc_grouped_overlay.*"))
+    assert grouped_paths

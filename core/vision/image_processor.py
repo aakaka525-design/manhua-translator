@@ -104,13 +104,17 @@ class ImageProcessor:
 
         # Step 3: Inpainting
         output_path = self.output_dir / f"{prefix}_inpainted.png"
-        await self.inpainter.inpaint_regions(
+        result = await self.inpainter.inpaint_regions(
             str(image_path),
             regions,
             str(output_path),
             str(self.temp_dir),
             # dilation uses default (8) for better edge coverage
         )
+        if isinstance(result, tuple):
+            output_path, _ = result
+        else:
+            output_path = result
 
         return str(output_path), regions
 

@@ -17,6 +17,7 @@ from ..models import TaskContext
 from ..renderer import TextRenderer
 from .base import BaseModule
 from ..debug_artifacts import DebugArtifactWriter
+from ..image_io import save_image
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -115,10 +116,15 @@ class RendererModule(BaseModule):
 
         # 如果没有需要渲染的区域，直接复制原图到输出
         if not regions_to_render:
-            import shutil
-            source = context.inpainted_path if context.inpainted_path and Path(context.inpainted_path).exists() else context.image_path
-            shutil.copy2(source, final_path)
-            context.output_path = str(final_path)
+            source = (
+                context.inpainted_path
+                if context.inpainted_path and Path(context.inpainted_path).exists()
+                else context.image_path
+            )
+            from PIL import Image
+
+            saved_path = save_image(Image.open(source).convert("RGB"), str(final_path), purpose="final")
+            context.output_path = saved_path
             logger.debug(f"[{context.task_id}] Renderer: 无区域需要渲染，复制原图")
             return context
 
@@ -130,7 +136,7 @@ class RendererModule(BaseModule):
         # Use TextRenderer for full-featured rendering
         # 优先使用擦除后的图片，如果没有则使用原图
         source_image = context.inpainted_path if context.inpainted_path and Path(context.inpainted_path).exists() else context.image_path
-        await self.renderer.render(
+        saved_path = await self.renderer.render(
             image_path=source_image,
             regions=regions_to_render,
             output_path=str(final_path),
@@ -140,7 +146,7 @@ class RendererModule(BaseModule):
         duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(f"[{context.task_id}] Renderer 完成: 输出 {final_path.name}, 耗时 {duration_ms:.0f}ms")
 
-        context.output_path = str(final_path)
+        context.output_path = saved_path
         try:
             writer = DebugArtifactWriter()
             writer.write_layout(context, source_image)

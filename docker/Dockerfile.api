@@ -10,6 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 ARG INSTALL_LAMA=0
+ARG REALESRGAN_VERSION=0.2.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -17,12 +18,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
+    curl \
+    unzip \
   && rm -rf /var/lib/apt/lists/*
 
 COPY docker/requirements-docker-cpu.txt /app/docker/requirements-docker-cpu.txt
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/docker/requirements-docker-cpu.txt
 RUN if [ "$INSTALL_LAMA" = "1" ]; then pip install --no-deps simple-lama-inpainting==0.1.2; fi
+
+RUN mkdir -p /opt/tools \
+  && curl -L "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/releases/download/v${REALESRGAN_VERSION}/realesrgan-ncnn-vulkan-v${REALESRGAN_VERSION}-ubuntu.zip" -o /tmp/realesrgan.zip \
+  && unzip -q /tmp/realesrgan.zip -d /tmp/realesrgan \
+  && BIN_SRC=$(find /tmp/realesrgan -type f -name realesrgan-ncnn-vulkan | head -n 1) \
+  && MODEL_SRC=$(find /tmp/realesrgan -type d -name models | head -n 1) \
+  && cp "$BIN_SRC" /opt/tools/realesrgan-ncnn-vulkan \
+  && chmod +x /opt/tools/realesrgan-ncnn-vulkan \
+  && if [ -n "$MODEL_SRC" ]; then cp -R "$MODEL_SRC" /opt/tools/models; fi \
+  && rm -rf /tmp/realesrgan /tmp/realesrgan.zip
 
 COPY . /app
 
