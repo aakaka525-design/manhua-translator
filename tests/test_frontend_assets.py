@@ -1,4 +1,8 @@
+from importlib import reload
 from pathlib import Path
+import sys
+
+from fastapi.testclient import TestClient
 
 
 def test_frontend_index_has_no_external_css():
@@ -14,3 +18,28 @@ def test_frontend_entry_imports_local_fonts_and_icons():
     assert "@fontsource/inter" in content
     assert "@fontsource/space-grotesk" in content
     assert "@fortawesome/fontawesome-free/css/all.css" in content
+
+
+def _load_app(monkeypatch, serve_frontend: str | None):
+    if serve_frontend is None:
+        monkeypatch.delenv("SERVE_FRONTEND", raising=False)
+    else:
+        monkeypatch.setenv("SERVE_FRONTEND", serve_frontend)
+    if "app.main" in sys.modules:
+        module = reload(sys.modules["app.main"])
+    else:
+        import app.main as module
+    return module.app
+
+
+def test_frontend_served_only_in_dev(monkeypatch):
+    app = _load_app(monkeypatch, "dev")
+    with TestClient(app) as client:
+        resp = client.get("/")
+        assert resp.status_code == 500
+        assert "Frontend build not found" in resp.text
+
+    app = _load_app(monkeypatch, "off")
+    with TestClient(app) as client:
+        resp = client.get("/")
+        assert resp.status_code == 404
