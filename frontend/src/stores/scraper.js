@@ -86,6 +86,15 @@ const parserApi = {
         })
         if (!res.ok) throw new Error((await res.json()).detail || 'Parse failed')
         return res.json()
+    },
+    async list(url, mode) {
+        const res = await fetch('/api/v1/parser/list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, mode })
+        })
+        if (!res.ok) throw new Error((await res.json()).detail || 'Parse list failed')
+        return res.json()
     }
 }
 
@@ -338,6 +347,67 @@ export const useScraperStore = defineStore('scraper', () => {
         return `/api/v1/scraper/image?${params.toString()}`
     }
 
+    function normalizeUrlInput(value) {
+        const raw = (value || '').trim()
+        if (!raw) return ''
+        if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+        return `https://${raw}`
+    }
+
+    function getParserDefaults(site) {
+        if (site === 'mangaforfree') {
+            return {
+                storage_state_path: 'data/mangaforfree_state.json',
+                user_data_dir: 'data/mangaforfree_profile'
+            }
+        }
+        if (site === 'toongod') {
+            return {
+                storage_state_path: 'data/toongod_state.json',
+                user_data_dir: 'data/toongod_profile'
+            }
+        }
+        return { storage_state_path: null, user_data_dir: null }
+    }
+
+    function deriveParserContext(url, listResult) {
+        let host = ''
+        let baseUrl = ''
+        try {
+            const parsed = new URL(url)
+            host = parsed.hostname || ''
+            baseUrl = parsed.origin || ''
+        } catch (e) {
+            host = ''
+            baseUrl = ''
+        }
+        const site = listResult?.site || listResult?.parser?.site || ''
+        const recognized = listResult?.recognized ?? listResult?.parser?.recognized ?? false
+        const downloadable = listResult?.downloadable ?? listResult?.parser?.downloadable ?? false
+        const defaults = getParserDefaults(site)
+        return {
+            baseUrl,
+            host,
+            site,
+            recognized,
+            downloadable,
+            storageStatePath: defaults.storage_state_path,
+            userDataDir: defaults.user_data_dir
+        }
+    }
+
+    function resetParserContext() {
+        Object.assign(parser.context, {
+            baseUrl: '',
+            host: '',
+            site: '',
+            recognized: false,
+            downloadable: false,
+            storageStatePath: null,
+            userDataDir: null
+        })
+    }
+
     async function search() {
         const toast = useToastStore()
         if (state.view !== 'search') {
@@ -522,10 +592,11 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     async function parseUrl() {
-        const url = (parser.url || '').trim()
+        const url = normalizeUrlInput(parser.url)
         if (!url) {
             parser.error = '请输入 URL'
             parser.result = null
+            resetParserContext()
             return
         }
         parser.loading = true
@@ -534,7 +605,18 @@ export const useScraperStore = defineStore('scraper', () => {
         parser.showAll = false
         try {
             const toast = useToastStore()
-            parser.result = await parserApi.parse(url, parser.mode)
+            const listResult = await parserApi.list(url, parser.mode)
+            const context = deriveParserContext(url, listResult)
+            Object.assign(parser.context, context)
+            const items = Array.isArray(listResult?.items) ? listResult.items : []
+            if (items.length > 1) {
+                parser.result = listResult
+                parser.showAll = true
+            } else if (items.length === 1 && items[0]?.url) {
+                parser.result = await parserApi.parse(items[0].url, parser.mode)
+            } else {
+                parser.result = await parserApi.parse(url, parser.mode)
+            }
         } catch (e) {
             const toast = useToastStore()
             toast.show(`解析失败: ${e.message}`, 'error')
