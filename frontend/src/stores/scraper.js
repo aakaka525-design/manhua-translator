@@ -154,7 +154,16 @@ export const useScraperStore = defineStore('scraper', () => {
         loading: false,
         error: '',
         result: null,
-        showAll: false
+        showAll: false,
+        context: {
+            baseUrl: '',
+            host: '',
+            site: '',
+            recognized: false,
+            downloadable: false,
+            storageStatePath: null,
+            userDataDir: null
+        }
     })
     const downloadSummary = computed(() => {
         const total = chapters.value.length
@@ -314,6 +323,21 @@ export const useScraperStore = defineStore('scraper', () => {
         return `/api/v1/scraper/image?${params.toString()}`
     }
 
+    function proxyParserImageUrl(url) {
+        if (!url) return ''
+        if (url.startsWith('data:') || url.startsWith('blob:')) return url
+        if (url.startsWith(window.location.origin)) return url
+        const params = new URLSearchParams({
+            url,
+            base_url: parser.context.baseUrl || state.baseUrl,
+            storage_state_path: parser.context.storageStatePath || ''
+        })
+        if (parser.context.userDataDir) {
+            params.set('user_data_dir', parser.context.userDataDir)
+        }
+        return `/api/v1/scraper/image?${params.toString()}`
+    }
+
     async function search() {
         const toast = useToastStore()
         if (state.view !== 'search') {
@@ -372,6 +396,10 @@ export const useScraperStore = defineStore('scraper', () => {
         } finally {
             loading.value = false
         }
+    }
+
+    async function selectMangaFromParser(manga) {
+        return selectManga(manga)
     }
 
     async function loadCatalog(reset = false) {
@@ -772,8 +800,10 @@ export const useScraperStore = defineStore('scraper', () => {
         syncUserAgent,
         ensureUserAgent,
         proxyImageUrl,
+        proxyParserImageUrl,
         search,
         selectManga,
+        selectMangaFromParser,
         loadCatalog,
         loadMoreCatalog,
         checkStateInfo,
