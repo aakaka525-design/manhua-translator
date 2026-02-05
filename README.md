@@ -32,6 +32,22 @@ docker compose up -d web
 http://<host>/
 ```
 
+### Docker（预构建镜像，一键启动）
+
+使用 GHCR 预构建镜像，不需要本地构建：
+
+```bash
+./scripts/start_docker.sh
+```
+
+如需指定镜像版本（例如某次提交）：
+
+```bash
+IMAGE_TAG=sha-<commit> ./scripts/start_docker.sh
+```
+
+如果仓库为私有，请先执行：`docker login ghcr.io`。
+
 注意事项：
 - 模型与输出通过 bind mount 持久化：`./models`、`./data`、`./output`、`./logs`。
 - CPU-only 默认参数在 `docker-compose.yml` 中已设置（禁用 OneDNN/PIR）。
