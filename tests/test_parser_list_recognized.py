@@ -10,19 +10,25 @@ def test_list_endpoint_recognized_returns_downloadable(monkeypatch, tmp_path):
 
     from app.main import app
     import app.routes.parser as parser_routes
+    import app.routes.scraper as scraper_routes
+    from app.routes.scraper import MangaPayload, ScraperCatalogResponse
 
-    async def fake_list_recognized(*_args, **_kwargs):
-        return [
-            {
-                "id": "one",
-                "title": "One",
-                "url": "https://toongod.org/webtoon/one/",
-                "cover_url": None,
-            }
-        ], []
+    async def fake_list_catalog(*_args, **_kwargs):
+        return ScraperCatalogResponse(
+            page=1,
+            has_more=False,
+            items=[
+                MangaPayload(
+                    id="one",
+                    title="One",
+                    url="https://toongod.org/webtoon/one/",
+                    cover_url=None,
+                )
+            ],
+        )
 
     monkeypatch.setattr(parser_routes, "fetch_html", lambda *_: "<html></html>")
-    monkeypatch.setattr(parser_routes, "_list_recognized_catalog", fake_list_recognized)
+    monkeypatch.setattr(scraper_routes, "list_catalog", fake_list_catalog)
 
     with TestClient(app) as client:
         resp = client.post(
@@ -45,22 +51,24 @@ def test_list_endpoint_recognized_handles_engine_tuple(monkeypatch, tmp_path):
     from app.main import app
     import app.routes.parser as parser_routes
     import app.routes.scraper as scraper_routes
+    from app.routes.scraper import MangaPayload, ScraperCatalogResponse
 
-    class StubManga:
-        id = "one"
-        title = "One"
-        url = "https://mangaforfree.com/manga/one/"
-        cover_url = "https://mangaforfree.com/covers/one.jpg"
-
-    class StubEngine:
-        async def list_catalog(self, page=1, orderby=None, path=None):
-            return ([StubManga()], True)
-
-    def fake_build_engine(*_args, **_kwargs):
-        return StubEngine(), None
+    async def fake_list_catalog(*_args, **_kwargs):
+        return ScraperCatalogResponse(
+            page=1,
+            has_more=True,
+            items=[
+                MangaPayload(
+                    id="one",
+                    title="One",
+                    url="https://mangaforfree.com/manga/one/",
+                    cover_url="https://mangaforfree.com/covers/one.jpg",
+                )
+            ],
+        )
 
     monkeypatch.setattr(parser_routes, "fetch_html", lambda *_: "<html></html>")
-    monkeypatch.setattr(scraper_routes, "_build_engine", fake_build_engine)
+    monkeypatch.setattr(scraper_routes, "list_catalog", fake_list_catalog)
 
     with TestClient(app) as client:
         resp = client.post(

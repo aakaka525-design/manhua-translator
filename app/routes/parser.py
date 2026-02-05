@@ -1,4 +1,3 @@
-from pathlib import Path
 import logging
 from urllib.parse import parse_qs, urlparse
 
@@ -113,16 +112,9 @@ def parse_url(payload: ParseRequest):
 
 @router.post("/list", response_model=ParserListResponse)
 async def parse_list(payload: ParseListRequest) -> ParserListResponse:
-    logger.info("fetch_start | url=%s mode=%s", payload.url, payload.mode)
-    html = await anyio.to_thread.run_sync(fetch_html, payload.url, payload.mode)
-    logger.info(
-        "fetch_end | url=%s mode=%s size=%s", payload.url, payload.mode, len(html)
-    )
-    base_url = _normalize_base_url(payload.url)
-    fallback_items = list_parse(html, base_url)
     site, _ = _recognize_site(payload.url)
     recognized = site is not None
-    items = fallback_items
+    items: list[dict[str, object]] = []
     warnings: list[str] = []
     downloadable = False
     if recognized:
@@ -132,12 +124,25 @@ async def parse_list(payload: ParseListRequest) -> ParserListResponse:
         if catalog_items:
             items = catalog_items
         if catalog_warnings:
+            warnings = merge_warnings(warnings, catalog_warnings)
+
+    if not items:
+        logger.info("fetch_start | url=%s mode=%s", payload.url, payload.mode)
+        html = await anyio.to_thread.run_sync(fetch_html, payload.url, payload.mode)
+        logger.info(
+            "fetch_end | url=%s mode=%s size=%s", payload.url, payload.mode, len(html)
+        )
+        base_url = _normalize_base_url(payload.url)
+        items = list_parse(html, base_url)
+        if recognized:
             warnings = merge_warnings(
                 warnings,
-                catalog_warnings + ["Catalog fetch failed; using fallback parser"],
+                ["Catalog fetch failed; using fallback parser"],
             )
-    else:
-        warnings = merge_warnings(warnings, ["Unsupported site; using fallback parser"])
+        else:
+            warnings = merge_warnings(
+                warnings, ["Unsupported site; using fallback parser"]
+            )
     if recognized and items:
         downloadable = True
     return ParserListResponse(
@@ -232,23 +237,19 @@ async def _list_recognized_catalog(
         orderby=orderby,
         path=path,
     )
-    settings = get_settings()
-    data_root = Path(settings.data_dir)
     try:
-        engine, _ = scraper_routes._build_engine(config, data_root)
-        result = await engine.list_catalog(config.page, config.orderby, config.path)
-    except Exception as exc:  # noqa: BLE001
-        warnings.append(f"Catalog fetch failed: {exc}")
+        settings = get_settings()
+        catalog = await scraper_routes.list_catalog(config, settings=settings)
+    except HTTPException as exc:
+        warnings.append(f"Catalog fetch failed: {exc.detail}")
         return [], warnings
-    items = []
-    catalog_items = result[0] if isinstance(result, tuple) else result
-    for item in catalog_items:
-        items.append(
-            {
-                "id": item.id,
-                "title": item.title,
-                "url": item.url,
-                "cover_url": item.cover_url,
-            }
-        )
+    items = [
+        {
+            "id": item.id,
+            "title": item.title,
+            "url": item.url,
+            "cover_url": item.cover_url,
+        }
+        for item in catalog.items
+    ]
     return items, warnings
