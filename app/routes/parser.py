@@ -13,6 +13,7 @@ from core.parser.list_parser import list_parse
 from core.parser.rule_parser import rule_parse
 from core.parser.ai_refiner import ai_refine, FIELDS
 from core.parser.utils import is_missing, merge_warnings
+from scraper.url_utils import normalize_base_url as _normalize_base_url
 
 router = APIRouter(prefix="/parser", tags=["parser"])
 logger = logging.getLogger("parser")
@@ -22,10 +23,7 @@ class ParseRequest(BaseModel):
     url: str
     mode: str = "http"
 
-
-class ParseListRequest(BaseModel):
-    url: str
-    mode: str = "http"
+ParseListRequest = ParseRequest
 
 
 class ParserListResponse(BaseModel):
@@ -126,13 +124,6 @@ def _build_snippet(html: str) -> str:
     if not html:
         return ""
     return html[:4000]
-
-
-def _normalize_base_url(value: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}"
-    return value.rstrip("/")
 
 
 def _recognize_site(url: str) -> tuple[str | None, str | None]:

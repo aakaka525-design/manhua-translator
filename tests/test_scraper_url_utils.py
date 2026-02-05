@@ -1,4 +1,4 @@
-from scraper.url_utils import infer_id, infer_url, parse_chapter_range
+from scraper.url_utils import infer_id, infer_url, parse_chapter_range, slugify_keyword
 
 
 def test_infer_id_url():
@@ -18,3 +18,8 @@ def test_infer_url_manga_and_chapter():
 def test_parse_chapter_range_ordering():
     assert parse_chapter_range("1-3") == (1, 3)
     assert parse_chapter_range("10:2") == (2, 10)
+
+
+def test_slugify_keyword():
+    assert slugify_keyword("  My_Keyword!! ") == "my-keyword"
+    assert slugify_keyword("A  B--C") == "a-b-c"

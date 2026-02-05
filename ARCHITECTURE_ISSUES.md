@@ -19,7 +19,7 @@ P2：配置与设置（阶段 A）
 
 P2：OCR/翻译链路（阶段 B）
 - [x] 噪声过滤以 OCR 阶段为主 — 翻译阶段保留轻量兜底（如短噪声/符号）。
-- [ ] 行合并噪声过滤范围偏窄 — `line_merger` 仍可能合并短大写/罗马数字类噪声。
+- [x] 行合并噪声过滤范围偏窄 — `line_merger` 对齐短大写/罗马数字/短数字等规则，避免噪声参与合并。
 - [x] SFX 规则合并到 `translator._is_sfx` — 保留现有规则。
 - [x] `EDGE_BAND_RATIO` 常量化 — 已统一到 `core/constants.py`。
 - [x] stderr 抑制统一 — `core/utils/stderr_suppressor.py`。
@@ -30,8 +30,8 @@ P2：Scraper/Parser/CLI（阶段 C）
 - [x] 抽取 `scraper/url_utils.py` — 统一 URL 解析与推断。
 - [x] 抽取 `scraper/challenge.py` — Cloudflare 识别统一。
 - [x] 统一 cookie 解析 — 使用共享 helper。
-- [ ] 路由仍保留 `_normalize_base_url` — parser/scraper 仍重复，应复用 `scraper/url_utils.normalize_base_url`。
-- [ ] `ParseRequest` 与 `ParseListRequest` 重复 — 建议合并或复用模型。
+- [x] 路由仍保留 `_normalize_base_url` — parser/scraper 改为复用 `scraper/url_utils.normalize_base_url`。
+- [x] `ParseRequest` 与 `ParseListRequest` 重复 — 统一为同一模型别名。
 - [x] `/parser/parse-list` 与 `/scraper/catalog` 合并 — parser 列表走 scraper catalog。
 - [x] parser fetch 复用 scraper fetch — 统一抓取实现。
 - [x] CLI 入口统一 `main.py` — `scripts/cli.py` 薄封装、`batch_translate.py` 移除 CLI。
@@ -39,4 +39,4 @@ P2：Scraper/Parser/CLI（阶段 C）
 P3：前端与工具（阶段 D）
 - [x] FastAPI 前端仅 dev 模式提供 — `SERVE_FRONTEND=dev` gate + 删除残留静态资源。
 - [x] Tk GUI 脚本迁移至 `tools/` 并注明 deprecated。
-- [ ] `tools/scraper_gui.py` 仍含 `_slugify_keyword` 重复逻辑 — 可复用 scraper 通用 helper。
+- [x] `tools/scraper_gui.py` 仍含 `_slugify_keyword` 重复逻辑 — 改为复用 `scraper.url_utils.slugify_keyword`。

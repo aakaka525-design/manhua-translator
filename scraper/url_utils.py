@@ -36,6 +36,13 @@ def normalize_base_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def slugify_keyword(keyword: str) -> str:
+    value = keyword.strip().lower().replace("_", " ")
+    value = re.sub(r"[^\w\s-]", "", value, flags=re.UNICODE)
+    value = re.sub(r"[\s\-]+", "-", value)
+    return value.strip("-")
+
+
 def parse_chapter_range(value: str) -> tuple[int, int]:
     match = re.match(r"^\s*(\d+)\s*[-:]\s*(\d+)\s*$", value)
     if not match:

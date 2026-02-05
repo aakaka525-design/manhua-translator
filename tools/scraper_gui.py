@@ -24,6 +24,7 @@ from scraper.url_utils import infer_id as _infer_id
 from scraper.url_utils import infer_url as _infer_url
 from scraper.url_utils import normalize_base_url as _normalize_base_url
 from scraper.url_utils import parse_chapter_range as _parse_chapter_range
+from scraper.url_utils import slugify_keyword as _slugify_keyword
 
 
 DEFAULT_BASE_URL = "https://toongod.org"
@@ -39,13 +40,6 @@ def _select_scraper(base_url: str, config: ScraperConfig, downloader: AsyncDownl
     if "mangaforfree.com" in base_url:
         return MangaForFreeScraper(config, downloader=downloader)
     return ToonGodScraper(config, downloader=downloader)
-
-
-def _slugify_keyword(keyword: str) -> str:
-    value = keyword.strip().lower().replace("_", " ")
-    value = re.sub(r"[^\w\s-]", "", value, flags=re.UNICODE)
-    value = re.sub(r"[\s\-]+", "-", value)
-    return value.strip("-")
 
 
 def _extract_chapter_number(value: str) -> float | None:

@@ -12,8 +12,12 @@ X_GAP_RATIO = 0.8
 HEIGHT_RATIO = 0.5
 MAX_HEIGHT_RATIO = 2.6
 MIN_CONFIDENCE = 0.4
+_NOISE_SYMBOL_RE = re.compile(r"[\\$^_{}]")
+_NOISE_TWO_CAPS_RE = re.compile(r"^[A-Z]{2}$")
+_NOISE_ALNUM_SHORT_RE = re.compile(r"^[A-Za-z]{1,2}[0-9]{2,4}$")
 _NOISE_DIGITS_RE = re.compile(r"^\d+$")
 _NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
+_NOISE_ROMAN_RE = re.compile(r"^[\u2160-\u2188]+$")
 
 
 @dataclass
@@ -64,9 +68,17 @@ def _is_merge_noise(region: RegionData) -> bool:
     base = re.sub(r"[!！?？….,。]+$", "", text).strip()
     if not base:
         return False
+    if _NOISE_SYMBOL_RE.search(base):
+        return True
+    if _NOISE_TWO_CAPS_RE.match(base):
+        return True
+    if _NOISE_ALNUM_SHORT_RE.match(base):
+        return True
     if _NOISE_DIGITS_RE.match(base) and len(base) <= 3:
         return True
     if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
+        return True
+    if _NOISE_ROMAN_RE.match(base):
         return True
     return False
 

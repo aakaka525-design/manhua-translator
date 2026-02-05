@@ -55,3 +55,27 @@ def test_line_merger_does_not_merge_when_height_diff_large():
     merged = merge_line_regions([[r1, r2]])
 
     assert len(merged) == 2
+
+
+def test_line_merger_excludes_roman_noise_from_merge():
+    left = RegionData(
+        box_2d=Box2D(x1=10, y1=100, x2=40, y2=130),
+        source_text="그동안",
+        confidence=0.9,
+    )
+    roman = RegionData(
+        box_2d=Box2D(x1=45, y1=102, x2=60, y2=130),
+        source_text="Ⅲ",
+        confidence=0.9,
+    )
+    right = RegionData(
+        box_2d=Box2D(x1=61, y1=100, x2=110, y2=130),
+        source_text="일방적으로",
+        confidence=0.9,
+    )
+
+    merged = merge_line_regions([[left, roman, right]])
+
+    assert len(merged) == 2
+    assert any(r.source_text == "Ⅲ" for r in merged)
+    assert any(r.source_text == "그동안일방적으로" for r in merged)

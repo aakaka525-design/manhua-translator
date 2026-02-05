@@ -37,6 +37,7 @@ from scraper.implementations import MangaForFreeScraper, ToonGodScraper
 from scraper.implementations.generic_playwright import CloudflareChallengeError
 from scraper.url_utils import infer_id as _infer_id
 from scraper.url_utils import infer_url as _infer_url
+from scraper.url_utils import normalize_base_url as _normalize_base_url
 
 from ..deps import get_settings
 
@@ -150,13 +151,6 @@ class ScraperImageResponse(BaseModel):
 
 class ScraperAuthUrlResponse(BaseModel):
     url: str
-
-
-def _normalize_base_url(value: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}"
-    return value.rstrip("/")
 
 
 def _normalize_catalog_path(value: Optional[str]) -> Optional[str]:
