@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -80,3 +81,14 @@ def test_save_image_webp_slice_failure_falls_back_png(tmp_path, monkeypatch):
     path = tmp_path / "out.png"
     saved = save_image(arr, str(path), purpose="final")
     assert saved.endswith(".png")
+
+
+def test_save_image_webp_oversize_respects_overlap_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    monkeypatch.setenv("WEBP_SLICE_OVERLAP", "10")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+    path = tmp_path / "out.png"
+    saved = save_image(arr, str(path), purpose="final")
+    assert saved.endswith("_slices.json")
+    data = json.loads(Path(saved).read_text())
+    assert data["overlap"] == 10

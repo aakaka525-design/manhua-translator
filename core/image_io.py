@@ -20,6 +20,10 @@ def _normalize_suffix(path: Path) -> Path:
     return path.with_suffix(".webp" if fmt == "webp" else ".png")
 
 
+def _webp_slice_overlap() -> int:
+    return int(os.getenv("WEBP_SLICE_OVERLAP", "10"))
+
+
 def compute_webp_slices(height: int, slice_height: int, overlap: int) -> list[tuple[int, int]]:
     if height <= 16383:
         return [(0, height)]
@@ -104,7 +108,7 @@ def save_image(
         if height > 16383:
             if purpose == "final" and width <= 16383:
                 try:
-                    return _save_webp_slices(image, out_path)
+                    return _save_webp_slices(image, out_path, overlap=_webp_slice_overlap())
                 except Exception:
                     out_path = out_path.with_suffix(".png")
                     if isinstance(image, Image.Image):
