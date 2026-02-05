@@ -110,8 +110,15 @@ def translate_chapter_cmd(args):
 def server_cmd(args):
     """启动 Web 服务"""
     import uvicorn
-    from app.main import app
     from app.deps import get_settings
+    
+    # 自动创建必需目录
+    settings = get_settings()
+    for dir_name in ["data", "output", "logs"]:
+        dir_path = Path(getattr(settings, f"{dir_name}_dir", dir_name))
+        dir_path.mkdir(parents=True, exist_ok=True)
+    
+    from app.main import app
     
     settings = get_settings()
     host = settings.host if hasattr(settings, 'host') else "0.0.0.0"
