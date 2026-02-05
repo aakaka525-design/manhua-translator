@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import SlicedImage from './SlicedImage.vue'
 
 const props = defineProps({
   original: String,
@@ -79,11 +80,10 @@ onMounted(() => {
   >
     <!-- Translated Image (Background) -->
     <div v-if="!isVisible" class="w-full pb-[140%] bg-bg-secondary/30 animate-pulse"></div>
-    <img 
+    <SlicedImage
       v-if="isVisible"
-      :src="translated" 
-      class="w-full h-auto block" 
-      draggable="false"
+      :src="translated"
+      :fallback-original="original"
     />
     
     <!-- Original Image (Clipped Overlay) -->
