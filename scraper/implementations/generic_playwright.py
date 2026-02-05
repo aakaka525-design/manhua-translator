@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from playwright.async_api import BrowserContext, async_playwright
 
 from ..base import BaseScraper, Chapter, Manga, ScraperConfig, normalize_url
+from ..challenge import looks_like_challenge
 from ..downloader import AsyncDownloader, DownloadConfig, DownloadItem, DownloadReport
 
 
@@ -745,14 +746,7 @@ class GenericPlaywrightScraper(BaseScraper):
         raise last_error
 
     def _looks_like_challenge(self, html: str) -> bool:
-        markers = (
-            "cf-browser-verification",
-            "challenge-platform",
-            "Cloudflare Ray ID",
-            "Attention Required",
-            "Just a moment",
-        )
-        return any(marker in html for marker in markers)
+        return looks_like_challenge(html)
 
     def _stealth_script(self) -> str:
         return """

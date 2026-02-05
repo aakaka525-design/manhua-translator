@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scraper import Chapter, EngineConfig, Manga, ScraperConfig, ScraperEngine
 from scraper.downloader import AsyncDownloader, DownloadConfig
 from scraper.implementations import MangaForFreeScraper, ToonGodScraper
+from scraper.challenge import looks_like_challenge
 from scraper.url_utils import infer_id as _infer_id
 from scraper.url_utils import infer_url as _infer_url
 from scraper.url_utils import normalize_base_url as _normalize_base_url
@@ -46,18 +47,6 @@ def _preview_items(label: str, items: list[str], limit: int = 10) -> None:
         click.echo(f"  ... 还有 {len(items) - limit} 个")
 
 
-def _looks_like_challenge(html: str) -> bool:
-    content = html.lower()
-    markers = (
-        "cf-browser-verification",
-        "challenge-platform",
-        "cloudflare ray id",
-        "attention required",
-        "just a moment",
-    )
-    return any(marker in content for marker in markers)
-
-
 async def _wait_for_challenge_clear(page, timeout_ms: int) -> None:
     poll_ms = 1000
     deadline = time.monotonic() + (timeout_ms / 1000)
@@ -70,7 +59,7 @@ async def _wait_for_challenge_clear(page, timeout_ms: int) -> None:
                 raise RuntimeError("验证未完成，请增加等待时间或稍后重试")
             await page.wait_for_timeout(poll_ms)
             continue
-        if not _looks_like_challenge(html):
+        if not looks_like_challenge(html):
             return
         if not warned:
             click.echo("检测到 Cloudflare 验证页，等待完成...")
