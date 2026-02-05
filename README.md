@@ -131,6 +131,8 @@ LAMA_DEVICE=cpu
 UPSCALE_ENABLE=1
 UPSCALE_BACKEND=pytorch
 UPSCALE_DEVICE=auto
+UPSCALE_BINARY_PATH=tools/bin/realesrgan-ncnn-vulkan
+UPSCALE_NCNN_MODEL_DIR=tools/bin/models
 UPSCALE_MODEL_PATH=tools/bin/RealESRGAN_x4plus.pth
 UPSCALE_MODEL=realesrgan-x4plus-anime
 UPSCALE_SCALE=2
@@ -147,6 +149,9 @@ UPSCALE_STRIPE_OVERLAP=64
 - `UPSCALE_DEVICE=mps`：强制 MPS（不可用时直接报错）
 - `UPSCALE_DEVICE=cpu`：固定 CPU
 
+NCNN 说明：
+- `UPSCALE_BACKEND=ncnn`：使用外部二进制与模型目录（`UPSCALE_BINARY_PATH` / `UPSCALE_NCNN_MODEL_DIR`）
+
 条带分块（用于超长图加速）：
 - `UPSCALE_STRIPE_ENABLE=1` 且 `H > UPSCALE_STRIPE_THRESHOLD` 时启用
 - `UPSCALE_STRIPE_HEIGHT` 控制每段高度
@@ -159,6 +164,10 @@ OUTPUT_FORMAT=webp
 WEBP_QUALITY_FINAL=90
 WEBP_LOSSLESS_INTERMEDIATE=1
 ```
+
+超长图 WebP 切片（自动）：
+- 当 `OUTPUT_FORMAT=webp` 且高度 > 16383 时，输出为 `*_slices/` + `*_slices.json`
+- 前端应按 `slices.json` 列表顺序堆叠渲染
 
 评估脚本（OCR 置信度对比）：
 
