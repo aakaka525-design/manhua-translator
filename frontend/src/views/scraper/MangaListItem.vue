@@ -1,7 +1,7 @@
 <script setup>
 import LazyImage from '@/components/ui/LazyImage.vue'
 
-defineProps({
+const props = defineProps({
   manga: {
     type: Object,
     required: true

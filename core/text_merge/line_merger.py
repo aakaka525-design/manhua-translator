@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Iterable
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ X_GAP_RATIO = 0.8
 HEIGHT_RATIO = 0.5
 MAX_HEIGHT_RATIO = 2.6
 MIN_CONFIDENCE = 0.4
+_NOISE_DIGITS_RE = re.compile(r"^\d+$")
+_NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
 
 
 @dataclass
@@ -54,6 +57,20 @@ def _join_texts(texts: list[str]) -> str:
     return out
 
 
+def _is_merge_noise(region: RegionData) -> bool:
+    text = (region.source_text or "").strip()
+    if not text:
+        return False
+    base = re.sub(r"[!！?？….,。]+$", "", text).strip()
+    if not base:
+        return False
+    if _NOISE_DIGITS_RE.match(base) and len(base) <= 3:
+        return True
+    if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
+        return True
+    return False
+
+
 def merge_line_regions(groups: list[list[RegionData]]) -> list[RegionData]:
     merged_regions: list[RegionData] = []
 
@@ -65,6 +82,7 @@ def merge_line_regions(groups: list[list[RegionData]]) -> list[RegionData]:
             and r.source_text
             and not r.is_watermark
             and not r.is_sfx
+            and not _is_merge_noise(r)
             and r.confidence >= MIN_CONFIDENCE
         ]
         excluded = [r for r in group if r not in candidates]

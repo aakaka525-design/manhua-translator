@@ -172,6 +172,19 @@ def _is_ocr_noise(text: str) -> tuple[bool, str]:
     if not base:
         return False, ""
 
+    if re.search(r"[\\$^_{}]", base):
+        return True, "符号噪声"
+    if re.match(r"^[A-Z]{2}$", base):
+        return True, "短大写缩写"
+    if re.match(r"^[A-Za-z]{1,2}[0-9]{2,4}$", base):
+        return True, "短字母数字"
+    if re.match(r"^\d+$", base) and len(base) <= 3:
+        return True, "短数字"
+    if re.match(r"^\d+(?:\s+\d+)+$", base) and len(re.sub(r"\s+", "", base)) <= 4:
+        return True, "分隔数字"
+    if re.match(r"^[\u2160-\u2188]+$", base):
+        return True, "罗马数字"
+
     return False, ""
 
 
@@ -928,7 +941,12 @@ class TranslatorModule(BaseModule):
                     ai_translator = self._get_ai_translator()
                     if ai_translator:
                         fixed_translations = []
-                        for src_text, translation in zip(texts_to_translate, translations):
+                        for src_text, translation, meta in zip(
+                            texts_to_translate, translations, crosspage_meta
+                        ):
+                            if meta:
+                                fixed_translations.append(translation)
+                                continue
                             needs_fallback = (
                                 (not _has_cjk(translation))
                                 or (_english_ratio(translation) >= 0.35)

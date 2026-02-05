@@ -8,6 +8,7 @@ import ScraperConfig from '@/views/scraper/ScraperConfig.vue'
 import MangaListItem from '@/views/scraper/MangaListItem.vue'
 import ChapterListItem from '@/views/scraper/ChapterListItem.vue'
 import SkeletonCard from '@/views/scraper/SkeletonCard.vue'
+import LazyImage from '@/components/ui/LazyImage.vue'
 import gsap from 'gsap'
 import { useVirtualList } from '@vueuse/core'
 
@@ -373,7 +374,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Results Area -->
-            <div v-if="scraper.parser.result" class="animate-fade-in-up space-y-6">
+            <div v-if="scraper.parser.result || parserListAvailable" class="animate-fade-in-up space-y-6">
                 <!-- Meta & Action Cards -->
                 <div class="grid gap-4 md:grid-cols-12">
                     <!-- Meta Card -->
@@ -387,6 +388,17 @@ onUnmounted(() => {
                                 <p class="text-[10px] text-text-secondary opacity-70">网页基本信息</p>
                             </div>
                         </div>
+                        <div class="w-full aspect-[3/4] rounded-lg overflow-hidden border border-border-subtle bg-bg-secondary/40">
+                            <LazyImage
+                                v-if="scraper.parser.result?.cover"
+                                :src="scraper.proxyParserImageUrl(scraper.parser.result.cover)"
+                                alt="cover"
+                                class="w-full h-full object-cover"
+                            />
+                            <div v-else class="w-full h-full flex items-center justify-center text-text-secondary/20">
+                                <i class="fas fa-image text-3xl"></i>
+                            </div>
+                        </div>
                         <div class="space-y-2 text-sm mt-1">
                             <div>
                                 <p class="text-[10px] uppercase text-text-secondary opacity-70">Title</p>
@@ -395,6 +407,10 @@ onUnmounted(() => {
                             <div>
                                 <p class="text-[10px] uppercase text-text-secondary opacity-70">Author</p>
                                 <p class="text-text-main font-medium select-text">{{ scraper.parser.result.author || '-' }}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] uppercase text-text-secondary opacity-70">解析站点</p>
+                                <p class="text-text-main font-medium select-text">{{ scraper.parser.context?.site || '-' }}</p>
                             </div>
                              <div class="pt-2 mt-auto">
                                 <button @click="copyParserJson()" class="w-full py-2 rounded-lg bg-bg-secondary hover:bg-bg-secondary/80 text-xs font-semibold text-text-secondary hover:text-text-main transition-colors border border-border-subtle">
@@ -444,7 +460,7 @@ onUnmounted(() => {
                          <div class="flex items-center gap-3">
                             <span class="text-[10px] px-2 py-0.5 rounded border flex items-center gap-1" :class="parserListRecognized ? 'text-green-400 border-green-400/30' : 'text-amber-400 border-amber-400/30'">
                                 <i class="fas" :class="parserListRecognized ? 'fa-check-circle' : 'fa-exclamation-circle'"></i>
-                                {{ parserListRecognized ? '已自动识别' : '未识别结构' }}
+                                {{ parserListRecognized ? '已识别' : '未识别' }}
                             </span>
                          </div>
                     </div>
@@ -459,7 +475,7 @@ onUnmounted(() => {
                             variant="grid"
                             :actionLabel="'查看'"
                             :disabled="!parserListDownloadable"
-                            @select="scraper.selectManga"
+                            @select="scraper.selectMangaFromParser"
                         />
                     </div>
                  </div>
@@ -488,6 +504,10 @@ onUnmounted(() => {
               <div class="flex gap-1">
                  <button @click="scraper.selectAll()" title="全选" class="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-text-secondary hover:text-white transition-colors">
                     <i class="fas fa-check-double text-xs"></i>
+                 </button>
+                 <button @click="scraper.clearSelection()" title="清空"
+                    class="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-text-secondary hover:text-white transition-colors">
+                    <i class="fas fa-eraser text-xs"></i>
                  </button>
                  <button @click="scraper.downloadSelected()" :disabled="scraper.selectedIds.length === 0" title="下载选中"
                     class="w-8 h-8 rounded-full bg-accent-1/20 flex items-center justify-center text-accent-1 hover:bg-accent-1 hover:text-white transition-colors disabled:opacity-50">
