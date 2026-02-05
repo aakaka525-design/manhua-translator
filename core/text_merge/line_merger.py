@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable
-import re
 from uuid import uuid4
 
 from ..models import Box2D, RegionData
@@ -12,8 +11,6 @@ X_GAP_RATIO = 0.8
 HEIGHT_RATIO = 0.5
 MAX_HEIGHT_RATIO = 2.6
 MIN_CONFIDENCE = 0.4
-_NOISE_RE = re.compile(r"^[\\d\\W]+$")
-_ROMAN_RE = re.compile(r"^[\\u2160-\\u2188]+$")
 
 
 @dataclass
@@ -57,19 +54,6 @@ def _join_texts(texts: list[str]) -> str:
     return out
 
 
-def _is_noise_text(text: str | None) -> bool:
-    if not text:
-        return True
-    stripped = text.strip()
-    if not stripped:
-        return True
-    if _NOISE_RE.match(stripped):
-        return True
-    if _ROMAN_RE.match(stripped):
-        return True
-    return False
-
-
 def merge_line_regions(groups: list[list[RegionData]]) -> list[RegionData]:
     merged_regions: list[RegionData] = []
 
@@ -81,7 +65,6 @@ def merge_line_regions(groups: list[list[RegionData]]) -> list[RegionData]:
             and r.source_text
             and not r.is_watermark
             and not r.is_sfx
-            and not _is_noise_text(r.source_text)
             and r.confidence >= MIN_CONFIDENCE
         ]
         excluded = [r for r in group if r not in candidates]

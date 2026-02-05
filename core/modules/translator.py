@@ -45,9 +45,6 @@ SFX_PATTERNS = [
 # Abbreviations that should NOT be treated as SFX (signage, labels, etc.)
 SFX_EXCLUSIONS = {"TEL", "VIP", "SMS", "ID", "NO", "OK", "TV", "VS", "FM", "AM", "DJ", "MC", "PC"}
 
-# OCR 噪音白名单（避免误判短词）
-NOISE_ALLOWLIST = set(SFX_EXCLUSIONS) | {"YES", "OKAY", "USA", "UK", "EU", "IOS"}
-
 # CJK/Korean/Japanese SFX helpers
 _SFX_CN_WORDS = {"砰", "咔", "咔嚓", "嗖", "嘭", "哗", "呼", "啪", "嘎", "轰", "嘶", "咚", "叮", "嗡", "嘀", "哐", "咣", "嘣", "噗", "咻", "唰"}
 _SFX_CJK_RE = re.compile(r"^(砰|咔嚓|咔|嗖|嘭|哗|呼|啪|嘎|轰|嘶|咚|叮|嗡|嘀|哐|咣|嘣|噗|咻|唰)+[！!]*$")
@@ -163,13 +160,6 @@ def _should_skip_translation(text: str) -> tuple[bool, str]:
     return False, ""
 
 
-_NOISE_SYMBOL_RE = re.compile(r"[\\$^_{}]")
-_NOISE_TWO_CAPS_RE = re.compile(r"^[A-Z]{2}$")
-_NOISE_ALNUM_SHORT_RE = re.compile(r"^[A-Za-z]{1,2}[0-9]{2,4}$")
-_NOISE_WEIRD_SPLIT_RE = re.compile(r"^[A-Z]{3,4}\s[A-Z][a-z]-[A-Z][a-z],?$")
-_NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
-
-
 def _is_ocr_noise(text: str) -> tuple[bool, str]:
     raw = (text or "").strip()
     if not raw:
@@ -181,27 +171,6 @@ def _is_ocr_noise(text: str) -> tuple[bool, str]:
     base = re.sub(r"[!！?？….,。]+$", "", raw).strip()
     if not base:
         return False, ""
-
-    upper = base.upper()
-    if upper in NOISE_ALLOWLIST:
-        return False, ""
-
-    if _NOISE_SYMBOL_RE.search(base):
-        return True, "特殊符号"
-    if _NOISE_TWO_CAPS_RE.match(base):
-        return True, "短大写"
-    if _NOISE_ALNUM_SHORT_RE.match(base):
-        return True, "字母数字"
-    if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
-        return True, "分隔数字"
-    if _NOISE_WEIRD_SPLIT_RE.match(base):
-        return True, "异常拼写"
-
-    if base.isascii():
-        has_upper = any(c.isupper() for c in base)
-        has_lower = any(c.islower() for c in base)
-        if len(base) <= 3 and has_upper and has_lower:
-            return True, "短混合大小写"
 
     return False, ""
 

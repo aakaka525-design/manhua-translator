@@ -9,6 +9,12 @@ from uuid import uuid4
 
 from ...models import Box2D, RegionData
 
+_NOISE_SYMBOL_RE = re.compile(r"[\\$^_{}]")
+_NOISE_ALNUM_SHORT_RE = re.compile(r"^[A-Za-z]{1,2}[0-9]{2,4}$")
+_NOISE_WEIRD_SPLIT_RE = re.compile(r"^[A-Z]{3,4}\s[A-Z][a-z]-[A-Z][a-z],?$")
+_NOISE_SPACED_DIGITS_RE = re.compile(r"^\d+(?:\s+\d+)+$")
+_ROMAN_RE = re.compile(r"^[\u2160-\u2188]+$")
+
 
 def _box(region: RegionData) -> Box2D:
     """Return non-null Box2D or raise."""
@@ -90,6 +96,10 @@ def filter_noise_regions(
         text = region.source_text
         conf = region.confidence
 
+        base = re.sub(r"[!！?？….,。]+$", "", text).strip()
+        if not base:
+            continue
+
         if not relaxed:
             # Size filter
             if box.width < 15 or box.height < 10:
@@ -105,10 +115,10 @@ def filter_noise_regions(
                 continue
 
             # Pure numbers
-            if re.match(r"^[0-9,\.]+$", text):
+            if re.match(r"^[0-9,\.]+$", base):
                 is_price_like = (
-                    len(text) >= 4
-                    or "," in text
+                    len(base) >= 4
+                    or "," in base
                     or (box.y1 > image_height * 0.8 if image_height else False)
                     or box.width > box.height * 3
                 )
@@ -116,24 +126,35 @@ def filter_noise_regions(
                     continue
 
         # Common OCR noise
-        if re.match(r"^[0OoSs]+$", text):
+        if re.match(r"^[0OoSs]+$", base):
             continue
 
         if not relaxed:
             # Domain/watermark
-            if re.search(r"\.(com|net|org|io|cn)$", text, re.IGNORECASE):
+            if re.search(r"\.(com|net|org|io|cn)$", base, re.IGNORECASE):
                 continue
 
-            if re.match(r"^[A-Z]+SCANS?$", text) or re.match(r"^[A-Z]+COMICS?$", text):
+            if re.match(r"^[A-Z]+SCANS?$", base) or re.match(r"^[A-Z]+COMICS?$", base):
                 continue
 
         if not relaxed:
             if (
-                text.isascii()
-                and len(text) > 15
-                and " " not in text
-                and not re.search(r"[a-z]", text)
+                base.isascii()
+                and len(base) > 15
+                and " " not in base
+                and not re.search(r"[a-z]", base)
             ):
+                continue
+
+            if _NOISE_SYMBOL_RE.search(base):
+                continue
+            if _NOISE_ALNUM_SHORT_RE.match(base):
+                continue
+            if _NOISE_SPACED_DIGITS_RE.match(base) and len(re.sub(r"\s+", "", base)) <= 4:
+                continue
+            if _NOISE_WEIRD_SPLIT_RE.match(base):
+                continue
+            if _ROMAN_RE.match(base):
                 continue
 
         # Noise patterns
@@ -153,7 +174,7 @@ def filter_noise_regions(
                     r"^[A-Za-z]+0+$",  # trailing zeros
                 ]
             )
-        if any(re.match(p, text) for p in noise_patterns):
+        if any(re.match(p, base) for p in noise_patterns):
             continue
 
         filtered.append(region)
