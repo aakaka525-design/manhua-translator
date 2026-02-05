@@ -91,3 +91,15 @@ def test_find_translated_file_prefers_webp(tmp_path: Path):
 
     picked = find_translated_file(tmp_path, "1")
     assert picked == webp_path
+
+
+def test_find_translated_file_prefers_slices(tmp_path: Path):
+    slices_dir = tmp_path / "page_slices"
+    slices_dir.mkdir()
+    slices_index = tmp_path / "page_slices.json"
+    slices_index.write_text("{}")
+    png_path = tmp_path / "page.png"
+    png_path.write_bytes(b"png")
+
+    picked = find_translated_file(tmp_path, "page")
+    assert picked == slices_index

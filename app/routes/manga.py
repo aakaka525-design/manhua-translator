@@ -130,14 +130,15 @@ async def list_chapters(manga_id: str, settings=Depends(get_settings)):
 
             if pages:
                 # 检查翻译目录是否有图片（不只是目录存在）
-                translated_images = []
+                from app.services.page_status import find_translated_file
+
+                translated_count = 0
                 if translated_path.exists():
-                    translated_images = [
-                        p
-                        for p in translated_path.iterdir()
-                        if p.suffix.lower() in image_extensions
-                    ]
-                translated_count = len(translated_images)
+                    translated_count = sum(
+                        1
+                        for p in pages
+                        if find_translated_file(translated_path, p.stem)
+                    )
                 has_translated_images = translated_count > 0
                 is_complete = translated_count == len(pages) and len(pages) > 0
 

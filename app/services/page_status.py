@@ -5,6 +5,9 @@ import json
 
 
 def find_translated_file(output_dir: Path, stem: str) -> Path | None:
+    slices_index = output_dir / f"{stem}_slices.json"
+    if slices_index.exists():
+        return slices_index
     candidates = list(output_dir.glob(f"{stem}.*"))
     if not candidates:
         return None
