@@ -1,0 +1,7 @@
+services:
+  api:
+    image: ghcr.io/aakaka525-design/manhua-translator-api:${IMAGE_TAG:-latest}
+    build: null
+  web:
+    image: ghcr.io/aakaka525-design/manhua-translator-web:${IMAGE_TAG:-latest}
+    build: null
