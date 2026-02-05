@@ -29,6 +29,28 @@ DEFAULT_STRIPE_HEIGHT = 2000
 DEFAULT_STRIPE_OVERLAP = 64
 
 
+def _override_upscale_model() -> str | None:
+    try:
+        from app.routes.settings import get_current_upscale_model
+    except Exception:
+        return None
+    try:
+        return get_current_upscale_model()
+    except Exception:
+        return None
+
+
+def _override_upscale_scale() -> int | None:
+    try:
+        from app.routes.settings import get_current_upscale_scale
+    except Exception:
+        return None
+    try:
+        return get_current_upscale_scale()
+    except Exception:
+        return None
+
+
 def _ensure_torchvision_functional_tensor() -> None:
     if "torchvision.transforms.functional_tensor" in sys.modules:
         return
@@ -164,13 +186,13 @@ class UpscaleModule(BaseModule):
         if not os.access(binary, os.X_OK):
             raise PermissionError(f"Upscale binary not executable: {binary}")
 
-        model = os.getenv("UPSCALE_MODEL", DEFAULT_MODEL)
+        model = _override_upscale_model() or os.getenv("UPSCALE_MODEL", DEFAULT_MODEL)
         model_dir = Path(os.getenv("UPSCALE_NCNN_MODEL_DIR", "tools/bin/models")).expanduser().resolve()
         if not model_dir.exists():
             raise FileNotFoundError(
                 f"Upscale model dir not found: {model_dir}. Provide UPSCALE_NCNN_MODEL_DIR or run scripts/setup_local.sh."
             )
-        scale = int(os.getenv("UPSCALE_SCALE", str(DEFAULT_SCALE)))
+        scale = _override_upscale_scale() or int(os.getenv("UPSCALE_SCALE", str(DEFAULT_SCALE)))
         tile = int(os.getenv("UPSCALE_TILE", str(DEFAULT_TILE)))
         timeout = int(os.getenv("UPSCALE_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
@@ -285,7 +307,7 @@ class UpscaleModule(BaseModule):
                 "Missing PyTorch upscale deps. Install with: pip install torch torchvision realesrgan basicsr"
             ) from exc
 
-        scale = int(os.getenv("UPSCALE_SCALE", str(DEFAULT_SCALE)))
+        scale = _override_upscale_scale() or int(os.getenv("UPSCALE_SCALE", str(DEFAULT_SCALE)))
         timeout = int(os.getenv("UPSCALE_TIMEOUT", str(DEFAULT_TIMEOUT)))
         tile = int(os.getenv("UPSCALE_TILE", str(DEFAULT_TILE)))
 
