@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import shutil
@@ -172,9 +173,11 @@ class UpscaleModule(BaseModule):
 
         backend = self._backend()
         if backend == "pytorch":
-            return self._run_pytorch(context, output_path)
+            # Offload heavy torch inference to a worker thread so API loop stays responsive.
+            return await asyncio.to_thread(self._run_pytorch, context, output_path)
         if backend == "ncnn":
-            return self._run_ncnn(context, output_path)
+            # Offload blocking subprocess call (ncnn) to avoid blocking the event loop.
+            return await asyncio.to_thread(self._run_ncnn, context, output_path)
         raise ValueError(f"Unsupported UPSCALE_BACKEND: {backend}")
 
     def _run_ncnn(self, context: TaskContext, output_path: Path) -> TaskContext:
