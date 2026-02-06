@@ -18,3 +18,4 @@ def test_get_cached_ocr_normalizes_korean_aliases(monkeypatch):
 
     assert ocr.lang == "korean"
     assert ocr.kwargs["text_recognition_model_name"] == "korean_PP-OCRv5_mobile_rec"
+    assert ocr.kwargs["show_log"] is False

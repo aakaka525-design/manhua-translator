@@ -12,6 +12,11 @@ def test_docker_compose_uses_container_specific_upscale_paths():
     assert "UPSCALE_NCNN_MODEL_DIR_DOCKER" in compose
 
 
+def test_docker_compose_persists_paddleocr_cache_dir():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "/root/.paddleocr" in compose
+
+
 def test_dockerfile_includes_vulkan_libs():
     dockerfile = Path("docker/Dockerfile.api").read_text(encoding="utf-8")
     assert "libvulkan1" in dockerfile
