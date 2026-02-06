@@ -15,8 +15,7 @@ const isDragging = ref(false)
 function onStart(e) {
   if (!props.active) return
   isDragging.value = true
-  // Prevent scrolling while sliding
-  e.preventDefault() 
+  if (e.cancelable) e.preventDefault()
 }
 
 function onEnd() {
@@ -25,6 +24,7 @@ function onEnd() {
 
 function onMove(e) {
   if (!isDragging.value || !props.active) return
+  if (e.cancelable) e.preventDefault()
   
   const rect = container.value.getBoundingClientRect()
   const clientX = e.touches ? e.touches[0].clientX : e.clientX
@@ -74,9 +74,7 @@ onMounted(() => {
 <template>
   <div 
     ref="container"
-    class="relative w-full overflow-hidden select-none touch-none"
-    @mousedown="onStart"
-    @touchstart="onStart"
+    class="relative w-full overflow-hidden select-none touch-pan-y"
   >
     <!-- Translated Image (Background) -->
     <div v-if="!isVisible" class="w-full pb-[140%] bg-bg-secondary/30 animate-pulse"></div>
@@ -106,8 +104,10 @@ onMounted(() => {
     <!-- Handle Button -->
     <div 
       v-if="active"
-      class="absolute top-1/2 -translate-y-1/2 w-8 h-8 bg-accent-2 rounded-full flex items-center justify-center shadow-lg -mr-4 cursor-ew-resize z-10"
+      class="absolute top-1/2 -translate-y-1/2 w-8 h-8 bg-accent-2 rounded-full flex items-center justify-center shadow-lg -mr-4 cursor-ew-resize z-10 touch-none"
       :style="{ left: sliderVal + '%' }"
+      @mousedown="onStart"
+      @touchstart="onStart"
     >
       <i class="fas fa-arrows-alt-h text-black text-xs"></i>
     </div>

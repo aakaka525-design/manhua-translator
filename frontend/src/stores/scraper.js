@@ -382,6 +382,24 @@ export const useScraperStore = defineStore('scraper', () => {
         return `/api/v1/scraper/image?${params.toString()}`
     }
 
+    function mapCoverWithProxy(item, proxyFn) {
+        if (!item || typeof item !== 'object') return item
+        const rawCover = item.cover_url || item.cover
+        if (!rawCover) return item
+        const proxiedCover = proxyFn(rawCover)
+        return {
+            ...item,
+            cover_url: proxiedCover,
+            cover: proxiedCover,
+            cover_raw_url: rawCover
+        }
+    }
+
+    function mapItemsCoverWithProxy(items, proxyFn) {
+        if (!Array.isArray(items)) return []
+        return items.map(item => mapCoverWithProxy(item, proxyFn))
+    }
+
     function normalizeUrlInput(value) {
         const raw = (value || '').trim()
         if (!raw) return ''
@@ -470,7 +488,8 @@ export const useScraperStore = defineStore('scraper', () => {
                 results.value = [manga]
                 await selectManga(manga)
             } else {
-                results.value = await api.search({ ...getPayload(), keyword: kw })
+                const found = await api.search({ ...getPayload(), keyword: kw })
+                results.value = mapItemsCoverWithProxy(found, proxyImageUrl)
             }
         } catch (e) {
             toast.show(e.message, 'error')
@@ -550,9 +569,10 @@ export const useScraperStore = defineStore('scraper', () => {
                 path: catalog.path || null
             })
             if (reset) {
-                catalog.items = data.items
+                catalog.items = mapItemsCoverWithProxy(data.items, proxyImageUrl)
             } else {
-                catalog.items = [...catalog.items, ...data.items]
+                const mappedItems = mapItemsCoverWithProxy(data.items, proxyImageUrl)
+                catalog.items = [...catalog.items, ...mappedItems]
             }
             catalog.page = data.page
             catalog.hasMore = data.has_more
@@ -667,8 +687,12 @@ export const useScraperStore = defineStore('scraper', () => {
             const context = deriveParserContext(url, listResult)
             Object.assign(parser.context, context)
             const items = Array.isArray(listResult?.items) ? listResult.items : []
+            const mappedListResult = {
+                ...listResult,
+                items: mapItemsCoverWithProxy(items, proxyParserImageUrl)
+            }
             if (items.length > 1) {
-                parser.result = listResult
+                parser.result = mappedListResult
                 parser.showAll = true
             } else if (items.length === 1 && items[0]?.url) {
                 parser.result = await parserApi.parse(items[0].url, parser.mode)
