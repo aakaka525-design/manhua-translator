@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from "pinia";
 it("renders upscale controls", () => {
   setActivePinia(createPinia());
   const wrapper = mount(SettingsModal);
+  expect(wrapper.find('[data-test="upscale-enable-toggle"]').exists()).toBe(true);
   expect(wrapper.find('[data-test="upscale-model-select"]').exists()).toBe(true);
   expect(wrapper.find('[data-test="upscale-scale-select"]').exists()).toBe(true);
 });

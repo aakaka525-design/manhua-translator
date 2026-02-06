@@ -40,7 +40,8 @@ export const useSettingsStore = defineStore('settings', () => {
         targetLang: 'zh',
         theme: 'default', // default (dark) or pop (light)
         upscaleModel: 'realesrgan-x4plus-anime',
-        upscaleScale: 2
+        upscaleScale: 2,
+        upscaleEnabled: true
     })
 
     function applyTheme() {
@@ -102,7 +103,8 @@ export const useSettingsStore = defineStore('settings', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: settings.upscaleModel,
-                    scale: settings.upscaleScale
+                    scale: settings.upscaleScale,
+                    enabled: settings.upscaleEnabled
                 })
             })
         } catch (e) {
@@ -119,11 +121,30 @@ export const useSettingsStore = defineStore('settings', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: settings.upscaleModel,
-                    scale: settings.upscaleScale
+                    scale: settings.upscaleScale,
+                    enabled: settings.upscaleEnabled
                 })
             })
         } catch (e) {
             console.error('Failed to update upscale scale:', e)
+        }
+    }
+
+    async function setUpscaleEnabled(enabled) {
+        settings.upscaleEnabled = enabled
+        saveSettings()
+        try {
+            await fetch('/api/v1/settings/upscale', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: settings.upscaleModel,
+                    scale: settings.upscaleScale,
+                    enabled: settings.upscaleEnabled
+                })
+            })
+        } catch (e) {
+            console.error('Failed to update upscale enabled:', e)
         }
     }
 
@@ -166,6 +187,7 @@ export const useSettingsStore = defineStore('settings', () => {
         selectModel,
         selectUpscaleModel,
         selectUpscaleScale,
+        setUpscaleEnabled,
         openLogs,
         fetchLogs,
         toggleTheme

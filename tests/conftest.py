@@ -13,6 +13,7 @@ def _reset_settings_overrides():
         settings_route._model_override = None
         settings_route._upscale_model_override = None
         settings_route._upscale_scale_override = None
+        settings_route._upscale_enable_override = None
     except Exception:
         pass
     yield
@@ -22,6 +23,7 @@ def _reset_settings_overrides():
         settings_route._model_override = None
         settings_route._upscale_model_override = None
         settings_route._upscale_scale_override = None
+        settings_route._upscale_enable_override = None
     except Exception:
         pass
 

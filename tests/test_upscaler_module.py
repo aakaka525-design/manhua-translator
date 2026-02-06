@@ -28,6 +28,23 @@ def test_upscaler_skips_when_disabled(monkeypatch, tmp_path):
     asyncio.run(module.process(ctx))
 
 
+def test_upscaler_respects_runtime_enable_override(monkeypatch, tmp_path):
+    from app.routes import settings as settings_route
+
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
+    settings_route._upscale_enable_override = False
+
+    ctx = _make_context(tmp_path)
+    module = UpscaleModule(binary_path=str(tmp_path / "missing"))
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("ncnn pipeline should not run when override disables upscale")
+
+    monkeypatch.setattr(module, "_run_ncnn", _boom)
+    asyncio.run(module.process(ctx))
+
+
 def test_upscaler_missing_binary_raises(monkeypatch, tmp_path):
     monkeypatch.setenv("UPSCALE_ENABLE", "1")
     monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
@@ -223,6 +240,7 @@ def test_upscaler_pytorch_calls_runner(monkeypatch, tmp_path):
 def test_upscaler_pytorch_registers_torchvision_shim():
     import importlib
     import sys
+    pytest.importorskip("torchvision.transforms.functional")
 
     sys.modules.pop("torchvision.transforms.functional_tensor", None)
     from core.modules import upscaler
@@ -230,6 +248,20 @@ def test_upscaler_pytorch_registers_torchvision_shim():
     upscaler._ensure_torchvision_functional_tensor()
     ft = importlib.import_module("torchvision.transforms.functional_tensor")
     assert hasattr(ft, "rgb_to_grayscale")
+
+
+def test_upscaler_torchvision_shim_missing_torchvision_does_not_raise(monkeypatch):
+    from core.modules import upscaler
+
+    original_find_spec = upscaler.importlib.util.find_spec
+
+    def _fake_find_spec(name, package=None):
+        if name == "torchvision.transforms.functional_tensor":
+            raise ModuleNotFoundError("No module named 'torchvision'")
+        return original_find_spec(name, package)
+
+    monkeypatch.setattr(upscaler.importlib.util, "find_spec", _fake_find_spec)
+    upscaler._ensure_torchvision_functional_tensor()
 
 
 def test_upscaler_pytorch_device_auto_prefers_mps(monkeypatch):

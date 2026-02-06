@@ -17,6 +17,10 @@ const onUpscaleScaleChange = (event) => {
     settingsStore.selectUpscaleScale(value)
   }
 }
+
+const onUpscaleEnableToggle = () => {
+  settingsStore.setUpscaleEnabled(!settingsStore.settings.upscaleEnabled)
+}
 </script>
 
 <template>
@@ -94,6 +98,35 @@ const onUpscaleScaleChange = (event) => {
           <!-- Upscale -->
           <div>
             <h4 class="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wider">高清放大</h4>
+            <button
+              data-test="upscale-enable-toggle"
+              @click="onUpscaleEnableToggle"
+              class="w-full px-4 py-3 rounded-xl text-left transition flex items-center justify-between group border border-transparent bg-bg-secondary/50 hover:bg-bg-secondary mb-3"
+            >
+              <div class="flex items-center gap-3">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+                  :class="settingsStore.settings.upscaleEnabled ? 'bg-accent-1 text-white' : 'bg-bg-primary text-text-secondary'"
+                >
+                  <i class="fas fa-expand"></i>
+                </div>
+                <div>
+                  <span class="font-medium block text-text-main">超分增强</span>
+                  <span class="text-xs text-text-secondary opacity-70">
+                    {{ settingsStore.settings.upscaleEnabled ? '已开启，输出更清晰' : '已关闭，保留原始渲染速度' }}
+                  </span>
+                </div>
+              </div>
+              <div
+                class="relative w-11 h-6 rounded-full transition-colors duration-200"
+                :class="settingsStore.settings.upscaleEnabled ? 'bg-accent-1' : 'bg-bg-primary'"
+              >
+                <div
+                  class="absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform duration-200"
+                  :class="settingsStore.settings.upscaleEnabled ? 'translate-x-5' : ''"
+                ></div>
+              </div>
+            </button>
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="text-xs text-text-secondary opacity-70 mb-1 block">放大模型</label>
@@ -101,7 +134,9 @@ const onUpscaleScaleChange = (event) => {
                   v-model="settingsStore.settings.upscaleModel"
                   data-test="upscale-model-select"
                   @change="onUpscaleModelChange"
+                  :disabled="!settingsStore.settings.upscaleEnabled"
                   class="w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                  :class="!settingsStore.settings.upscaleEnabled ? 'opacity-60 cursor-not-allowed' : ''"
                 >
                   <option v-for="model in settingsStore.availableUpscaleModels" :key="model.id" :value="model.id">
                     {{ model.name }}
@@ -114,7 +149,9 @@ const onUpscaleScaleChange = (event) => {
                   v-model.number="settingsStore.settings.upscaleScale"
                   data-test="upscale-scale-select"
                   @change="onUpscaleScaleChange"
+                  :disabled="!settingsStore.settings.upscaleEnabled"
                   class="w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
+                  :class="!settingsStore.settings.upscaleEnabled ? 'opacity-60 cursor-not-allowed' : ''"
                 >
                   <option v-for="scale in settingsStore.availableUpscaleScales" :key="scale" :value="scale">
                     x{{ scale }}

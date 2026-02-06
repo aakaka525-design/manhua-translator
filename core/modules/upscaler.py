@@ -52,13 +52,26 @@ def _override_upscale_scale() -> int | None:
         return None
 
 
+def _override_upscale_enable() -> bool | None:
+    try:
+        from app.routes.settings import get_current_upscale_enable
+    except Exception:
+        return None
+    try:
+        return get_current_upscale_enable()
+    except Exception:
+        return None
+
+
 def _ensure_torchvision_functional_tensor() -> None:
     if "torchvision.transforms.functional_tensor" in sys.modules:
         return
+    spec = None
     try:
-        if importlib.util.find_spec("torchvision.transforms.functional_tensor"):
-            return
-    except ValueError:
+        spec = importlib.util.find_spec("torchvision.transforms.functional_tensor")
+    except (ValueError, ModuleNotFoundError):
+        spec = None
+    if spec is not None:
         return
     try:
         from torchvision.transforms import functional as functional_api
@@ -139,7 +152,10 @@ class UpscaleModule(BaseModule):
         self.last_metrics: dict | None = None
 
     def _enabled(self) -> bool:
-        return os.getenv("UPSCALE_ENABLE", "0") == "1"
+        override = _override_upscale_enable()
+        if override is not None:
+            return override
+        return os.getenv("UPSCALE_ENABLE", "0").strip().lower() in {"1", "true", "yes", "on"}
 
     def _resolve_binary(self) -> Path:
         if self.binary_path:

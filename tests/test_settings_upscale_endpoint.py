@@ -7,7 +7,7 @@ def test_settings_upscale_update():
     with TestClient(app) as client:
         resp = client.post(
             "/api/v1/settings/upscale",
-            json={"model": "realesr-animevideov3-x4", "scale": 4},
+            json={"model": "realesr-animevideov3-x4", "scale": 4, "enabled": False},
         )
         assert resp.status_code == 200
 
@@ -16,6 +16,7 @@ def test_settings_upscale_update():
         data = get_resp.json()
         assert data["upscale_model"] == "realesr-animevideov3-x4"
         assert data["upscale_scale"] == 4
+        assert data["upscale_enable"] is False
 
 
 def test_settings_upscale_validation():
