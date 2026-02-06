@@ -6,6 +6,12 @@ def test_docker_compose_sets_ncnn_model_dir():
     assert "UPSCALE_NCNN_MODEL_DIR" in compose
 
 
+def test_docker_compose_uses_container_specific_upscale_paths():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "UPSCALE_BINARY_PATH_DOCKER" in compose
+    assert "UPSCALE_NCNN_MODEL_DIR_DOCKER" in compose
+
+
 def test_dockerfile_includes_vulkan_libs():
     dockerfile = Path("docker/Dockerfile.api").read_text(encoding="utf-8")
     assert "libvulkan1" in dockerfile
