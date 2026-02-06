@@ -242,7 +242,7 @@ async def _prefetch_cover_cache(
     for item in items:
         if not item.cover_url:
             continue
-        if not _is_allowed_image_host(item.cover_url):
+        if not _is_allowed_image_host(item.cover_url, base_url):
             continue
         cache_path = _cover_cache_path(item.cover_url)
         if cache_path.exists() and cache_path.stat().st_size > 0:
@@ -316,9 +316,31 @@ async def _prefetch_cover_cache(
             await browser.close()
 
 
-def _is_allowed_image_host(url: str) -> bool:
-    host = urlparse(url).hostname or ""
-    return host.endswith("toongod.org") or host.endswith("mangaforfree.com")
+def _is_allowed_image_host(url: str, base_url: Optional[str] = None) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+
+    allowed_domains = {"toongod.org", "mangaforfree.com"}
+    if base_url:
+        base_host = (urlparse(base_url).hostname or "").lower()
+        if base_host:
+            allowed_domains.add(base_host)
+
+    for domain in allowed_domains:
+        if host == domain or host.endswith(f".{domain}"):
+            return True
+
+    # WordPress image CDN wrapper:
+    # https://i0.wp.com/<origin-host>/wp-content/...
+    if host == "wp.com" or host.endswith(".wp.com"):
+        path = (parsed.path or "").lower()
+        for domain in allowed_domains:
+            if f"/{domain}/" in path:
+                return True
+
+    return False
 
 
 async def _fetch_image_http(
@@ -767,7 +789,7 @@ async def proxy_image(
     browser_channel: Optional[str] = Query(None),
     user_agent: Optional[str] = Query(None),
 ):
-    if not _is_allowed_image_host(url):
+    if not _is_allowed_image_host(url, base_url):
         raise HTTPException(status_code=400, detail="不支持的图片来源")
     storage_path = storage_state_path or str(_default_state_path(base_url))
     cache_path = _cover_cache_path(url)

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useToastStore } from '@/stores/toast'
 
 const api = {
@@ -98,25 +98,142 @@ const parserApi = {
     }
 }
 
+const SCRAPER_SETTINGS_STORAGE_KEY = 'manhua:scraper:settings:v1'
+const SCRAPER_DEFAULT_STATE = {
+    site: 'toongod',
+    baseUrl: 'https://toongod.org',
+    mode: 'headless',
+    httpMode: false,
+    headless: true,
+    manualChallenge: false,
+    storageStatePath: 'data/toongod_state.json',
+    useProfile: true,
+    userDataDir: 'data/toongod_profile',
+    lockUserAgent: true,
+    userAgent: '',
+    useChromeChannel: true,
+    concurrency: 6,
+    rateLimitRps: 2,
+    keyword: '',
+    view: 'search'
+}
+const SCRAPER_PERSISTED_KEYS = Object.keys(SCRAPER_DEFAULT_STATE)
+
+function normalizePersistedSettings(value) {
+    if (!value || typeof value !== 'object') return {}
+    const out = {}
+    for (const key of SCRAPER_PERSISTED_KEYS) {
+        if (!(key in value)) continue
+        const next = value[key]
+        if (typeof SCRAPER_DEFAULT_STATE[key] === 'boolean') {
+            out[key] = Boolean(next)
+            continue
+        }
+        if (typeof SCRAPER_DEFAULT_STATE[key] === 'number') {
+            const n = Number(next)
+            if (!Number.isFinite(n)) continue
+            if (key === 'concurrency') out[key] = Math.max(1, Math.min(32, n))
+            else if (key === 'rateLimitRps') out[key] = Math.max(0.2, Math.min(20, n))
+            else out[key] = n
+            continue
+        }
+        out[key] = String(next)
+    }
+    return out
+}
+
+function loadPersistedSettings() {
+    if (typeof window === 'undefined') return {}
+    try {
+        const raw = window.localStorage.getItem(SCRAPER_SETTINGS_STORAGE_KEY)
+        if (!raw) return {}
+        return normalizePersistedSettings(JSON.parse(raw))
+    } catch (e) {
+        return {}
+    }
+}
+
+function savePersistedSettings(state) {
+    if (typeof window === 'undefined') return
+    try {
+        const payload = {}
+        for (const key of SCRAPER_PERSISTED_KEYS) {
+            payload[key] = state[key]
+        }
+        window.localStorage.setItem(SCRAPER_SETTINGS_STORAGE_KEY, JSON.stringify(payload))
+    } catch (e) {
+        // Ignore storage quota/security errors.
+    }
+}
+
+function _safeHostname(value) {
+    if (!value) return ''
+    try {
+        return new URL(value).hostname.toLowerCase()
+    } catch (e) {
+        return ''
+    }
+}
+
+function _isSubdomain(host, domain) {
+    if (!host || !domain) return false
+    return host === domain || host.endsWith(`.${domain}`)
+}
+
+function _isWpCdnForAllowedSite(url, allowedHosts) {
+    try {
+        const parsed = new URL(url)
+        const host = parsed.hostname.toLowerCase()
+        if (!(host === 'wp.com' || host.endsWith('.wp.com'))) return false
+        const path = parsed.pathname.toLowerCase()
+        return allowedHosts.some(site => path.includes(`/${site}/`))
+    } catch (e) {
+        return false
+    }
+}
+
+function _shouldUseImageProxy(url, baseUrl) {
+    const host = _safeHostname(url)
+    if (!host) return false
+
+    const allowedHosts = new Set(['toongod.org', 'mangaforfree.com'])
+    const baseHost = _safeHostname(baseUrl)
+    if (baseHost) allowedHosts.add(baseHost)
+    const allowedList = Array.from(allowedHosts)
+
+    if (allowedList.some(site => _isSubdomain(host, site))) return true
+    if (_isWpCdnForAllowedSite(url, allowedList)) return true
+    return false
+}
+
 export const useScraperStore = defineStore('scraper', () => {
     const state = reactive({
-        site: 'toongod',
-        baseUrl: 'https://toongod.org',
-        mode: 'headless',
-        httpMode: false,
-        headless: true,
-        manualChallenge: false,
-        storageStatePath: 'data/toongod_state.json',
-        useProfile: true,
-        userDataDir: 'data/toongod_profile',
-        lockUserAgent: true,
-        userAgent: '',
-        useChromeChannel: true,
-        concurrency: 6,
-        rateLimitRps: 2,
-        keyword: '',
-        view: 'search'
+        ...SCRAPER_DEFAULT_STATE,
+        ...loadPersistedSettings()
     })
+
+    watch(
+        () => ({
+            site: state.site,
+            baseUrl: state.baseUrl,
+            mode: state.mode,
+            httpMode: state.httpMode,
+            headless: state.headless,
+            manualChallenge: state.manualChallenge,
+            storageStatePath: state.storageStatePath,
+            useProfile: state.useProfile,
+            userDataDir: state.userDataDir,
+            lockUserAgent: state.lockUserAgent,
+            userAgent: state.userAgent,
+            useChromeChannel: state.useChromeChannel,
+            concurrency: state.concurrency,
+            rateLimitRps: state.rateLimitRps,
+            keyword: state.keyword,
+            view: state.view
+        }),
+        () => savePersistedSettings(state),
+        { deep: true }
+    )
 
     const loading = ref(false)
     const error = ref('')
@@ -186,11 +303,21 @@ export const useScraperStore = defineStore('scraper', () => {
     const task = reactive({
         id: null,
         chapterId: null,
+        mangaId: null,
+        chapterKey: null,
         status: null,
         message: '',
         report: null
     })
     let pollTimer = null
+
+    function chapterTaskKey(chapterId, mangaId = null) {
+        return `${mangaId || '__unknown__'}::${chapterId}`
+    }
+
+    function activeMangaId() {
+        return selectedManga.value?.id || null
+    }
 
     function setSite(site) {
         state.site = site
@@ -350,6 +477,7 @@ export const useScraperStore = defineStore('scraper', () => {
         if (!url) return ''
         if (url.startsWith('data:') || url.startsWith('blob:')) return url
         if (url.startsWith(window.location.origin)) return url
+        if (!_shouldUseImageProxy(url, state.baseUrl)) return url
         const params = new URLSearchParams({
             url,
             base_url: state.baseUrl,
@@ -371,9 +499,11 @@ export const useScraperStore = defineStore('scraper', () => {
         if (!url) return ''
         if (url.startsWith('data:') || url.startsWith('blob:')) return url
         if (url.startsWith(window.location.origin)) return url
+        const parserBaseUrl = parser.context.baseUrl || state.baseUrl
+        if (!_shouldUseImageProxy(url, parserBaseUrl)) return url
         const params = new URLSearchParams({
             url,
-            base_url: parser.context.baseUrl || state.baseUrl,
+            base_url: parserBaseUrl,
             storage_state_path: parser.context.storageStatePath || ''
         })
         if (parser.context.userDataDir) {
@@ -769,24 +899,41 @@ export const useScraperStore = defineStore('scraper', () => {
         return 'text-slate-400'
     }
 
-    function isQueued(chapterId) {
-        return queue.value.some(item => item.id === chapterId)
+    function isQueued(chapterId, mangaId = activeMangaId()) {
+        const key = chapterTaskKey(chapterId, mangaId)
+        return queue.value.some(item => item.chapterKey === key)
     }
 
-    function isChapterBusy(chapterId) {
-        const status = tasks[chapterId]?.status
+    function isChapterBusy(chapterId, mangaId = activeMangaId()) {
+        const key = chapterTaskKey(chapterId, mangaId)
+        const status = tasks[key]?.status
         if (status && ['queued', 'pending', 'running'].includes(status)) return true
-        return task.chapterId === chapterId && ['pending', 'running'].includes(task.status)
+        return task.chapterKey === key && ['pending', 'running'].includes(task.status)
     }
 
-    function updateTask(chapterId, payload) {
-        tasks[chapterId] = { ...(tasks[chapterId] || {}), ...payload }
+    function updateTaskByKey(key, payload) {
+        tasks[key] = { ...(tasks[key] || {}), ...payload }
+    }
+
+    function updateTask(chapterId, payload, mangaId = activeMangaId()) {
+        const key = chapterTaskKey(chapterId, mangaId)
+        updateTaskByKey(key, payload)
+        return key
     }
 
     function enqueue(chapter) {
-        if (isQueued(chapter.id) || isChapterBusy(chapter.id)) return
-        queue.value.push(chapter)
-        updateTask(chapter.id, { status: 'queued', message: '排队中', report: null })
+        const mangaSnapshot = selectedManga.value ? { ...selectedManga.value } : null
+        const mangaId = mangaSnapshot?.id || null
+        const chapterKey = chapterTaskKey(chapter.id, mangaId)
+        if (isQueued(chapter.id, mangaId) || isChapterBusy(chapter.id, mangaId)) return
+        queue.value.push({
+            chapter: { ...chapter },
+            manga: mangaSnapshot,
+            payload: { ...getActivePayload() },
+            chapterKey,
+            mangaId
+        })
+        updateTaskByKey(chapterKey, { status: 'queued', message: '排队中', report: null })
         processQueue()
     }
 
@@ -794,28 +941,36 @@ export const useScraperStore = defineStore('scraper', () => {
         items.forEach(item => enqueue(item))
     }
 
-    async function startDownload(chapter) {
-        if (!selectedManga.value) { error.value = '请先选择漫画'; return }
+    async function startDownload(item) {
+        const chapter = item?.chapter ? item.chapter : item
+        const manga = item?.manga || selectedManga.value
+        const mangaId = item?.mangaId || manga?.id || null
+        const chapterKey = item?.chapterKey || chapterTaskKey(chapter.id, mangaId)
+        const payload = item?.payload || getActivePayload()
+
+        if (!manga) { error.value = '请先选择漫画'; return }
         stopPolling()
         task.status = 'pending'
         task.message = '提交下载任务中...'
         task.report = null
         task.chapterId = chapter.id
+        task.mangaId = mangaId
+        task.chapterKey = chapterKey
         error.value = ''
-        updateTask(chapter.id, { status: 'pending', message: '提交下载任务中...', report: null })
+        updateTaskByKey(chapterKey, { status: 'pending', message: '提交下载任务中...', report: null })
         try {
-            const data = await api.download({ ...getActivePayload(), manga: selectedManga.value, chapter })
+            const data = await api.download({ ...payload, manga, chapter })
             task.id = data.task_id
             task.status = data.status
             task.message = data.message || '已提交下载任务'
-            updateTask(chapter.id, { status: data.status, message: task.message, report: data.report || null })
+            updateTaskByKey(chapterKey, { status: data.status, message: task.message, report: data.report || null })
             schedulePoll()
         } catch (e) {
             error.value = e.message
             task.message = '下载任务提交失败'
             task.status = 'error'
             task.id = null
-            updateTask(chapter.id, { status: 'error', message: task.message })
+            updateTaskByKey(chapterKey, { status: 'error', message: task.message })
             processQueue()
         }
     }
@@ -853,8 +1008,8 @@ export const useScraperStore = defineStore('scraper', () => {
             task.status = data.status
             task.message = data.message || ''
             task.report = data.report || null
-            if (task.chapterId) {
-                updateTask(task.chapterId, {
+            if (task.chapterKey) {
+                updateTaskByKey(task.chapterKey, {
                     status: data.status,
                     message: task.message,
                     report: data.report || null
@@ -880,8 +1035,8 @@ export const useScraperStore = defineStore('scraper', () => {
             task.message = '任务状态获取失败'
             task.status = 'error'
             task.id = null
-            if (task.chapterId) {
-                updateTask(task.chapterId, { status: 'error', message: task.message })
+            if (task.chapterKey) {
+                updateTaskByKey(task.chapterKey, { status: 'error', message: task.message })
             }
             stopPolling()
             processQueue()
@@ -920,7 +1075,8 @@ export const useScraperStore = defineStore('scraper', () => {
     }
 
     function chapterStatus(chapterId) {
-        return tasks[chapterId]?.status || null
+        const key = chapterTaskKey(chapterId, activeMangaId())
+        return tasks[key]?.status || null
     }
 
     function downloadedLabel(chapter) {
