@@ -27,7 +27,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY docker/requirements-docker-cpu.txt /app/docker/requirements-docker-cpu.txt
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/docker/requirements-docker-cpu.txt
-RUN if [ "$INSTALL_LAMA" = "1" ]; then pip install --no-deps simple-lama-inpainting==0.1.2; fi
+RUN if [ "$INSTALL_LAMA" = "1" ]; then \
+      pip install torch torchvision && \
+      pip install simple-lama-inpainting==0.1.2; \
+    fi
 
 RUN mkdir -p /opt/tools \
   && curl -L "https://github.com/xinntao/Real-ESRGAN/releases/download/v${REALESRGAN_VERSION}/realesrgan-ncnn-vulkan-20220424-ubuntu.zip" -o /tmp/realesrgan.zip \
