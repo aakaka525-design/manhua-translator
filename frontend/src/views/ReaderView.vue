@@ -158,7 +158,7 @@ const contextMenuItems = [
         <div class="w-12 h-12 border-4 border-accent-1 border-t-transparent rounded-full animate-spin"></div>
       </div>
       
-      <div v-else class="flex flex-col">
+      <div v-else class="flex flex-col pt-14 sm:pt-16">
         <div v-for="page in pages" :key="page.name" class="relative group"
           @contextmenu="showPageMenu($event, page)">
           <CompareSlider 
