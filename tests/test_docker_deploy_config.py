@@ -31,7 +31,7 @@ def test_docker_cpu_requirements_include_google_genai():
 def test_docker_cpu_requirements_pin_ocr_runtime_versions():
     reqs = Path("docker/requirements-docker-cpu.txt").read_text(encoding="utf-8")
     assert "paddleocr==3.3.3" in reqs
-    assert "paddlepaddle==3.3.0" in reqs
+    assert "paddlepaddle==3.2.0" in reqs
     assert "paddlex==3.3.13" in reqs
 
 
@@ -39,3 +39,10 @@ def test_dockerfile_installs_torch_with_lama():
     dockerfile = Path("docker/Dockerfile.api").read_text(encoding="utf-8")
     assert "simple-lama-inpainting==0.1.2" in dockerfile
     assert "pip install torch torchvision" in dockerfile
+
+
+def test_dockerfile_uses_supported_paddle_flags():
+    dockerfile = Path("docker/Dockerfile.api").read_text(encoding="utf-8")
+    assert "FLAGS_enable_pir_api=0" in dockerfile
+    assert "FLAGS_enable_pir_in_executor=0" in dockerfile
+    assert "FLAGS_use_pir_api=0" not in dockerfile
