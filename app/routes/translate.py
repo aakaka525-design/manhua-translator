@@ -7,6 +7,7 @@ Provides endpoints for image translation operations.
 from pathlib import Path
 from typing import Dict, Set, Optional
 from uuid import UUID
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -25,6 +26,7 @@ from core.pipeline import Pipeline
 from ..deps import get_pipeline, get_settings
 
 router = APIRouter(prefix="/translate", tags=["translation"])
+logger = logging.getLogger(__name__)
 
 # In-memory task storage
 _tasks: Dict[UUID, TaskContext] = {}
@@ -53,6 +55,16 @@ async def pipeline_status_callback(stage: str, status: TaskStatus, task_id: UUID
             "status": status.value,
         }
     )
+
+
+def _build_pipeline_error_detail(result, fallback_message: str) -> dict:
+    task = result.task
+    return {
+        "message": task.error_message or fallback_message,
+        "task_id": str(task.task_id),
+        "status": task.status.value,
+        "output_path": task.output_path,
+    }
 
 
 @router.get("/events")
@@ -101,6 +113,11 @@ async def translate_image(
     result = await pipeline.process(context, status_callback=pipeline_status_callback)
 
     _tasks[result.task.task_id] = result.task
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_build_pipeline_error_detail(result, "Image translation failed"),
+        )
     return TranslateImageResponse(
         task_id=result.task.task_id,
         status=result.task.status,
@@ -150,90 +167,117 @@ async def translate_chapter_endpoint(
 
     # Background processing function
     async def process_chapter():
+        total_count = 0
         # 使用 request 中的语言，如果为 None 则从 settings 获取
-        source_lang = request.source_language or settings.source_language
-        target_lang = request.target_language or settings.target_language
+        try:
+            source_lang = request.source_language or settings.source_language
+            target_lang = request.target_language or settings.target_language
 
-        contexts = [
-            TaskContext(
-                image_path=str(img_path),
-                source_language=source_lang,
-                target_language=target_lang,
+            contexts = [
+                TaskContext(
+                    image_path=str(img_path),
+                    source_language=source_lang,
+                    target_language=target_lang,
+                )
+                for img_path in image_files
+            ]
+
+            # Override output paths to be inside the output dir
+            output_base = Path(settings.output_dir) / request.manga_id / request.chapter_id
+            output_base.mkdir(parents=True, exist_ok=True)
+
+            for ctx in contexts:
+                img_name = Path(ctx.image_path).name
+                ctx.output_path = str(output_base / img_name)
+                _tasks[ctx.task_id] = ctx
+
+            total_count = len(contexts)
+            await broadcast_event(
+                {
+                    "type": "chapter_start",
+                    "manga_id": request.manga_id,
+                    "chapter_id": request.chapter_id,
+                    "total_pages": total_count,
+                }
             )
-            for img_path in image_files
-        ]
 
-        # Override output paths to be inside the output dir
-        output_base = Path(settings.output_dir) / request.manga_id / request.chapter_id
-        output_base.mkdir(parents=True, exist_ok=True)
-
-        for ctx in contexts:
-            img_name = Path(ctx.image_path).name
-            ctx.output_path = str(output_base / img_name)
-            _tasks[ctx.task_id] = ctx
-
-        await broadcast_event(
-            {
-                "type": "chapter_start",
-                "manga_id": request.manga_id,
-                "chapter_id": request.chapter_id,
-                "total_pages": len(contexts),
-            }
-        )
-
-        results = await pipeline.process_batch(
-            contexts, status_callback=pipeline_status_callback
-        )
-
-        total_count = len(contexts)
-        from app.services.page_status import find_translated_file
-
-        saved_count = 0
-        effective_success_count = 0
-        pipeline_success_count = 0
-        failed_translation_count = 0
-        failed_pipeline_count = 0
-
-        for img_path, result in zip(image_files, results):
-            translated_file = find_translated_file(output_base, img_path.stem)
-            has_output_file = bool(translated_file)
-            if has_output_file:
-                saved_count += 1
-
-            if result.success:
-                pipeline_success_count += 1
-
-            has_failure_marker = any(
-                (region.target_text or "").strip().startswith("[翻译失败]")
-                for region in (result.task.regions or [])
+            results = await pipeline.process_batch(
+                contexts, status_callback=pipeline_status_callback
             )
-            if has_failure_marker:
-                failed_translation_count += 1
 
-            is_effective_success = result.success and has_output_file and not has_failure_marker
-            if is_effective_success:
-                effective_success_count += 1
-            elif not result.success:
-                failed_pipeline_count += 1
+            from app.services.page_status import find_translated_file
 
-        failed_count = total_count - effective_success_count
+            saved_count = 0
+            effective_success_count = 0
+            pipeline_success_count = 0
+            failed_translation_count = 0
+            failed_pipeline_count = 0
 
-        await broadcast_event(
-            {
-                "type": "chapter_complete",
-                "manga_id": request.manga_id,
-                "chapter_id": request.chapter_id,
-                # success_count for frontend should represent effective success
-                # (pipeline success + output exists + no explicit failure marker).
-                "success_count": effective_success_count,
-                "pipeline_success_count": pipeline_success_count,
-                "failed_pipeline_count": failed_pipeline_count,
-                "failed_translation_count": failed_translation_count,
-                "failed_count": failed_count,
-                "saved_count": saved_count,
-                "total_count": total_count,
-            }
-        )
+            for img_path, result in zip(image_files, results):
+                translated_file = find_translated_file(output_base, img_path.stem)
+                has_output_file = bool(translated_file)
+                if has_output_file:
+                    saved_count += 1
+
+                if result.success:
+                    pipeline_success_count += 1
+
+                has_failure_marker = any(
+                    (region.target_text or "").strip().startswith("[翻译失败]")
+                    for region in (result.task.regions or [])
+                )
+                if has_failure_marker:
+                    failed_translation_count += 1
+
+                is_effective_success = result.success and has_output_file and not has_failure_marker
+                if is_effective_success:
+                    effective_success_count += 1
+                elif not result.success:
+                    failed_pipeline_count += 1
+
+            failed_count = total_count - effective_success_count
+            final_status = (
+                "error"
+                if effective_success_count == 0
+                else "partial" if failed_count > 0 else "success"
+            )
+
+            await broadcast_event(
+                {
+                    "type": "chapter_complete",
+                    "manga_id": request.manga_id,
+                    "chapter_id": request.chapter_id,
+                    "status": final_status,
+                    # success_count for frontend should represent effective success
+                    # (pipeline success + output exists + no explicit failure marker).
+                    "success_count": effective_success_count,
+                    "pipeline_success_count": pipeline_success_count,
+                    "failed_pipeline_count": failed_pipeline_count,
+                    "failed_translation_count": failed_translation_count,
+                    "failed_count": failed_count,
+                    "saved_count": saved_count,
+                    "total_count": total_count,
+                }
+            )
+        except Exception as exc:
+            logger.exception(
+                "[%s/%s] chapter translation background task failed",
+                request.manga_id,
+                request.chapter_id,
+            )
+            await broadcast_event(
+                {
+                    "type": "chapter_complete",
+                    "manga_id": request.manga_id,
+                    "chapter_id": request.chapter_id,
+                    "status": "error",
+                    "success_count": 0,
+                    "failed_count": total_count or len(image_files),
+                    "saved_count": 0,
+                    "total_count": total_count or len(image_files),
+                    "error_message": str(exc),
+                }
+            )
 
     background_tasks.add_task(process_chapter)
 
@@ -296,6 +340,20 @@ async def retranslate_page(
     result = await pipeline.process(context, status_callback=pipeline_status_callback)
 
     _tasks[result.task.task_id] = result.task
+    if not result.success:
+        await broadcast_event(
+            {
+                "type": "page_failed",
+                "manga_id": request.manga_id,
+                "chapter_id": request.chapter_id,
+                "image_name": request.image_name,
+                "error_message": result.task.error_message or "Page translation failed",
+            }
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_build_pipeline_error_detail(result, "Page translation failed"),
+        )
 
     # Notify completion
     translated_name = Path(result.task.output_path).name if result.task.output_path else request.image_name

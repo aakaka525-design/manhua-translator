@@ -69,13 +69,14 @@ export const useTranslateStore = defineStore('translate', () => {
                 const failedCount = data.failed_count !== undefined
                     ? data.failed_count
                     : Math.max(totalCount - successCount, 0);
+                const finalStatus = data.status || (successCount <= 0 ? 'error' : (failedCount > 0 ? 'partial' : 'success'));
 
                 chapter.isTranslating = false
                 chapter.has_translated = successCount > 0
                 chapter.isComplete = successCount > 0 && successCount === totalCount
                 chapter.translated_count = successCount
-                if (successCount <= 0) {
-                    chapter.statusText = '失败'
+                if (finalStatus === 'error') {
+                    chapter.statusText = data.error_message ? `失败: ${data.error_message}` : '失败'
                 } else if (failedCount > 0) {
                     chapter.statusText = `部分完成 (${successCount}/${totalCount})`
                 } else {
