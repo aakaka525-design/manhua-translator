@@ -254,6 +254,37 @@ curl -X POST http://localhost:8000/api/v1/parser/list \
 
 说明：`mode` 支持 `http`（默认）与 `playwright`。
 
+### Scraper 错误响应说明
+
+`/api/v1/scraper/*` 接口在失败时会返回统一结构，便于前端按错误码做精准提示：
+
+```json
+{
+  "detail": {
+    "code": "SCRAPER_AUTH_CHALLENGE",
+    "message": "需要通过 Cloudflare 验证"
+  },
+  "error": {
+    "code": "HTTP_403",
+    "message": "HTTP 403",
+    "request_id": "9f5a..."
+  }
+}
+```
+
+前端 scraper store 已内置常见错误码映射，并在提示里追加 `RID`（`request_id`）用于日志排查。
+
+常见 `detail.code`：
+- `SCRAPER_AUTH_CHALLENGE`：站点触发验证，需先完成认证
+- `SCRAPER_CATALOG_UNSUPPORTED`：站点不支持目录浏览
+- `SCRAPER_STATE_FILE_TYPE_INVALID`：上传状态文件类型不正确（仅 JSON）
+- `SCRAPER_STATE_FILE_TOO_LARGE`：状态文件过大（>2MB）
+- `SCRAPER_STATE_JSON_INVALID`：状态文件 JSON 解析失败
+- `SCRAPER_STATE_COOKIE_MISSING`：状态文件缺少 cookie
+- `SCRAPER_IMAGE_SOURCE_UNSUPPORTED`：封面来源不在允许列表
+- `SCRAPER_IMAGE_FETCH_FORBIDDEN`：封面拉取失败（常见于 cookie 失效）
+- `SCRAPER_TASK_NOT_FOUND`：下载任务不存在或已过期
+
 ## 🧰 常见问题（Troubleshooting）
 
 **1) 翻译全部失败 / `[翻译失败]`**
