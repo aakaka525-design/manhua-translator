@@ -46,6 +46,12 @@ http://<host>/
 IMAGE_TAG=sha-<commit> ./scripts/start_docker.sh
 ```
 
+如需固定部署 LaMa 版本（会本地构建 `api`，并强制 `INSTALL_LAMA=1`）：
+
+```bash
+./scripts/start_docker.sh --lama
+```
+
 如果仓库为私有，请先执行：`docker login ghcr.io`。
 
 注意事项：
@@ -56,8 +62,8 @@ IMAGE_TAG=sha-<commit> ./scripts/start_docker.sh
   - `DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose up -d --build`
   - 或在 `docker-compose.yml` 中保留 `platform: linux/amd64`
 - LaMa 在 Docker 内为可选项（Pillow 与 PaddleOCR 版本有冲突时需关闭）。开启方式：
-  - 编辑 `docker-compose.yml`，在 `api.build.args` 下设置 `INSTALL_LAMA: "1"`
-  - 重新构建：`docker compose up -d --build`
+  - 推荐：`./scripts/start_docker.sh --lama`
+  - 或手动：`docker compose -f docker-compose.yml -f docker-compose.lama.yml up -d --build`
 
 **Docker 公网部署安全提示**
 - 默认 `api` 仅绑定本机 `127.0.0.1:8000`，请通过 `web` 访问，不建议暴露 API 端口。

@@ -1,0 +1,5 @@
+services:
+  api:
+    build:
+      args:
+        INSTALL_LAMA: "1"
