@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 
 from app.services.page_status import compute_page_status, find_translated_file
 
@@ -94,12 +95,26 @@ def test_find_translated_file_prefers_webp(tmp_path: Path):
 
 
 def test_find_translated_file_prefers_slices(tmp_path: Path):
+    png_path = tmp_path / "page.png"
+    png_path.write_bytes(b"png")
+    slices_dir = tmp_path / "page_slices"
+    slices_dir.mkdir()
+    slices_index = tmp_path / "page_slices.json"
+    slices_index.write_text("{}")
+
+    picked = find_translated_file(tmp_path, "page")
+    assert picked == slices_index
+
+
+def test_find_translated_file_prefers_newer_single_file_over_stale_slices(tmp_path: Path):
     slices_dir = tmp_path / "page_slices"
     slices_dir.mkdir()
     slices_index = tmp_path / "page_slices.json"
     slices_index.write_text("{}")
     png_path = tmp_path / "page.png"
     png_path.write_bytes(b"png")
+    stale_ts = slices_index.stat().st_mtime - 5
+    os.utime(slices_index, (stale_ts, stale_ts))
 
     picked = find_translated_file(tmp_path, "page")
-    assert picked == slices_index
+    assert picked == png_path

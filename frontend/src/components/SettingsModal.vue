@@ -153,7 +153,11 @@ const onUpscaleEnableToggle = () => {
                   class="w-full bg-bg-secondary border border-border-subtle text-text-main rounded-lg px-3 py-2 text-sm focus:border-accent-1 focus:outline-none"
                   :class="!settingsStore.settings.upscaleEnabled ? 'opacity-60 cursor-not-allowed' : ''"
                 >
-                  <option v-for="scale in settingsStore.availableUpscaleScales" :key="scale" :value="scale">
+                  <option
+                    v-for="scale in settingsStore.getUpscaleScalesForModel(settingsStore.settings.upscaleModel)"
+                    :key="scale"
+                    :value="scale"
+                  >
                     x{{ scale }}
                   </option>
                 </select>

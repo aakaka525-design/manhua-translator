@@ -34,3 +34,20 @@ def test_settings_upscale_validation():
             json={"model": "realesr-animevideov3-x4", "scale": 3},
         )
         assert resp.status_code == 422
+
+
+def test_settings_upscale_model_scale_pairing():
+    from app.main import app
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/v1/settings/upscale",
+            json={"model": "realesr-animevideov3-x2", "scale": 2},
+        )
+        assert resp.status_code == 200
+
+        resp = client.post(
+            "/api/v1/settings/upscale",
+            json={"model": "realesr-animevideov3-x2", "scale": 4},
+        )
+        assert resp.status_code == 422

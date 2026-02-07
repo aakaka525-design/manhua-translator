@@ -116,3 +116,27 @@ def test_save_image_webp_slices_lossless_env(tmp_path, monkeypatch):
     assert fmt == "WEBP"
     assert kwargs.get("lossless") is True
     assert "quality" not in kwargs
+
+
+def test_save_image_webp_slices_removes_stale_single_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+    out_path = tmp_path / "out.webp"
+    out_path.write_bytes(b"stale")
+
+    saved = save_image(arr, str(out_path), purpose="final")
+    assert saved.endswith("_slices.json")
+    assert not out_path.exists()
+
+
+def test_save_image_webp_slices_cleans_stale_slice_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+    stale_dir = tmp_path / "out_slices"
+    stale_dir.mkdir(parents=True, exist_ok=True)
+    stale_file = stale_dir / "slice_999.webp"
+    stale_file.write_bytes(b"stale")
+
+    saved = save_image(arr, str(tmp_path / "out.webp"), purpose="final")
+    assert saved.endswith("_slices.json")
+    assert not stale_file.exists()

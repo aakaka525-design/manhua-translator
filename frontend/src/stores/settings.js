@@ -20,12 +20,23 @@ const availableModels = [
 ]
 
 const availableUpscaleModels = [
-    { id: 'realesrgan-x4plus-anime', name: 'RealESRGAN Anime x4', desc: '动漫风格优化' },
-    { id: 'realesrgan-x4plus', name: 'RealESRGAN x4plus', desc: '通用高清放大' },
-    { id: 'realesr-animevideov3-x4', name: 'AnimeVideo v3 x4', desc: '视频动漫优化' }
+    { id: 'realesrgan-x4plus-anime', name: 'RealESRGAN Anime x4', desc: '动漫风格优化 (x4)' },
+    { id: 'realesrgan-x4plus', name: 'RealESRGAN x4plus', desc: '通用高清放大 (x4)' },
+    { id: 'realesr-animevideov3-x2', name: 'AnimeVideo v3 x2', desc: '视频动漫优化 (x2)' },
+    { id: 'realesr-animevideov3-x3', name: 'AnimeVideo v3 x3', desc: '视频动漫优化 (x3)' },
+    { id: 'realesr-animevideov3-x4', name: 'AnimeVideo v3 x4', desc: '视频动漫优化 (x4)' }
 ]
 
-const availableUpscaleScales = [2, 4]
+const availableUpscaleModelScales = {
+    'realesrgan-x4plus-anime': [4],
+    'realesrgan-x4plus': [4],
+    'realesr-animevideov3-x2': [2],
+    'realesr-animevideov3-x3': [3],
+    'realesr-animevideov3-x4': [4]
+}
+const availableUpscaleModelIds = new Set(availableUpscaleModels.map((model) => model.id))
+const defaultUpscaleModel = availableUpscaleModels[0]?.id ?? 'realesrgan-x4plus-anime'
+const defaultUpscaleScale = availableUpscaleModelScales[defaultUpscaleModel]?.[0] ?? 4
 
 export const useSettingsStore = defineStore('settings', () => {
     const showModal = ref(false)
@@ -65,10 +76,44 @@ export const useSettingsStore = defineStore('settings', () => {
                 const parsed = JSON.parse(saved)
                 Object.assign(settings, parsed)
             }
+            const normalized = normalizeUpscaleSettings()
+            if (normalized) {
+                saveSettings()
+            }
             applyTheme()
         } catch (e) {
             console.error('Failed to load settings:', e)
         }
+    }
+
+    function normalizeUpscaleSettings() {
+        let changed = false
+
+        if (!availableUpscaleModelIds.has(settings.upscaleModel)) {
+            settings.upscaleModel = defaultUpscaleModel
+            changed = true
+        }
+
+        const allowedScales = getUpscaleScalesForModel(settings.upscaleModel)
+        const numericScale = Number(settings.upscaleScale)
+        if (!allowedScales.includes(numericScale)) {
+            settings.upscaleScale = allowedScales[0] ?? defaultUpscaleScale
+            changed = true
+        } else if (settings.upscaleScale !== numericScale) {
+            settings.upscaleScale = numericScale
+            changed = true
+        }
+
+        if (typeof settings.upscaleEnabled !== 'boolean') {
+            settings.upscaleEnabled = true
+            changed = true
+        }
+
+        return changed
+    }
+
+    function getUpscaleScalesForModel(modelId) {
+        return availableUpscaleModelScales[modelId] ?? [defaultUpscaleScale]
     }
 
     function saveSettings() {
@@ -95,56 +140,63 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     async function selectUpscaleModel(model) {
+        const previousModel = settings.upscaleModel
+        const previousScale = settings.upscaleScale
         settings.upscaleModel = model.id
+        const allowedScales = getUpscaleScalesForModel(settings.upscaleModel)
+        if (!allowedScales.includes(settings.upscaleScale)) {
+            settings.upscaleScale = allowedScales[0]
+        }
         saveSettings()
         try {
-            await fetch('/api/v1/settings/upscale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: settings.upscaleModel,
-                    scale: settings.upscaleScale,
-                    enabled: settings.upscaleEnabled
-                })
-            })
+            await postUpscaleSettings()
         } catch (e) {
+            settings.upscaleModel = previousModel
+            settings.upscaleScale = previousScale
+            saveSettings()
             console.error('Failed to update upscale model:', e)
         }
     }
 
     async function selectUpscaleScale(scale) {
-        settings.upscaleScale = scale
+        const previousScale = settings.upscaleScale
+        const allowedScales = getUpscaleScalesForModel(settings.upscaleModel)
+        settings.upscaleScale = allowedScales.includes(scale) ? scale : (allowedScales[0] ?? previousScale)
         saveSettings()
         try {
-            await fetch('/api/v1/settings/upscale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: settings.upscaleModel,
-                    scale: settings.upscaleScale,
-                    enabled: settings.upscaleEnabled
-                })
-            })
+            await postUpscaleSettings()
         } catch (e) {
+            settings.upscaleScale = previousScale
+            saveSettings()
             console.error('Failed to update upscale scale:', e)
         }
     }
 
     async function setUpscaleEnabled(enabled) {
+        const previousEnabled = settings.upscaleEnabled
         settings.upscaleEnabled = enabled
         saveSettings()
         try {
-            await fetch('/api/v1/settings/upscale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: settings.upscaleModel,
-                    scale: settings.upscaleScale,
-                    enabled: settings.upscaleEnabled
-                })
-            })
+            await postUpscaleSettings()
         } catch (e) {
+            settings.upscaleEnabled = previousEnabled
+            saveSettings()
             console.error('Failed to update upscale enabled:', e)
+        }
+    }
+
+    async function postUpscaleSettings() {
+        const response = await fetch('/api/v1/settings/upscale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: settings.upscaleModel,
+                scale: settings.upscaleScale,
+                enabled: settings.upscaleEnabled
+            })
+        })
+        if (!response.ok) {
+            throw new Error(`Upscale settings update failed: ${response.status}`)
         }
     }
 
@@ -182,7 +234,7 @@ export const useSettingsStore = defineStore('settings', () => {
         settings,
         availableModels,
         availableUpscaleModels,
-        availableUpscaleScales,
+        getUpscaleScalesForModel,
         saveSettings,
         selectModel,
         selectUpscaleModel,

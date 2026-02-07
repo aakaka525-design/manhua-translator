@@ -21,13 +21,13 @@ _upscale_model_override: Optional[str] = None
 _upscale_scale_override: Optional[int] = None
 _upscale_enable_override: Optional[bool] = None
 
-_UPSCALE_MODELS = {
-    "realesrgan-x4plus-anime",
-    "realesrgan-x4plus",
-    "realesr-animevideov3-x4",
+_UPSCALE_MODEL_SCALES = {
+    "realesrgan-x4plus-anime": {4},
+    "realesrgan-x4plus": {4},
+    "realesr-animevideov3-x2": {2},
+    "realesr-animevideov3-x3": {3},
+    "realesr-animevideov3-x4": {4},
 }
-
-_UPSCALE_SCALES = {2, 4}
 
 
 class ModelUpdateRequest(BaseModel):
@@ -89,10 +89,11 @@ async def set_ai_model(request: ModelUpdateRequest):
 async def set_upscale_settings(request: UpscaleUpdateRequest):
     global _upscale_model_override, _upscale_scale_override, _upscale_enable_override
 
-    if request.model not in _UPSCALE_MODELS:
+    allowed_scales = _UPSCALE_MODEL_SCALES.get(request.model)
+    if allowed_scales is None:
         raise HTTPException(status_code=422, detail="Unsupported upscale model")
-    if request.scale not in _UPSCALE_SCALES:
-        raise HTTPException(status_code=422, detail="Unsupported upscale scale")
+    if request.scale not in allowed_scales:
+        raise HTTPException(status_code=422, detail="Unsupported upscale scale for model")
 
     _upscale_model_override = request.model
     _upscale_scale_override = request.scale
@@ -127,18 +128,29 @@ def get_current_model() -> Optional[str]:
 
 
 def get_current_upscale_model() -> str:
-    if _upscale_model_override:
-        return _upscale_model_override
-    return os.getenv("UPSCALE_MODEL", "realesrgan-x4plus-anime")
+    model = _upscale_model_override or os.getenv("UPSCALE_MODEL", "realesrgan-x4plus-anime")
+    if model not in _UPSCALE_MODEL_SCALES:
+        return "realesrgan-x4plus-anime"
+    return model
 
 
 def get_current_upscale_scale() -> int:
+    model = get_current_upscale_model()
+    allowed_scales = _UPSCALE_MODEL_SCALES[model]
+
     if _upscale_scale_override is not None:
-        return _upscale_scale_override
+        if _upscale_scale_override in allowed_scales:
+            return _upscale_scale_override
+        return min(allowed_scales)
+
     try:
-        return int(os.getenv("UPSCALE_SCALE", "2"))
+        scale = int(os.getenv("UPSCALE_SCALE", "2"))
     except ValueError:
-        return 2
+        return min(allowed_scales)
+
+    if scale in allowed_scales:
+        return scale
+    return min(allowed_scales)
 
 
 def get_current_upscale_enable() -> bool:

@@ -6,15 +6,14 @@ import json
 
 def find_translated_file(output_dir: Path, stem: str) -> Path | None:
     slices_index = output_dir / f"{stem}_slices.json"
-    if slices_index.exists():
-        return slices_index
     candidates = list(output_dir.glob(f"{stem}.*"))
-    if not candidates:
+    all_candidates = list(candidates)
+    if slices_index.exists():
+        all_candidates.append(slices_index)
+    if not all_candidates:
         return None
-    webps = [p for p in candidates if p.suffix.lower() == ".webp"]
-    if webps:
-        return max(webps, key=lambda p: p.stat().st_mtime)
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+    # Pick the freshest artifact (slice index or single image) to avoid stale slice files shadowing new outputs.
+    return max(all_candidates, key=lambda p: (p.stat().st_mtime, p.name))
 
 
 def _load_latest_report(report_paths: list[Path]) -> dict | None:

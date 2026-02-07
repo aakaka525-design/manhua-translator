@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Literal, Union
 
@@ -67,6 +68,8 @@ def _save_webp_slices(
 
     slices = compute_webp_slices(height, slice_height, overlap)
     slices_dir = out_path.parent / f"{out_path.stem}_slices"
+    if slices_dir.exists():
+        shutil.rmtree(slices_dir)
     slices_dir.mkdir(parents=True, exist_ok=True)
 
     entries = []
@@ -95,6 +98,9 @@ def _save_webp_slices(
             indent=2,
         )
     )
+    # Avoid leaving a stale single-file artifact that can cause manual inspection confusion.
+    if out_path.exists():
+        out_path.unlink()
     return str(index_path)
 
 

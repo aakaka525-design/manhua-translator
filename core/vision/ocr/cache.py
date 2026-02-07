@@ -52,14 +52,22 @@ def get_cached_ocr(lang: str = "en"):
                 with suppress_native_stderr():
                     from paddleocr import PaddleOCR
 
-                    _ocr_cache[lang_norm] = PaddleOCR(
-                        lang=lang_norm,
-                        show_log=False,
-                        use_doc_orientation_classify=False,
-                        use_doc_unwarping=False,
-                        use_textline_orientation=False,
-                        text_detection_model_name="PP-OCRv5_mobile_det",
-                        text_recognition_model_name=rec_model,
-                    )
+                    kwargs = {
+                        "lang": lang_norm,
+                        "show_log": False,
+                        "use_doc_orientation_classify": False,
+                        "use_doc_unwarping": False,
+                        "use_textline_orientation": False,
+                        "text_detection_model_name": "PP-OCRv5_mobile_det",
+                        "text_recognition_model_name": rec_model,
+                    }
+                    try:
+                        _ocr_cache[lang_norm] = PaddleOCR(**kwargs)
+                    except Exception as exc:
+                        # PaddleOCR 3.x removed `show_log`; retry without it for compatibility.
+                        if "Unknown argument: show_log" not in str(exc):
+                            raise
+                        kwargs.pop("show_log", None)
+                        _ocr_cache[lang_norm] = PaddleOCR(**kwargs)
 
     return _ocr_cache[lang_norm]
