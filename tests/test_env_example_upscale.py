@@ -6,6 +6,8 @@ def test_env_example_includes_upscale_settings():
     assert "UPSCALE_ENABLE" in content
     assert "UPSCALE_BACKEND" in content
     assert "UPSCALE_DEVICE" in content
+    assert "UPSCALE_CLOUDRUN_URL" not in content
+    assert "UPSCALE_CLOUDRUN_AUTH_TOKEN" not in content
     assert "UPSCALE_BINARY_PATH" in content
     assert "UPSCALE_MODEL_PATH" in content
     assert "UPSCALE_MODEL" in content

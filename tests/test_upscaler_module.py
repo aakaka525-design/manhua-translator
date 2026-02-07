@@ -2,6 +2,8 @@ import asyncio
 from pathlib import Path
 import subprocess
 import pytest
+import numpy as np
+import cv2
 
 from core.models import TaskContext
 from core.modules.upscaler import UpscaleModule
@@ -354,3 +356,14 @@ def test_upscaler_stripe_timeout_uses_perf_start(monkeypatch, tmp_path):
     module = UpscaleModule()
 
     asyncio.run(module.process(ctx))
+
+
+def test_upscaler_cloudrun_backend_is_unsupported(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "cloudrun")
+
+    ctx = _make_context(tmp_path)
+    module = UpscaleModule()
+
+    with pytest.raises(ValueError, match="Unsupported UPSCALE_BACKEND"):
+        asyncio.run(module.process(ctx))
