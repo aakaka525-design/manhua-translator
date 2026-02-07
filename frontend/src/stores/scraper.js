@@ -2,6 +2,58 @@ import { defineStore } from 'pinia'
 import { ref, reactive, computed, watch } from 'vue'
 import { useToastStore } from '@/stores/toast'
 
+const SCRAPER_ERROR_MESSAGE_MAP = {
+    SCRAPER_AUTH_CHALLENGE: '站点触发验证，请先到认证页完成验证后重试',
+    SCRAPER_CATALOG_UNSUPPORTED: '当前站点不支持目录浏览',
+    SCRAPER_STATE_FILE_TYPE_INVALID: '仅支持上传 JSON 状态文件',
+    SCRAPER_STATE_FILE_TOO_LARGE: '状态文件过大（最大 2MB）',
+    SCRAPER_STATE_JSON_INVALID: '状态文件不是有效 JSON',
+    SCRAPER_STATE_COOKIE_MISSING: '状态文件中没有可用 cookie',
+    SCRAPER_IMAGE_SOURCE_UNSUPPORTED: '封面来源不受支持，已跳过代理',
+    SCRAPER_IMAGE_FETCH_FORBIDDEN: '封面抓取失败，请检查 cookie 是否有效',
+    SCRAPER_TASK_NOT_FOUND: '下载任务不存在或已过期'
+}
+
+function _withRequestId(message, requestId) {
+    if (!requestId) return message
+    return `${message} (RID: ${requestId})`
+}
+
+function _friendlyErrorMessage({ code, detailMessage, fallbackMessage, requestId }) {
+    const mapped = (code && SCRAPER_ERROR_MESSAGE_MAP[code]) || ''
+    const base = mapped || detailMessage || fallbackMessage
+    return _withRequestId(base, requestId)
+}
+
+async function _buildApiError(res, fallbackMessage) {
+    let payload = {}
+    try {
+        payload = await res.json()
+    } catch (e) {
+        payload = {}
+    }
+    const detail = payload?.detail
+    const detailCode = detail && typeof detail === 'object' ? detail.code : ''
+    const detailMessage = detail && typeof detail === 'object'
+        ? (detail.message || '')
+        : (typeof detail === 'string' ? detail : '')
+    const requestId = payload?.error?.request_id || ''
+    const code = detailCode || payload?.error?.code || ''
+
+    const message = _friendlyErrorMessage({
+        code,
+        detailMessage,
+        fallbackMessage,
+        requestId
+    })
+    const error = new Error(message)
+    error.status = res.status
+    error.code = code
+    error.requestId = requestId
+    error.raw = payload
+    return error
+}
+
 const api = {
     async search(payload) {
         const res = await fetch('/api/v1/scraper/search', {
@@ -9,7 +61,7 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'Search failed')
+        if (!res.ok) throw await _buildApiError(res, '搜索失败')
         return res.json()
     },
     async chapters(payload) {
@@ -18,7 +70,7 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'Chapters failed')
+        if (!res.ok) throw await _buildApiError(res, '获取章节失败')
         return res.json()
     },
     async catalog(payload) {
@@ -27,7 +79,7 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'Catalog failed')
+        if (!res.ok) throw await _buildApiError(res, '加载目录失败')
         return res.json()
     },
     async stateInfo(payload) {
@@ -36,7 +88,7 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'State info failed')
+        if (!res.ok) throw await _buildApiError(res, '状态检查失败')
         return res.json()
     },
     async accessCheck(payload) {
@@ -45,7 +97,7 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'Access check failed')
+        if (!res.ok) throw await _buildApiError(res, '站点访问检测失败')
         return res.json()
     },
     async uploadState(formData) {
@@ -53,12 +105,12 @@ const api = {
             method: 'POST',
             body: formData
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed')
+        if (!res.ok) throw await _buildApiError(res, '上传状态文件失败')
         return res.json()
     },
     async authUrl() {
         const res = await fetch('/api/v1/scraper/auth-url')
-        if (!res.ok) throw new Error('Auth url failed')
+        if (!res.ok) throw await _buildApiError(res, '认证地址获取失败')
         return res.json()
     },
     async download(payload) {
@@ -67,12 +119,12 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        if (!res.ok) throw new Error((await res.json()).detail || 'Download failed')
+        if (!res.ok) throw await _buildApiError(res, '提交下载失败')
         return res.json()
     },
     async taskStatus(taskId) {
         const res = await fetch(`/api/v1/scraper/task/${taskId}`)
-        if (!res.ok) throw new Error('Task not found')
+        if (!res.ok) throw await _buildApiError(res, '任务状态获取失败')
         return res.json()
     }
 }
