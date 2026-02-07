@@ -115,8 +115,31 @@ def test_translate_batch_includes_context_in_prompt(monkeypatch):
     assert "CTX" in captured["prompt"]
     assert "TEXT" in captured["prompt"]
     assert "英文" in captured["prompt"]
+    assert "OCR提取" in captured["prompt"]
     assert "上一句" in captured["prompt"]
     assert result == ["测试"]
+
+
+def test_translate_reuses_batch_path_for_ocr_correction(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    called = {}
+
+    async def fake_translate_batch(self, texts, output_format="numbered", contexts=None):
+        called["texts"] = texts
+        return ["毯子在哪儿！"]
+
+    monkeypatch.setattr(AITranslator, "translate_batch", fake_translate_batch)
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+    result = asyncio.run(translator.translate("WHERE'S THE OLAINKEI!"))
+
+    assert called["texts"] == ["WHERE'S THE OLAINKEI!"]
+    assert result == "毯子在哪儿！"
 
 
 def test_translate_batch_cleans_text_ctx_prefix(monkeypatch):
@@ -197,6 +220,50 @@ def test_translate_batch_chunks_and_merges(monkeypatch):
     result = asyncio.run(translator.translate_batch(texts))
 
     assert calls["count"] == 3
+    assert result == [f"OUT:{t}" for t in texts]
+
+
+def test_translate_batch_single_first_then_chunk_fallback(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CHUNK_SIZE", "100")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_FALLBACK_CHUNK_SIZE", "2")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CONCURRENCY", "1")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+    calls = {"count": 0}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        calls["count"] += 1
+        import re
+
+        start = prompt.find("# 待翻译文本")
+        section = prompt[start:] if start >= 0 else prompt
+        lines = []
+        for line in section.splitlines():
+            match = re.match(r"^(\d+)\.\s+(.*)$", line.strip())
+            if not match:
+                continue
+            text = match.group(2).strip()
+            if text.startswith("TEXT:"):
+                text = text[5:].strip()
+            if text and not text.startswith("**") and not text.startswith("请"):
+                lines.append(text)
+
+        if len(lines) > 2:
+            raise RuntimeError("503 UNAVAILABLE: model overloaded")
+        return "\n".join([f"{i + 1}. OUT:{line}" for i, line in enumerate(lines)])
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    texts = ["A", "B", "C", "D", "E"]
+    result = asyncio.run(translator.translate_batch(texts))
+
+    # Full-batch retries 3 times, then fallback chunks 3 times (2+2+1).
+    assert calls["count"] == 6
     assert result == [f"OUT:{t}" for t in texts]
 
 
@@ -290,3 +357,131 @@ def test_ai_provider_defaults_to_gemini_when_only_gemini_key(monkeypatch):
     assert translator.is_gemini is True
     assert translator.model == "gemini-3-flash-preview"
     assert called["gemini"] == 1
+
+
+def test_translate_batch_fallback_to_ppio_on_gemini_overload(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini")
+    monkeypatch.setenv("PPIO_API_KEY", "dummy-ppio")
+    monkeypatch.setenv("AI_TRANSLATE_FALLBACK_PROVIDER", "ppio")
+    monkeypatch.setenv("AI_TRANSLATE_GEMINI_FALLBACK_MODELS", "off")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_gemini", lambda self: None)
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    async def _raise_overload(prompt: str, max_tokens: int = 2000):
+        raise RuntimeError("503 UNAVAILABLE: model overloaded")
+
+    class _FallbackTranslator:
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
+            return [f"FB:{t}" for t in texts]
+
+    monkeypatch.setattr(translator, "_call_api", _raise_overload)
+    monkeypatch.setattr(
+        translator,
+        "_get_fallback_translator",
+        lambda: _FallbackTranslator(),
+        raising=False,
+    )
+
+    result = asyncio.run(translator.translate_batch(["A", "B"]))
+    assert result == ["FB:A", "FB:B"]
+
+
+def test_translate_batch_fallback_to_ppio_on_primary_timeout(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini")
+    monkeypatch.setenv("PPIO_API_KEY", "dummy-ppio")
+    monkeypatch.setenv("AI_TRANSLATE_FALLBACK_PROVIDER", "ppio")
+    monkeypatch.setenv("AI_TRANSLATE_GEMINI_FALLBACK_MODELS", "off")
+    monkeypatch.setenv("AI_TRANSLATE_PRIMARY_TIMEOUT_MS", "1")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_gemini", lambda self: None)
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    async def _slow_primary(prompt: str, max_tokens: int = 2000):
+        await asyncio.sleep(0.05)
+        return "1. primary"
+
+    class _FallbackTranslator:
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
+            return [f"FB:{t}" for t in texts]
+
+    monkeypatch.setattr(translator, "_call_api", _slow_primary)
+    monkeypatch.setattr(
+        translator,
+        "_get_fallback_translator",
+        lambda: _FallbackTranslator(),
+        raising=False,
+    )
+
+    result = asyncio.run(translator.translate_batch(["A", "B"]))
+    assert result == ["FB:A", "FB:B"]
+
+
+def test_translate_batch_prefers_gemini_model_fallback_before_provider(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini")
+    monkeypatch.setenv("PPIO_API_KEY", "dummy-ppio")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    monkeypatch.setenv("AI_TRANSLATE_FALLBACK_PROVIDER", "ppio")
+    monkeypatch.setenv("AI_TRANSLATE_GEMINI_FALLBACK_MODELS", "gemini-2.5-flash,gemini-2.5-flash-lite")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_gemini", lambda self: None)
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    async def fake_call_api(self, prompt: str, max_tokens: int = 2000):
+        if self.model == "gemini-3-flash-preview":
+            raise RuntimeError("503 UNAVAILABLE: model overloaded")
+        if self.model == "gemini-2.5-flash":
+            return "1. GEMINI25"
+        return "1. PPIO"
+
+    monkeypatch.setattr(AITranslator, "_call_api", fake_call_api, raising=False)
+
+    result = asyncio.run(translator.translate_batch(["A"]))
+    assert result == ["GEMINI25"]
+
+
+def test_estimate_batch_max_tokens_scales_with_input_size():
+    from core.ai_translator import _estimate_batch_max_tokens
+
+    small = _estimate_batch_max_tokens(item_count=1, total_chars=8)
+    medium = _estimate_batch_max_tokens(item_count=6, total_chars=120)
+    large = _estimate_batch_max_tokens(item_count=12, total_chars=800)
+
+    assert small < medium < large
+    assert large <= 4000
+
+
+def test_translate_batch_uses_estimated_max_tokens(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_MAX_TOKENS", "4000")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+    captured = {}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        captured["max_tokens"] = max_tokens
+        return "1. 测试"
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    result = asyncio.run(translator.translate_batch(["HELLO"]))
+    assert result == ["测试"]
+    assert captured["max_tokens"] < 4000

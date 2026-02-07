@@ -111,6 +111,26 @@ def _get_log_config():
 def _sanitize_log_text(text: str) -> str:
     return (text or "").replace("\n", "\\n")
 
+
+def _estimate_batch_max_tokens(item_count: int, total_chars: int) -> int:
+    """
+    Estimate max output tokens for batch translation.
+
+    Keeps a conservative upper bound to reduce long-tail latency caused by
+    overly large max_tokens while preserving enough headroom for multi-item output.
+    """
+    hard_cap = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS", 4000)
+    base = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS_BASE", 320)
+    per_item = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS_PER_ITEM", 120)
+    per_chars = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS_PER_200_CHARS", 40)
+    min_tokens = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS_MIN", 320)
+
+    item_count = max(1, int(item_count or 0))
+    total_chars = max(0, int(total_chars or 0))
+
+    estimated = base + per_item * item_count + (total_chars // 200) * per_chars
+    return max(min_tokens, min(hard_cap, estimated))
+
 class AITranslator:
     """支持多个 AI 提供商的翻译器。"""
     
@@ -129,11 +149,13 @@ class AITranslator:
         source_lang: str = "en",
         target_lang: str = "zh-CN",
         model: Optional[str] = None,
+        provider: Optional[str] = None,
+        allow_gemini_model_fallback: bool = True,
     ):
         self.source_lang = source_lang
         self.target_lang = target_lang
         
-        provider = (os.getenv("AI_PROVIDER") or "").strip().lower()
+        provider = (provider or os.getenv("AI_PROVIDER") or "").strip().lower()
         if provider and provider not in ("gemini", "ppio"):
             raise ValueError("AI_PROVIDER must be 'gemini' or 'ppio'")
 
@@ -145,6 +167,7 @@ class AITranslator:
                     "AI_PROVIDER must be set when both PPIO_API_KEY and GEMINI_API_KEY are present"
                 )
             provider = "gemini" if gemini_key else "ppio"
+        self.provider = provider
 
         if provider == "gemini":
             # 从环境变量或参数加载模型（默认使用 Gemini 3 Flash）
@@ -162,6 +185,9 @@ class AITranslator:
             # PPIO 模型
             self.model = model or os.getenv("PPIO_MODEL", "zai-org/glm-4.7-flash")
             self.is_gemini = False
+        self._allow_gemini_model_fallback = allow_gemini_model_fallback
+        self._fallback_translator: Optional["AITranslator"] = None
+        self._gemini_model_fallback_translators: dict[str, "AITranslator"] = {}
         
         logger.info(f"初始化翻译器: model={self.model}, is_gemini={self.is_gemini}")
         
@@ -217,6 +243,113 @@ class AITranslator:
     
     def _get_lang_name(self, code: str) -> str:
         return self._lang_names.get(code, code)
+
+    def _gemini_fallback_model_names(self) -> list[str]:
+        if not self.is_gemini or not self._allow_gemini_model_fallback:
+            return []
+        raw = (os.getenv("AI_TRANSLATE_GEMINI_FALLBACK_MODELS") or "").strip()
+        if raw:
+            if raw.lower() in {"off", "none", "disable", "disabled"}:
+                return []
+            candidates = [m.strip() for m in raw.split(",") if m.strip()]
+        else:
+            candidates = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+        ordered: list[str] = []
+        for model_name in candidates:
+            if model_name == self.model:
+                continue
+            if model_name not in ordered:
+                ordered.append(model_name)
+        return ordered
+
+    def _fallback_provider(self) -> Optional[str]:
+        provider = (os.getenv("AI_TRANSLATE_FALLBACK_PROVIDER") or "").strip().lower()
+        if not provider:
+            if self.provider == "gemini" and os.getenv("PPIO_API_KEY"):
+                return "ppio"
+            return None
+        if provider not in {"gemini", "ppio"}:
+            return None
+        if provider == self.provider:
+            return None
+        return provider
+
+    @staticmethod
+    def _is_overload_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return (
+            "503" in msg
+            or "unavailable" in msg
+            or "overload" in msg
+            or "overloaded" in msg
+            or "timeout" in msg
+            or "timed out" in msg
+        )
+
+    def _get_fallback_translator(self) -> Optional["AITranslator"]:
+        provider = self._fallback_provider()
+        if provider is None:
+            return None
+        if provider == "ppio" and not os.getenv("PPIO_API_KEY"):
+            return None
+        if provider == "gemini" and not os.getenv("GEMINI_API_KEY"):
+            return None
+        if self._fallback_translator is None:
+            fallback_model = (
+                os.getenv("PPIO_MODEL", "zai-org/glm-4.7-flash")
+                if provider == "ppio"
+                else os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+            )
+            self._fallback_translator = AITranslator(
+                source_lang=self.source_lang,
+                target_lang=self.target_lang,
+                model=fallback_model,
+                provider=provider,
+            )
+        return self._fallback_translator
+
+    def _get_gemini_model_fallback_translators(self) -> list["AITranslator"]:
+        translators: list["AITranslator"] = []
+        if not os.getenv("GEMINI_API_KEY"):
+            return translators
+        for model_name in self._gemini_fallback_model_names():
+            if model_name not in self._gemini_model_fallback_translators:
+                self._gemini_model_fallback_translators[model_name] = AITranslator(
+                    source_lang=self.source_lang,
+                    target_lang=self.target_lang,
+                    model=model_name,
+                    provider="gemini",
+                    allow_gemini_model_fallback=False,
+                )
+            translators.append(self._gemini_model_fallback_translators[model_name])
+        return translators
+
+    def _fallback_translator_chain(self) -> list["AITranslator"]:
+        chain = self._get_gemini_model_fallback_translators()
+        provider_fallback = self._get_fallback_translator()
+        if provider_fallback is not None:
+            chain.append(provider_fallback)
+        return chain
+
+    async def _call_api_with_timeout(self, prompt: str, max_tokens: int) -> str:
+        """
+        Call primary provider with optional timeout guard.
+
+        Timeout guard is only enabled when fallback translator is available,
+        so single-provider setups keep previous behavior.
+        """
+        timeout_ms = _read_env_int("AI_TRANSLATE_PRIMARY_TIMEOUT_MS", 12000)
+        has_fallback = bool(self._fallback_translator_chain())
+        if timeout_ms <= 0 or not has_fallback:
+            return await self._call_api(prompt, max_tokens=max_tokens)
+
+        try:
+            return await asyncio.wait_for(
+                self._call_api(prompt, max_tokens=max_tokens),
+                timeout=timeout_ms / 1000.0,
+            )
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(f"primary timeout after {timeout_ms}ms") from exc
     
     async def translate(self, text: str) -> str:
         """翻译单个文本。"""
@@ -227,29 +360,16 @@ class AITranslator:
         log_input = _format_log_text(text, log_mode, log_limit)
         if log_input is not None:
             logger.info(f'translate: in="{_sanitize_log_text(log_input)}"')
-        
-        target_name = self._get_lang_name(self.target_lang)
-        
-        prompt = f"""你是一位资深的漫画翻译专家。
 
-# 任务
-将以下文本翻译为{target_name}。
-
-# 规则
-1. 口语化自然翻译，适合漫画对白
-2. 输入可能含 OCR 错误，请适当纠正（如 Im → I'm）
-3. 专有名词（人名/地名）音译，不可直译
-4. 若原文含多种语言，全部翻译为{target_name}，不保留原文
-5. 只输出翻译结果，不要任何解释或注释
-
-原文: {text}
-
-翻译:"""
-        
         start = time.perf_counter()
         logger.debug(f"translate: model={self.model} len={len(text)}")
         try:
-            result = await self._call_api(prompt, max_tokens=500)
+            # Reuse batch prompt and post-processing so single-item retries
+            # keep the same OCR correction behavior as batch translation.
+            result_list = await self.translate_batch([text])
+            result = ((result_list[0] if result_list else "") or "").strip()
+            if not result:
+                result = f"[翻译失败] {text}"
             duration_ms = (time.perf_counter() - start) * 1000
             logger.info(f"translate: ok model={self.model} ms={duration_ms:.0f} out_len={len(result)}")
             log_output = _format_log_text(result, log_mode, log_limit)
@@ -452,7 +572,7 @@ class AITranslator:
 你是一位资深的**漫画/汉化组翻译专家**，精通多国语言与{target_name}的文化转换。
 
 # OCR 纠错
-输入可能含OCR识别错误。你会看到每条文本的可选上下文(CTX)，来自同页相邻 1-2 个气泡。
+以下文本为OCR提取结果，可能存在识别错误、缺字或错字。你会看到每条文本的可选上下文(CTX)，来自同页相邻 1-2 个气泡。
 请结合上下文纠正拼写/字符错误；允许多字符纠错，但只有在把握足够时才修改，不确定则保留原文。
 例如：이닌 억은 → 이번 역은
 若为英文，纠正常见拼写错误（如 DONT → DON'T, Im → I'm, OLAINKEI → BLANKET）。
@@ -495,7 +615,13 @@ class AITranslator:
             for attempt in range(max_retries + 1):
                 try:
                     start = time.perf_counter()
-                    result = await self._call_api(prompt, max_tokens=4000)
+                    max_tokens = _estimate_batch_max_tokens(
+                        item_count=len(pairs),
+                        total_chars=len(numbered_texts),
+                    )
+                    result = await self._call_api_with_timeout(
+                        prompt, max_tokens=max_tokens
+                    )
                     duration_ms = (time.perf_counter() - start) * 1000
 
                     # 解析结果
@@ -569,6 +695,42 @@ class AITranslator:
                     return slice_results
 
                 except Exception as e:
+                    if self._is_overload_error(e):
+                        for fallback_translator in self._fallback_translator_chain():
+                            fallback_provider = getattr(fallback_translator, "provider", "unknown")
+                            fallback_model = getattr(fallback_translator, "model", "unknown")
+                            logger.warning(
+                                "batch: fallback provider=%s model=%s due to primary error=%s%s",
+                                fallback_provider,
+                                fallback_model,
+                                e,
+                                slice_note,
+                            )
+                            try:
+                                fallback_texts = [orig_text for _orig_idx, orig_text in pairs]
+                                fallback_contexts = [cleaned_contexts[orig_idx] for orig_idx, _orig_text in pairs]
+                                fallback_results = await fallback_translator.translate_batch(
+                                    fallback_texts,
+                                    output_format=output_format,
+                                    contexts=fallback_contexts,
+                                )
+                                if len(fallback_results) == len(pairs):
+                                    return [
+                                        (
+                                            orig_idx,
+                                            (_clean_ai_annotations(trans).strip() or f"[翻译失败] {orig_text}")
+                                        )
+                                        for (orig_idx, orig_text), trans in zip(pairs, fallback_results)
+                                    ]
+                            except Exception as fallback_exc:
+                                logger.error(
+                                    "batch: fallback failed provider=%s model=%s err=%s%s",
+                                    fallback_provider,
+                                    fallback_model,
+                                    fallback_exc,
+                                    slice_note,
+                                )
+
                     if attempt < max_retries:
                         error_msg = str(e)
                         # 如果是 400 错误，打印更多诊断信息
@@ -595,34 +757,68 @@ class AITranslator:
                 for orig_idx, orig_text in pairs
             ]
 
-        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 20)  # Larger batches = fewer API calls
-        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 2)  # Reduced to avoid rate limits
+        def _merge_results(result_pairs: list[tuple[int, str]]) -> list[str]:
+            merged = ["" for _ in texts]
+            for orig_idx, trans in result_pairs:
+                merged[orig_idx] = trans
+            return merged
+
+        def _all_failed(result_pairs: list[tuple[int, str]]) -> bool:
+            if not result_pairs:
+                return False
+            return all((trans or "").startswith("[翻译失败]") for _idx, trans in result_pairs)
+
+        async def _translate_in_chunks(
+            pairs: list[tuple[int, str]],
+            size: int,
+            max_concurrency: int,
+        ) -> list[tuple[int, str]]:
+            slices = [pairs[i : i + size] for i in range(0, len(pairs), size)]
+            sem = asyncio.Semaphore(max_concurrency)
+
+            async def _run_slice(idx: int, slice_pairs: list[tuple[int, str]]):
+                async with sem:
+                    return await _translate_pairs(slice_pairs, idx, len(slices))
+
+            results = await asyncio.gather(
+                *[_run_slice(i, slice_pairs) for i, slice_pairs in enumerate(slices)]
+            )
+            flattened: list[tuple[int, str]] = []
+            for slice_results in results:
+                flattened.extend(slice_results)
+            return flattened
+
+        # Prefer single-batch by default for better latency/cost.
+        chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 200)
+        concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 2)
+        fallback_chunk_size = _read_env_int(
+            "AI_TRANSLATE_BATCH_FALLBACK_CHUNK_SIZE",
+            min(12, chunk_size),
+        )
 
         if len(valid_pairs) <= chunk_size:
-            slice_results = await _translate_pairs(valid_pairs)
-            full_results = ["" for _ in texts]
-            for orig_idx, trans in slice_results:
-                full_results[orig_idx] = trans
-            return full_results
+            single_results = await _translate_pairs(valid_pairs)
+            should_fallback = (
+                len(valid_pairs) > 1
+                and fallback_chunk_size < len(valid_pairs)
+                and _all_failed(single_results)
+            )
+            if should_fallback:
+                logger.warning(
+                    "batch: full batch failed, fallback chunk_size=%d concurrency=%d",
+                    fallback_chunk_size,
+                    concurrency,
+                )
+                chunked_results = await _translate_in_chunks(
+                    valid_pairs,
+                    fallback_chunk_size,
+                    concurrency,
+                )
+                return _merge_results(chunked_results)
+            return _merge_results(single_results)
 
-        slices = [
-            valid_pairs[i : i + chunk_size]
-            for i in range(0, len(valid_pairs), chunk_size)
-        ]
-        sem = asyncio.Semaphore(concurrency)
-
-        async def _run_slice(idx: int, pairs: list[tuple[int, str]]):
-            async with sem:
-                return await _translate_pairs(pairs, idx, len(slices))
-
-        results = await asyncio.gather(
-            *[_run_slice(i, pairs) for i, pairs in enumerate(slices)]
-        )
-        full_results = ["" for _ in texts]
-        for slice_results in results:
-            for orig_idx, trans in slice_results:
-                full_results[orig_idx] = trans
-        return full_results
+        chunked_results = await _translate_in_chunks(valid_pairs, chunk_size, concurrency)
+        return _merge_results(chunked_results)
 
 
 # 测试
