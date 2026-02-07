@@ -74,7 +74,7 @@ const emit = defineEmits(['select'])
           class="px-3 py-1.5 text-xs font-semibold rounded-full transition-all duration-300 transform active:scale-95 border"
           :class="(disabled || loading)
             ? 'opacity-60 cursor-not-allowed bg-bg-secondary text-text-secondary border-transparent' 
-            : 'bg-bg-main border-border-subtle text-text-main hover:text-accent-1 hover:border-accent-1 hover:shadow-[0_0_10px_theme(\'colors.accent.1\')/20]'"
+            : 'bg-bg-main border-border-subtle text-text-main hover:text-accent-1 hover:border-accent-1 hover:shadow-lg hover:shadow-accent-1/20'"
         >
           {{ loading ? '...' : actionLabel }}
         </button>
@@ -107,8 +107,11 @@ const emit = defineEmits(['select'])
         </div>
         
         <!-- Loading Overlay -->
-        <div v-if="loading" class="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-20">
-            <i class="fas fa-circle-notch fa-spin text-accent-1 text-2xl"></i>
+        <div v-if="loading" class="absolute inset-2 loading-shell flex items-center justify-center z-20">
+            <div class="flex flex-col items-center gap-2">
+              <i class="fas fa-circle-notch fa-spin text-accent-1 text-sm"></i>
+              <span class="loading-line w-14"></span>
+            </div>
         </div>
     </div>
 

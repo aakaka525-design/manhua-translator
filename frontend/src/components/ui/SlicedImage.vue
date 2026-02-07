@@ -92,7 +92,12 @@ watch(
 
 <template>
   <div class="w-full">
-    <div v-if="isLoading" class="w-full pb-[140%] bg-bg-secondary/30 animate-pulse"></div>
+    <div v-if="isLoading" class="w-full pb-[140%] loading-shell">
+      <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
+        <i class="fas fa-images text-2xl text-text-secondary/30"></i>
+        <span class="loading-line w-24"></span>
+      </div>
+    </div>
 
     <div v-else-if="mode === 'slices'" class="w-full">
       <img

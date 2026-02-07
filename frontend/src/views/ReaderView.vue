@@ -9,6 +9,7 @@ import { useReadingHistory } from '@/composables/useReadingHistory'
 import CompareSlider from '@/components/ui/CompareSlider.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ContextMenu from '@/components/ui/ContextMenu.vue'
+import ComicLoading from '@/components/ui/ComicLoading.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -155,7 +156,7 @@ const contextMenuItems = [
     <!-- Reader Content -->
     <div class="max-w-4xl mx-auto min-h-screen">
       <div v-if="loading" class="flex items-center justify-center h-screen">
-        <div class="w-12 h-12 border-4 border-accent-1 border-t-transparent rounded-full animate-spin"></div>
+        <ComicLoading label="章节加载中..." compact />
       </div>
       
       <div v-else class="flex flex-col pt-14 sm:pt-16">

@@ -213,9 +213,13 @@ onUnmounted(() => {
                             @keydown.enter="scraper.search()"
                             placeholder="试试 'One Piece' 或 'ToonGod'..."
                             class="flex-1 bg-transparent py-4 text-text-main placeholder:text-text-secondary/50 focus:outline-none" />
-                        <button @click="scraper.search()" 
-                            class="px-6 py-4 bg-accent-1 text-white font-bold hover:bg-accent-1/90 transition-colors">
-                            搜索
+                        <button @click="scraper.search()" :disabled="scraper.loading"
+                            class="px-6 py-4 bg-accent-1 text-white font-bold hover:bg-accent-1/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                            <span v-if="scraper.loading" class="inline-flex items-center gap-2">
+                              <i class="fas fa-circle-notch fa-spin text-xs"></i>
+                              <span>加载中</span>
+                            </span>
+                            <span v-else>搜索</span>
                         </button>
                     </div>
                 </div>
@@ -242,7 +246,11 @@ onUnmounted(() => {
                    <button @click="scraper.search()" :disabled="scraper.loading"
                        class="px-4 py-1.5 bg-accent-1 rounded-lg text-white text-xs font-bold hover:bg-accent-1/90 transition-opacity"
                        :class="scraper.loading ? 'opacity-50' : ''">
-                       {{ scraper.loading ? '...' : 'Go' }}
+                       <span v-if="scraper.loading" class="inline-flex items-center gap-1.5">
+                        <i class="fas fa-circle-notch fa-spin text-[10px]"></i>
+                        <span>加载中</span>
+                       </span>
+                       <span v-else>Go</span>
                    </button>
                 </div>
 
@@ -315,9 +323,11 @@ onUnmounted(() => {
 
             <!-- Infinite Scroll Sentinel & Status -->
             <div ref="sentinel" class="mt-6 flex items-center justify-center min-h-[50px]">
-              <span v-if="scraper.catalog.loading" class="text-xs text-text-secondary animate-pulse">
-                加载中...
-              </span>
+              <div v-if="scraper.catalog.loading" class="inline-flex items-center gap-2 text-xs text-text-secondary">
+                <i class="fas fa-circle-notch fa-spin text-[10px]"></i>
+                <span class="loading-line w-16"></span>
+                <span>加载中</span>
+              </div>
               <span v-else-if="!scraper.catalog.hasMore && scraper.catalog.items.length > 0" class="text-xs text-text-secondary opacity-50">
                 - End -
               </span>
@@ -366,7 +376,11 @@ onUnmounted(() => {
                             </select>
                             <button @click="scraper.parseUrl()" :disabled="scraper.parser.loading"
                                 class="ml-2 px-6 py-2 rounded-lg bg-accent-1 text-white font-bold text-sm hover:bg-accent-1/90 transition-all disabled:opacity-50 whitespace-nowrap shadow-lg shadow-accent-1/20">
-                                {{ scraper.parser.loading ? '解析中...' : '开始解析' }}
+                                <span v-if="scraper.parser.loading" class="inline-flex items-center gap-2">
+                                  <i class="fas fa-circle-notch fa-spin text-xs"></i>
+                                  <span>解析中</span>
+                                </span>
+                                <span v-else>开始解析</span>
                             </button>
                         </div>
                     </div>

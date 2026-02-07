@@ -77,7 +77,12 @@ onMounted(() => {
     class="relative w-full overflow-hidden select-none touch-pan-y"
   >
     <!-- Translated Image (Background) -->
-    <div v-if="!isVisible" class="w-full pb-[140%] bg-bg-secondary/30 animate-pulse"></div>
+    <div v-if="!isVisible" class="w-full pb-[140%] loading-shell">
+      <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
+        <i class="fas fa-clone text-2xl text-text-secondary/35"></i>
+        <span class="loading-line w-28"></span>
+      </div>
+    </div>
     <SlicedImage
       v-if="isVisible"
       :src="translated"

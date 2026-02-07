@@ -77,10 +77,11 @@ const onError = () => {
 <template>
   <div ref="imgRef" class="relative overflow-hidden bg-bg-secondary/30 w-full h-full flex items-center justify-center">
     <!-- Placeholder / Skeleton -->
-    <div v-if="!isLoaded && !error" class="absolute inset-0 animate-pulse bg-bg-secondary/50">
-        <div class="h-full w-full flex items-center justify-center">
-            <i class="fas fa-image text-4xl text-text-secondary/20"></i>
-        </div>
+    <div v-if="!isLoaded && !error" class="absolute inset-0 loading-shell rounded-none">
+      <div class="h-full w-full flex flex-col items-center justify-center gap-3 px-4">
+        <i class="fas fa-image text-3xl text-text-secondary/35"></i>
+        <span class="loading-line w-20"></span>
+      </div>
     </div>
 
     <!-- Error State -->
