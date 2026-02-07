@@ -301,6 +301,7 @@ class PaddleOCREngine(OCREngine):
         min_len: int = 2,
     ) -> list[RegionData]:
         regions: list[RegionData] = []
+        predict_error: Exception | None = None
 
         def add_region(text, score, box_any):
             if not text or not str(text).strip():
@@ -331,7 +332,8 @@ class PaddleOCREngine(OCREngine):
 
         try:
             result = ocr.predict(chunk)
-        except Exception:
+        except Exception as exc:
+            predict_error = exc
             result = None
 
         if result:
@@ -369,9 +371,13 @@ class PaddleOCREngine(OCREngine):
         try:
             legacy = ocr.ocr(chunk, det=True, rec=True, cls=False)
         except Exception:
+            if predict_error is not None:
+                raise RuntimeError(f"OCR predict failed: {predict_error}") from predict_error
             return regions
 
         if not legacy:
+            if predict_error is not None:
+                raise RuntimeError(f"OCR predict failed: {predict_error}") from predict_error
             return regions
 
         # PaddleOCR may return a list containing a single list of detections.

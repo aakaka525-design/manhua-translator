@@ -31,3 +31,23 @@ def test_process_chunk_handles_nested_legacy_output():
     regions = engine._process_chunk(fake, chunk, y_offset=0, min_score=0.5, min_len=1)
 
     assert [r.source_text for r in regions] == ["테스트1", "테스트2"]
+
+
+class _FakeBrokenOCR:
+    def predict(self, chunk):
+        raise NotImplementedError("predict backend crash")
+
+    def ocr(self, chunk, det=True, rec=True, cls=False):
+        raise TypeError("unexpected keyword argument 'det'")
+
+
+def test_process_chunk_raises_when_predict_and_legacy_both_fail():
+    engine = PaddleOCREngine(lang="korean")
+    fake = _FakeBrokenOCR()
+    chunk = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    try:
+        engine._process_chunk(fake, chunk, y_offset=0, min_score=0.5, min_len=1)
+        assert False, "expected RuntimeError"
+    except RuntimeError as exc:
+        assert "OCR predict failed" in str(exc)
