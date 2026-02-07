@@ -50,6 +50,13 @@ _scraper_tasks: dict[str, dict[str, object]] = {}
 _task_ttl_sec = 60 * 60
 
 
+def _scraper_http_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message},
+    )
+
+
 class MangaPayload(BaseModel):
     id: str
     title: Optional[str] = None
@@ -593,7 +600,11 @@ async def search_manga(request: ScraperSearchRequest, settings=Depends(get_setti
     try:
         results = await engine.search(request.keyword)
     except CloudflareChallengeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _scraper_http_error(
+            403,
+            "SCRAPER_AUTH_CHALLENGE",
+            str(exc) or "站点触发验证，请先完成认证",
+        )
     return [
         MangaPayload(
             id=item.id,
@@ -615,9 +626,15 @@ async def list_catalog(request: ScraperCatalogRequest, settings=Depends(get_sett
             page=page, orderby=request.orderby, path=catalog_path
         )
     except NotImplementedError:
-        raise HTTPException(status_code=400, detail="站点不支持目录浏览")
+        raise _scraper_http_error(
+            400, "SCRAPER_CATALOG_UNSUPPORTED", "站点不支持目录浏览"
+        )
     except CloudflareChallengeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _scraper_http_error(
+            403,
+            "SCRAPER_AUTH_CHALLENGE",
+            str(exc) or "站点触发验证，请先完成认证",
+        )
     results_list, has_more = result
     results_list = list(results_list)
     items = [
@@ -749,17 +766,21 @@ async def upload_state(
     file: UploadFile = File(...),
 ):
     if not file.filename or not file.filename.endswith(".json"):
-        raise HTTPException(status_code=400, detail="仅支持 JSON 状态文件")
+        raise _scraper_http_error(
+            400, "SCRAPER_STATE_FILE_TYPE_INVALID", "仅支持 JSON 状态文件"
+        )
     content = await file.read()
     if len(content) > 2 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="文件过大")
+        raise _scraper_http_error(400, "SCRAPER_STATE_FILE_TOO_LARGE", "文件过大")
     try:
         payload = json.loads(content)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="JSON 解析失败")
+        raise _scraper_http_error(400, "SCRAPER_STATE_JSON_INVALID", "JSON 解析失败")
     cookies = payload.get("cookies") if isinstance(payload, dict) else None
     if not isinstance(cookies, list) or not cookies:
-        raise HTTPException(status_code=400, detail="状态文件中没有 cookie")
+        raise _scraper_http_error(
+            400, "SCRAPER_STATE_COOKIE_MISSING", "状态文件中没有 cookie"
+        )
 
     target_path = _default_state_path(base_url)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -790,7 +811,9 @@ async def proxy_image(
     user_agent: Optional[str] = Query(None),
 ):
     if not _is_allowed_image_host(url, base_url):
-        raise HTTPException(status_code=400, detail="不支持的图片来源")
+        raise _scraper_http_error(
+            400, "SCRAPER_IMAGE_SOURCE_UNSUPPORTED", "不支持的图片来源"
+        )
     storage_path = storage_state_path or str(_default_state_path(base_url))
     cache_path = _cover_cache_path(url)
     if cache_path.exists() and cache_path.stat().st_size > 0:
@@ -808,7 +831,7 @@ async def proxy_image(
             user_agent,
         )
     if data is None:
-        raise HTTPException(status_code=403, detail="图片获取失败")
+        raise _scraper_http_error(403, "SCRAPER_IMAGE_FETCH_FORBIDDEN", "图片获取失败")
 
     content, content_type = data
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -837,7 +860,11 @@ async def list_chapters(
     try:
         chapters = await engine.list_chapters(manga)
     except CloudflareChallengeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _scraper_http_error(
+            403,
+            "SCRAPER_AUTH_CHALLENGE",
+            str(exc) or "站点触发验证，请先完成认证",
+        )
     payloads = []
     for item in chapters:
         downloaded, downloaded_count, downloaded_total = _get_download_stats(
@@ -911,7 +938,7 @@ async def get_scraper_task(task_id: str):
     _prune_tasks()
     task = _scraper_tasks.get(task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+        raise _scraper_http_error(404, "SCRAPER_TASK_NOT_FOUND", "任务不存在")
     message = task.get("message")
     report = task.get("report")
     report_payload = report if isinstance(report, dict) else None
