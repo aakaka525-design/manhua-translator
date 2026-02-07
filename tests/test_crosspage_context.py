@@ -155,6 +155,84 @@ def test_crosspage_pair_id_assigned(tmp_path, monkeypatch):
     assert result.regions[0].crosspage_role == "current_bottom"
 
 
+def test_ocr_result_cache_hits_on_second_run(tmp_path, monkeypatch):
+    import asyncio
+    from PIL import Image
+
+    from core.models import TaskContext
+    from core.modules.ocr import OCRModule
+
+    monkeypatch.setenv("OCR_RESULT_CACHE_ENABLE", "1")
+    monkeypatch.setenv("OCR_CROSSPAGE_EDGE_ENABLE", "0")
+    monkeypatch.setenv("OCR_RESULT_CACHE_DIR", str(tmp_path / "ocr-cache"))
+
+    image_path = tmp_path / "1.jpg"
+    Image.new("RGB", (120, 120), (255, 255, 255)).save(image_path)
+
+    calls = {"detect": 0}
+
+    class _FakeEngine:
+        lang = "en"
+        last_tile_avg_ms = None
+
+        async def detect_and_recognize(self, _image_path: str):
+            calls["detect"] += 1
+            return [
+                RegionData(
+                    box_2d=Box2D(x1=10, y1=10, x2=30, y2=30),
+                    source_text="HELLO",
+                    confidence=0.9,
+                )
+            ]
+
+    module = OCRModule(use_mock=True)
+    module.engine = _FakeEngine()
+
+    ctx1 = TaskContext(image_path=str(image_path), source_language="en")
+    ctx2 = TaskContext(image_path=str(image_path), source_language="en")
+    asyncio.run(module.process(ctx1))
+    asyncio.run(module.process(ctx2))
+
+    assert calls["detect"] == 1
+    assert (ctx2.regions[0].source_text or "").strip() == "HELLO"
+
+
+def test_ocr_crosspage_can_be_disabled(tmp_path, monkeypatch):
+    import asyncio
+    from PIL import Image
+
+    from core.models import TaskContext
+    from core.modules.ocr import OCRModule
+
+    monkeypatch.setenv("OCR_CROSSPAGE_EDGE_ENABLE", "0")
+    monkeypatch.setenv("OCR_RESULT_CACHE_ENABLE", "0")
+
+    for name in ("1.jpg", "2.jpg", "3.jpg"):
+        Image.new("RGB", (100, 1000), (255, 255, 255)).save(tmp_path / name)
+
+    class _FakeEngine:
+        lang = "en"
+
+        async def detect_and_recognize(self, _image_path: str):
+            return [
+                RegionData(
+                    box_2d=Box2D(x1=0, y1=0, x2=20, y2=10),
+                    source_text="A",
+                    confidence=0.9,
+                )
+            ]
+
+        async def detect_and_recognize_band(self, _image_path: str, edge: str, band_height: int):
+            raise AssertionError(f"crosspage should be disabled, but band OCR called: {edge}/{band_height}")
+
+    module = OCRModule(use_mock=True)
+    module.engine = _FakeEngine()
+
+    ctx = TaskContext(image_path=str(tmp_path / "2.jpg"), source_language="en")
+    result = asyncio.run(module.process(ctx))
+    assert len(result.regions) == 1
+
+
 def test_translator_appends_crosspage_texts_and_skips():
     import asyncio
     from core.models import TaskContext

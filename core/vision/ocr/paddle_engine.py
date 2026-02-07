@@ -1,6 +1,7 @@
 """PaddleOCR engine implementation."""
 
 import asyncio
+import os
 import time
 from uuid import uuid4
 
@@ -40,6 +41,11 @@ class PaddleOCREngine(OCREngine):
         if self._ocr is None:
             self._ocr = get_cached_ocr(self.lang)
         return self._ocr
+
+    @staticmethod
+    def _edge_tiles_enabled() -> bool:
+        raw = os.getenv("OCR_EDGE_TILE_ENABLE", "0").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
 
     def _min_len_for_lang(self) -> int:
         lang = (self.lang or "").lower()
@@ -199,14 +205,15 @@ class PaddleOCREngine(OCREngine):
             )
 
             # Edge band OCR to catch boundary text (top/bottom)
-            edge_tiles = tiling_manager.create_edge_tiles(processed_image)
-            for edge_tile in edge_tiles:
-                edge_regions = self._process_chunk(
-                    ocr, edge_tile.image, 0, min_score=0.4, min_len=1
-                )
-                remapped = tiling_manager.remap_regions(edge_regions, edge_tile)
-                all_regions.extend(remapped)
-            all_regions = tiling_manager.merge_regions(all_regions, iou_threshold=0.5)
+            if self._edge_tiles_enabled():
+                edge_tiles = tiling_manager.create_edge_tiles(processed_image)
+                for edge_tile in edge_tiles:
+                    edge_regions = self._process_chunk(
+                        ocr, edge_tile.image, 0, min_score=0.4, min_len=1
+                    )
+                    remapped = tiling_manager.remap_regions(edge_regions, edge_tile)
+                    all_regions.extend(remapped)
+                all_regions = tiling_manager.merge_regions(all_regions, iou_threshold=0.5)
         else:
             all_regions = self._process_chunk(
                 ocr, processed_image, 0, min_len=min_len

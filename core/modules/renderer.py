@@ -10,6 +10,7 @@ Uses the full-featured TextRenderer from core/renderer.py with:
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +22,22 @@ from ..image_io import save_image
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+
+def _upscale_enabled_for_pipeline() -> bool:
+    raw = os.getenv("UPSCALE_ENABLE", "0").strip().lower()
+    enabled = raw in {"1", "true", "yes", "on"}
+    try:
+        from app.routes.settings import get_current_upscale_enable
+    except Exception:
+        return enabled
+    try:
+        override = get_current_upscale_enable()
+    except Exception:
+        return enabled
+    if override is None:
+        return enabled
+    return bool(override)
 
 
 class RendererModule(BaseModule):
@@ -73,6 +90,8 @@ class RendererModule(BaseModule):
         Returns:
             Updated context with final output path
         """
+        save_purpose = "intermediate" if _upscale_enabled_for_pipeline() else "final"
+
         if not context.regions:
             regions_to_render = []
         else:
@@ -123,7 +142,11 @@ class RendererModule(BaseModule):
             )
             from PIL import Image
 
-            saved_path = save_image(Image.open(source).convert("RGB"), str(final_path), purpose="final")
+            saved_path = save_image(
+                Image.open(source).convert("RGB"),
+                str(final_path),
+                purpose=save_purpose,
+            )
             context.output_path = saved_path
             logger.debug(f"[{context.task_id}] Renderer: 无区域需要渲染，复制原图")
             return context
@@ -141,6 +164,7 @@ class RendererModule(BaseModule):
             regions=regions_to_render,
             output_path=str(final_path),
             original_image_path=context.image_path,
+            purpose=save_purpose,
         )
 
         duration_ms = (time.perf_counter() - start_time) * 1000

@@ -77,7 +77,7 @@ def test_upscaler_replaces_output_with_temp(monkeypatch, tmp_path):
 
     def _fake_run(cmd, capture_output, text, check, timeout, cwd=None):
         out_path = Path(cmd[cmd.index("-o") + 1])
-        out_path.write_bytes(b"upscaled")
+        cv2.imwrite(str(out_path), np.zeros((8, 8, 3), dtype=np.uint8))
         calls["cmd"] = cmd
         calls["cwd"] = cwd
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="Vulkan")
@@ -85,7 +85,8 @@ def test_upscaler_replaces_output_with_temp(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", _fake_run)
 
     asyncio.run(module.process(ctx))
-    assert Path(ctx.output_path).read_bytes() == b"upscaled"
+    assert Path(ctx.output_path).exists()
+    assert cv2.imread(str(Path(ctx.output_path)), cv2.IMREAD_COLOR) is not None
     assert "realesrgan-x4plus-anime" in calls["cmd"]
     assert calls["cwd"] == str(binary.parent)
 
@@ -117,7 +118,7 @@ def test_upscaler_ncnn_uses_absolute_paths(monkeypatch, tmp_path):
         calls["cmd"] = cmd
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"upscaled")
+        cv2.imwrite(str(out_path), np.zeros((8, 8, 3), dtype=np.uint8))
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
@@ -156,7 +157,7 @@ def test_upscaler_ncnn_passes_model_dir(monkeypatch, tmp_path):
         calls["cmd"] = cmd
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"upscaled")
+        cv2.imwrite(str(out_path), np.zeros((8, 8, 3), dtype=np.uint8))
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
@@ -195,7 +196,7 @@ def test_upscaler_ncnn_uses_tile_flag(monkeypatch, tmp_path):
         calls["cmd"] = cmd
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"upscaled")
+        cv2.imwrite(str(out_path), np.zeros((8, 8, 3), dtype=np.uint8))
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
@@ -205,6 +206,51 @@ def test_upscaler_ncnn_uses_tile_flag(monkeypatch, tmp_path):
     assert "-t" in calls["cmd"]
     idx = calls["cmd"].index("-t")
     assert calls["cmd"][idx + 1] == "256"
+
+
+def test_upscaler_ncnn_always_saves_final_image(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPSCALE_ENABLE", "1")
+    monkeypatch.setenv("UPSCALE_BACKEND", "ncnn")
+    monkeypatch.setenv("UPSCALE_MODEL", "realesrgan-x4plus-anime")
+    monkeypatch.setenv("UPSCALE_SCALE", "2")
+
+    binary = tmp_path / "realesrgan-ncnn-vulkan"
+    binary.write_text("bin")
+    binary.chmod(0o755)
+
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("UPSCALE_NCNN_MODEL_DIR", str(model_dir))
+
+    out_path = tmp_path / "translated.png"
+    out_path.write_bytes(b"fake")
+
+    ctx = TaskContext(image_path=str(out_path), output_path=str(out_path))
+    module = UpscaleModule(binary_path=str(binary))
+
+    def _fake_run(cmd, capture_output, text, check, timeout, cwd=None):
+        out_file = Path(cmd[cmd.index("-o") + 1])
+        cv2.imwrite(str(out_file), np.zeros((8, 8, 3), dtype=np.uint8))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    saved = {"called": False}
+
+    def _fake_save(image, path, purpose="intermediate"):
+        saved["called"] = True
+        saved["path"] = path
+        saved["purpose"] = purpose
+        final_path = tmp_path / "translated.final.webp"
+        cv2.imwrite(str(tmp_path / "translated.final.png"), image)
+        return str(final_path)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    monkeypatch.setattr("core.modules.upscaler.save_image", _fake_save)
+
+    asyncio.run(module.process(ctx))
+
+    assert saved["called"] is True
+    assert saved["purpose"] == "final"
+    assert ctx.output_path == str(tmp_path / "translated.final.webp")
 
 
 def test_upscaler_pytorch_missing_model_raises(monkeypatch, tmp_path):

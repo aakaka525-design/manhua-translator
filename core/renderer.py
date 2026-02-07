@@ -12,7 +12,7 @@ import asyncio
 import math
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Literal, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -469,6 +469,7 @@ class TextRenderer:
         regions: list[RegionData],
         output_path: str,
         original_image_path: Optional[str] = None,
+        purpose: Literal["final", "intermediate"] = "final",
     ) -> str:
         """
         Render translated text onto image.
@@ -490,6 +491,7 @@ class TextRenderer:
             regions,
             output_path,
             original_image_path,
+            purpose,
         )
 
     def _render_sync(
@@ -498,6 +500,7 @@ class TextRenderer:
         regions: list[RegionData],
         output_path: str,
         original_image_path: Optional[str] = None,
+        purpose: Literal["final", "intermediate"] = "final",
     ) -> str:
         """Synchronous rendering implementation."""
         # Load images
@@ -654,7 +657,7 @@ class TextRenderer:
                     draw.text((x, y), line, font=font, fill=text_color)
 
         # Save result
-        return save_image(image, output_path, purpose="final")
+        return save_image(image, output_path, purpose=purpose)
 
 
 # Convenience function

@@ -190,6 +190,9 @@ def _is_ocr_noise(text: str) -> tuple[bool, str]:
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u3130-\u318f\u1100-\u11ff]")
+_URL_LIKE_RE = re.compile(r"(https?://|www\.|discord\.gg/)", re.IGNORECASE)
+_SHORT_ASCII_TOKEN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,5}$")
+_VERY_SHORT_ALNUM_RE = re.compile(r"^[A-Za-z0-9]{1,4}$")
 
 
 def _has_cjk(text: str) -> bool:
@@ -209,6 +212,25 @@ def _english_ratio(text: str) -> float:
         return 0.0
     eng = sum(1 for c in chars if "A" <= c.upper() <= "Z")
     return eng / len(chars)
+
+
+def _skip_zh_retranslate(src_text: str, translation: str) -> bool:
+    """Skip expensive zh fallback retries for obvious short tokens/noise."""
+    src = (src_text or "").strip()
+    out = (translation or "").strip()
+    if not src:
+        return False
+    if out.startswith("[翻译失败]"):
+        return False
+    if _URL_LIKE_RE.search(src):
+        return True
+    if re.match(r"^[\u2160-\u2188IVXLCDM]+$", src, re.IGNORECASE):
+        return True
+    if _SHORT_ASCII_TOKEN_RE.match(src) or _VERY_SHORT_ALNUM_RE.match(src):
+        return True
+    if " " not in src and len(src) <= 12 and out == src:
+        return True
+    return False
 
 
 def _has_hangul(text: str) -> bool:
@@ -242,6 +264,32 @@ def _looks_like_hangul_sfx(raw: str) -> bool:
     if 5 <= length <= 6:
         return is_repeat
     return False
+
+
+def _normalize_google_lang(lang: Optional[str], *, for_target: bool) -> Optional[str]:
+    """Map project language codes to deep-translator GoogleTranslator supported codes."""
+    if not lang:
+        return lang
+
+    key = str(lang).strip()
+    if not key:
+        return key
+
+    lowered = key.lower()
+    lang_map = {
+        "zh": "zh-CN",
+        "zh-cn": "zh-CN",
+        "zh-hans": "zh-CN",
+        "zh-tw": "zh-TW",
+        "zh-hant": "zh-TW",
+        "korean": "ko",
+        "japanese": "ja",
+        "english": "en",
+        "chinese": "zh-CN",
+    }
+    if not for_target and lowered == "auto":
+        return "auto"
+    return lang_map.get(lowered, key)
 
 
 def _snippet(text: Optional[str], limit: int = 20) -> str:
@@ -912,10 +960,12 @@ class TranslatorModule(BaseModule):
                 else:
                     # Google Translate 逐个翻译
                     translations = []
+                    google_source = _normalize_google_lang(self.source_lang, for_target=False)
+                    google_target = _normalize_google_lang(self.target_lang, for_target=True)
                     for text in texts_to_translate:
                         translator = self._translator_class(
-                            source=self.source_lang,
-                            target=self.target_lang
+                            source=google_source,
+                            target=google_target
                         )
                         start = time.perf_counter()
                         loop = asyncio.get_event_loop()
@@ -952,6 +1002,16 @@ class TranslatorModule(BaseModule):
                                 or (_english_ratio(translation) >= 0.35)
                             )
                             if needs_fallback:
+                                if _skip_zh_retranslate(src_text, translation):
+                                    if debug:
+                                        logger.info(
+                                            "[%s] skip retranslate src=%s out=%s",
+                                            context.task_id,
+                                            _snippet(src_text),
+                                            _snippet(translation),
+                                        )
+                                    fixed_translations.append(translation)
+                                    continue
                                 fallback_input = src_text or ""
                                 fallback_source = "src"
                                 if translation and not translation.strip().startswith("[翻译失败]"):
@@ -981,16 +1041,36 @@ class TranslatorModule(BaseModule):
                                             gt_class = None
                                     if gt_class is not None:
                                         loop = asyncio.get_event_loop()
-                                        translator = gt_class(
-                                            source=self.source_lang,
-                                            target=self.target_lang,
+                                        google_source = _normalize_google_lang(
+                                            self.source_lang, for_target=False
+                                        )
+                                        google_target = _normalize_google_lang(
+                                            self.target_lang, for_target=True
                                         )
                                         try:
-                                            translation = await loop.run_in_executor(
-                                                None, translator.translate, fallback_input
+                                            translator = gt_class(
+                                                source=google_source,
+                                                target=google_target,
                                             )
-                                        except Exception:
-                                            pass
+                                        except Exception as init_exc:
+                                            logger.warning(
+                                                "[%s] Google fallback init failed: source=%s target=%s err=%s",
+                                                context.task_id,
+                                                google_source,
+                                                google_target,
+                                                init_exc,
+                                            )
+                                        else:
+                                            try:
+                                                translation = await loop.run_in_executor(
+                                                    None, translator.translate, fallback_input
+                                                )
+                                            except Exception as gt_exc:
+                                                logger.warning(
+                                                    "[%s] Google fallback translate failed: err=%s",
+                                                    context.task_id,
+                                                    gt_exc,
+                                                )
                             fixed_translations.append(translation)
                         translations = fixed_translations
                 

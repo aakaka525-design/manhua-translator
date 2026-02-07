@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -280,18 +279,18 @@ class UpscaleModule(BaseModule):
         if not tmp_path.exists():
             raise RuntimeError(f"Upscale output missing: {tmp_path}")
 
-        if output_path.suffix.lower() == ".webp":
-            image = cv2.imread(str(tmp_path), cv2.IMREAD_COLOR)
-            if image is None:
-                raise RuntimeError(f"Failed to read image: {tmp_path}")
-            saved_path = save_image(image, str(output_path), purpose="final")
-            output_path = Path(saved_path)
-            if output_tmp and output_tmp.exists():
-                output_tmp.unlink()
-            if input_tmp and input_tmp.exists():
-                input_tmp.unlink()
-        else:
-            shutil.move(str(tmp_path), str(output_path))
+        image = cv2.imread(str(tmp_path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise RuntimeError(f"Failed to read image: {tmp_path}")
+        saved_path = save_image(image, str(output_path), purpose="final")
+        output_path = Path(saved_path)
+
+        if tmp_path.exists():
+            tmp_path.unlink()
+        if output_tmp and output_tmp.exists():
+            output_tmp.unlink()
+        if input_tmp and input_tmp.exists():
+            input_tmp.unlink()
 
         stderr = (result.stderr or "").lower()
         if "cpu" in stderr and "fallback" in stderr:

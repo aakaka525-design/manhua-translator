@@ -6,12 +6,14 @@ Replaces mock implementation with PaddleOCREngine.
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import time
 from pathlib import Path
 from typing import Optional
 
+from ..models import RegionData
 from ..models import TaskContext
 from ..modules.base import BaseModule
 from ..vision import OCREngine, PaddleOCREngine, MockOCREngine
@@ -88,6 +90,58 @@ class OCRModule(BaseModule):
         )
         return hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
 
+    @staticmethod
+    def _env_flag(name: str, default: str = "0") -> bool:
+        return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _crosspage_enabled(self) -> bool:
+        return self._env_flag("OCR_CROSSPAGE_EDGE_ENABLE", "1")
+
+    def _cache_enabled(self) -> bool:
+        return self._env_flag("OCR_RESULT_CACHE_ENABLE", "1")
+
+    @staticmethod
+    def _cache_dir() -> Path:
+        raw = os.getenv("OCR_RESULT_CACHE_DIR", "temp/ocr_cache")
+        return Path(raw).expanduser().resolve()
+
+    @staticmethod
+    def _build_cache_key(image_path: str, lang: str) -> str:
+        path = Path(image_path).expanduser().resolve()
+        try:
+            st = path.stat()
+            stat_sig = f"{st.st_size}:{st.st_mtime_ns}"
+        except OSError:
+            stat_sig = "missing"
+        digest = hashlib.sha1(f"{path}:{lang}:{stat_sig}:v1".encode("utf-8")).hexdigest()
+        return digest
+
+    def _load_cached_regions(self, image_path: str, lang: str) -> Optional[list[RegionData]]:
+        if not self._cache_enabled():
+            return None
+        cache_file = self._cache_dir() / f"{self._build_cache_key(image_path, lang)}.json"
+        if not cache_file.exists():
+            return None
+        try:
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+            return [RegionData.model_validate(item) for item in payload.get("regions", [])]
+        except Exception as exc:
+            logger.debug("OCR cache read failed: %s", exc)
+            return None
+
+    def _save_cached_regions(self, image_path: str, lang: str, regions: list[RegionData]) -> None:
+        if not self._cache_enabled():
+            return
+        cache_dir = self._cache_dir()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / f"{self._build_cache_key(image_path, lang)}.json"
+        payload = {
+            "image_path": str(Path(image_path).expanduser().resolve()),
+            "lang": lang,
+            "regions": [r.model_dump(mode="json") for r in regions],
+        }
+        cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
     async def process(self, context: TaskContext) -> TaskContext:
         """
         检测并识别图像中的文本。
@@ -125,12 +179,24 @@ class OCRModule(BaseModule):
             image_height = 0
             image_width = 0
 
-        # 使用全局锁确保 PaddleOCR 串行执行，避免并发竞争问题
-        async with _ocr_lock:
-            # 使用 detect_and_recognize 统一入口（支持长图切片）
-            context.regions = await self.engine.detect_and_recognize(
-                context.image_path,
+        cached_regions = self._load_cached_regions(context.image_path, target_lang)
+        if cached_regions is not None:
+            context.regions = cached_regions
+            logger.info(
+                "[%s] OCR cache hit: %s regions",
+                context.task_id,
+                len(context.regions),
             )
+        else:
+            # 使用全局锁确保 PaddleOCR 串行执行，避免并发竞争问题
+            async with _ocr_lock:
+                # 使用 detect_and_recognize 统一入口（支持长图切片）
+                context.regions = await self.engine.detect_and_recognize(
+                    context.image_path,
+                )
+            # Post-process OCR text (normalize + SFX detection + locale fixes)
+            OCRPostProcessor().process_regions(context.regions, lang=target_lang)
+            self._save_cached_regions(context.image_path, target_lang, context.regions)
         if os.getenv("DEBUG_OCR") == "1":
             logger.info(
                 "[%s] OCR raw regions: %s",
@@ -145,11 +211,8 @@ class OCRModule(BaseModule):
                 ],
             )
 
-        # Post-process OCR text (normalize + SFX detection + locale fixes)
-        OCRPostProcessor().process_regions(context.regions, lang=target_lang)
-
         # Cross-page context: match top/bottom edge bands with neighbor pages
-        if image_height > 0:
+        if image_height > 0 and self._crosspage_enabled():
             band_height = self._calc_band_height(image_height)
             current_path = Path(context.image_path)
             parent = current_path.parent
@@ -290,7 +353,9 @@ class OCRModule(BaseModule):
         if hasattr(self.engine, 'last_tile_count'):
             self.last_metrics["tile_count"] = self.engine.last_tile_count
         if hasattr(self.engine, 'last_tile_avg_ms'):
-            self.last_metrics["tile_avg_ms"] = round(self.engine.last_tile_avg_ms, 2)
+            tile_avg_ms = getattr(self.engine, "last_tile_avg_ms", None)
+            if tile_avg_ms is not None:
+                self.last_metrics["tile_avg_ms"] = round(tile_avg_ms, 2)
 
         logger.info(f"[{context.task_id}] OCR 完成: 识别 {len(context.regions)} 个区域, 耗时 {duration_ms:.0f}ms")
         
