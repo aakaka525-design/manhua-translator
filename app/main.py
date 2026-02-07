@@ -8,10 +8,13 @@ from contextlib import asynccontextmanager
 import asyncio
 import os
 from pathlib import Path
+import logging
+from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from .deps import get_settings
 from .routes import translate, manga, scraper, parser
@@ -24,6 +27,40 @@ from core.logging_config import init_default_logging
 from core.model_setup import ModelRegistry, ModelWarmupService
 
 init_default_logging()
+logger = logging.getLogger(__name__)
+
+
+def _get_request_id(request: Request) -> str:
+    request_id = getattr(request.state, "request_id", None)
+    if request_id:
+        return request_id
+    request_id = str(uuid4())
+    request.state.request_id = request_id
+    return request_id
+
+
+def _build_error_response(
+    request: Request,
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    detail,
+) -> JSONResponse:
+    request_id = _get_request_id(request)
+    response = JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": detail,
+            "error": {
+                "code": code,
+                "message": message,
+                "request_id": request_id,
+            },
+        },
+    )
+    response.headers["X-Request-Id"] = request_id
+    return response
 
 
 @asynccontextmanager
@@ -59,6 +96,15 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-Id") or request.headers.get("x-request-id") or str(uuid4())
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = request_id
+    return response
 
 # CORS middleware
 app.add_middleware(
@@ -152,15 +198,45 @@ if _should_serve_frontend():
         return FileResponse(index_file)
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail
+    message = detail if isinstance(detail, str) else f"HTTP {exc.status_code}"
+    return _build_error_response(
+        request,
+        status_code=exc.status_code,
+        code=f"HTTP_{exc.status_code}",
+        message=message,
+        detail=detail,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return _build_error_response(
+        request,
+        status_code=422,
+        code="VALIDATION_ERROR",
+        message="Request validation failed",
+        detail=exc.errors(),
+    )
+
+
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
+async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler."""
-    return JSONResponse(
+    logger.exception(
+        "[%s] Unhandled exception on %s %s",
+        _get_request_id(request),
+        request.method,
+        request.url.path,
+    )
+    return _build_error_response(
+        request,
         status_code=500,
-        content={
-            "error": "Internal server error",
-            "detail": str(exc),
-        },
+        code="INTERNAL_SERVER_ERROR",
+        message="Internal server error",
+        detail="Internal server error",
     )
 
 

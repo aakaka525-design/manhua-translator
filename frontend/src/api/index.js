@@ -5,6 +5,33 @@ const api = axios.create({
     timeout: 10000
 })
 
+function extractApiError(err) {
+    const status = err?.response?.status
+    const body = err?.response?.data || {}
+    const headers = err?.response?.headers || {}
+
+    let message = '请求失败'
+    if (typeof body.detail === 'string' && body.detail.trim()) {
+        message = body.detail
+    } else if (typeof body.error?.message === 'string' && body.error.message.trim()) {
+        message = body.error.message
+    } else if (typeof err?.message === 'string' && err.message.trim()) {
+        message = err.message
+    }
+
+    const error = new Error(message)
+    error.status = status
+    error.code = body.error?.code || err?.code || 'API_ERROR'
+    error.requestId = body.error?.request_id || headers['x-request-id'] || null
+    error.raw = body
+    return error
+}
+
+api.interceptors.response.use(
+    (response) => response,
+    (err) => Promise.reject(extractApiError(err))
+)
+
 export const mangaApi = {
     // Get all mangas
     list: async () => {
