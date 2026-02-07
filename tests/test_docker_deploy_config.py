@@ -28,6 +28,12 @@ def test_docker_cpu_requirements_include_google_genai():
     assert "google-genai" in reqs
 
 
+def test_docker_cpu_requirements_pin_ocr_runtime_versions():
+    reqs = Path("docker/requirements-docker-cpu.txt").read_text(encoding="utf-8")
+    assert "paddleocr==3.3.3" in reqs
+    assert "paddlepaddle==3.3.0" in reqs
+
+
 def test_dockerfile_installs_torch_with_lama():
     dockerfile = Path("docker/Dockerfile.api").read_text(encoding="utf-8")
     assert "simple-lama-inpainting==0.1.2" in dockerfile
