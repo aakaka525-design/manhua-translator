@@ -196,7 +196,60 @@ export const useSettingsStore = defineStore('settings', () => {
             })
         })
         if (!response.ok) {
-            throw new Error(`Upscale settings update failed: ${response.status}`)
+            let detail = ''
+            try {
+                const payload = await response.json()
+                if (payload?.detail) detail = ` (${JSON.stringify(payload.detail)})`
+            } catch (_) {}
+            throw new Error(`Upscale settings update failed: ${response.status}${detail}`)
+        }
+    }
+
+    async function syncSettingsFromServer() {
+        try {
+            const response = await fetch('/api/v1/settings')
+            if (!response.ok) return
+
+            const remote = await response.json()
+            let changed = false
+            if (typeof remote.ai_model === 'string' && remote.ai_model) {
+                if (settings.aiModel !== remote.ai_model) changed = true
+                settings.aiModel = remote.ai_model
+                const model = availableModels.find((item) => item.id === remote.ai_model)
+                if (model && settings.aiModelName !== model.name) {
+                    settings.aiModelName = model.name
+                    changed = true
+                }
+            }
+
+            if (typeof remote.source_language === 'string' && remote.source_language) {
+                if (settings.sourceLang !== remote.source_language) changed = true
+                settings.sourceLang = remote.source_language
+            }
+            if (typeof remote.target_language === 'string' && remote.target_language) {
+                if (settings.targetLang !== remote.target_language) changed = true
+                settings.targetLang = remote.target_language
+            }
+            if (typeof remote.upscale_model === 'string' && remote.upscale_model) {
+                if (settings.upscaleModel !== remote.upscale_model) changed = true
+                settings.upscaleModel = remote.upscale_model
+            }
+            if (Number.isFinite(Number(remote.upscale_scale))) {
+                const nextScale = Number(remote.upscale_scale)
+                if (settings.upscaleScale !== nextScale) changed = true
+                settings.upscaleScale = nextScale
+            }
+            if (typeof remote.upscale_enable === 'boolean') {
+                if (settings.upscaleEnabled !== remote.upscale_enable) changed = true
+                settings.upscaleEnabled = remote.upscale_enable
+            }
+
+            const normalized = normalizeUpscaleSettings()
+            if (normalized || changed) {
+                saveSettings()
+            }
+        } catch (e) {
+            console.error('Failed to sync settings from server:', e)
         }
     }
 
@@ -225,6 +278,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // Load on init
     loadSettings()
+    // Always align local UI state with backend runtime settings.
+    syncSettingsFromServer()
 
     return {
         showModal,
@@ -240,6 +295,7 @@ export const useSettingsStore = defineStore('settings', () => {
         selectUpscaleModel,
         selectUpscaleScale,
         setUpscaleEnabled,
+        syncSettingsFromServer,
         openLogs,
         fetchLogs,
         toggleTheme

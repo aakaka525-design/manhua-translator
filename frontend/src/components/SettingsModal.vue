@@ -18,8 +18,8 @@ const onUpscaleScaleChange = (event) => {
   }
 }
 
-const onUpscaleEnableToggle = () => {
-  settingsStore.setUpscaleEnabled(!settingsStore.settings.upscaleEnabled)
+const onUpscaleEnableToggle = async () => {
+  await settingsStore.setUpscaleEnabled(!settingsStore.settings.upscaleEnabled)
 }
 </script>
 

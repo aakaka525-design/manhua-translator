@@ -5,6 +5,7 @@ Provides endpoints for application settings management.
 """
 
 import os
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from typing import Optional
 from ..deps import get_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+logger = logging.getLogger(__name__)
 
 
 # In-memory settings overrides (will be lost on restart)
@@ -99,6 +101,14 @@ async def set_upscale_settings(request: UpscaleUpdateRequest):
     _upscale_scale_override = request.scale
     if request.enabled is not None:
         _upscale_enable_override = request.enabled
+
+    logger.info(
+        "Upscale settings updated: model=%s scale=%s enabled=%s (effective_enabled=%s)",
+        request.model,
+        request.scale,
+        request.enabled,
+        get_current_upscale_enable(),
+    )
 
     return {
         "message": "Upscale settings updated",
