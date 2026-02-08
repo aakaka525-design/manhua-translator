@@ -51,6 +51,18 @@
 - 预计收益（耗时下降区间）: translator 阶段 10%~25%。
 - 验收指标: `retry_count_est_avg` 下降 >=20%，成功率不下降。
 
+### 4b. zh Fallback 重翻译逐条调用导致远端请求过多（可选 batch）
+- 问题: 当目标语言为 zh 时，若首轮输出缺少 CJK 或英文占比过高，会触发逐条 retranslate（`translate()`）+ 可能的 Google fallback；在长图高文本页容易放大尾延迟。
+- 涉及文件: `core/modules/translator.py`
+- 改造动作（可执行步骤）:
+  1. 增加 A/B 开关 `AI_TRANSLATE_ZH_FALLBACK_BATCH=0|1`（默认 0）。
+  2. 当开关启用时，将 zh retranslate 从逐条 `translate()` 改为一次 `translate_batch()`（带 per-item contexts）。
+  3. 保持 Google fallback 作为 batch 后仍失败的兜底。
+  4. 输出可解释指标：`zh_retranslate_items/ms`、`google_fallback_items/ms`。
+- 风险与兼容性: batch 可能改变输出（跨条目同请求）；默认关闭，仅在 W1/W2/W3 通过质量门槛后再推广。
+- 预计收益（耗时下降区间）: translator p95 降低 10%~30%（取决于 fallback 条目数与远端 RTT）。
+- 验收指标: W3 translator 阶段耗时下降 >=30% 且抽样译文语义不回退。
+
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
 - 涉及文件: `core/ai_translator.py`, `core/modules/translator.py`, `core/modules/ocr.py`

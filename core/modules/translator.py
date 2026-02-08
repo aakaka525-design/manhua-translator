@@ -1046,74 +1046,149 @@ class TranslatorModule(BaseModule):
                 if self.use_ai and (self.target_lang or "").startswith("zh"):
                     ai_translator = self._get_ai_translator()
                     if ai_translator:
-                        fixed_translations = []
-                        for src_text, translation, meta in zip(
-                            texts_to_translate, translations, crosspage_meta
+                        use_batched_fallback = os.getenv("AI_TRANSLATE_ZH_FALLBACK_BATCH", "0") == "1"
+                        fixed_translations = list(translations)
+
+                        fallback_indices: list[int] = []
+                        fallback_inputs: list[str] = []
+                        fallback_contexts: list[str] = []
+                        fallback_input_by_index: dict[int, str] = {}
+
+                        for i, (src_text, translation, meta) in enumerate(
+                            zip(texts_to_translate, translations, crosspage_meta)
                         ):
                             if meta:
-                                fixed_translations.append(translation)
                                 continue
-                            needs_fallback = (
-                                (not _has_cjk(translation))
-                                or (_english_ratio(translation) >= 0.35)
-                            )
-                            if needs_fallback:
-                                if _skip_zh_retranslate(src_text, translation):
-                                    if debug:
-                                        logger.info(
-                                            "[%s] skip retranslate src=%s out=%s",
-                                            context.task_id,
-                                            _snippet(src_text),
-                                            _snippet(translation),
-                                        )
-                                    fixed_translations.append(translation)
-                                    continue
-                                fallback_input = src_text or ""
-                                fallback_source = "src"
-                                if translation and not translation.strip().startswith("[翻译失败]"):
-                                    if translation.strip() != (src_text or "").strip():
-                                        fallback_input = translation
-                                        fallback_source = "corrected"
+                            needs_fallback = (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35)
+                            if not needs_fallback:
+                                continue
+                            if _skip_zh_retranslate(src_text, translation):
                                 if debug:
                                     logger.info(
-                                        "[%s] retranslate fallback source=%s src=%s raw=%s input=%s",
+                                        "[%s] skip retranslate src=%s out=%s",
                                         context.task_id,
-                                        fallback_source,
                                         _snippet(src_text),
                                         _snippet(translation),
-                                        _snippet(fallback_input),
                                     )
-                                try:
-                                    start = time.perf_counter()
-                                    translation = await ai_translator.translate(fallback_input)
-                                    elapsed_ms = (time.perf_counter() - start) * 1000
-                                    zh_retranslate_items += 1
-                                    zh_retranslate_ms += elapsed_ms
-                                    total_translate_ms += elapsed_ms
-                                    _accumulate_ai_calls(ai_translator)
-                                except Exception:
-                                    pass
-                                if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
-                                    gt_class = self._translator_class
-                                    if gt_class is None:
-                                        try:
-                                            from deep_translator import GoogleTranslator
-                                            gt_class = GoogleTranslator
-                                        except ImportError:
-                                            gt_class = None
-                                    if gt_class is not None:
-                                        loop = asyncio.get_event_loop()
-                                        google_source = _normalize_google_lang(
-                                            self.source_lang, for_target=False
+                                continue
+
+                            fallback_input = src_text or ""
+                            fallback_source = "src"
+                            if translation and not translation.strip().startswith("[翻译失败]"):
+                                if translation.strip() != (src_text or "").strip():
+                                    fallback_input = translation
+                                    fallback_source = "corrected"
+                            fallback_input_by_index[i] = fallback_input
+
+                            if debug:
+                                logger.info(
+                                    "[%s] retranslate fallback source=%s src=%s raw=%s input=%s",
+                                    context.task_id,
+                                    fallback_source,
+                                    _snippet(src_text),
+                                    _snippet(translation),
+                                    _snippet(fallback_input),
+                                )
+
+                            if use_batched_fallback:
+                                fallback_indices.append(i)
+                                fallback_inputs.append(fallback_input)
+                                fallback_contexts.append(contexts_to_translate[i] if i < len(contexts_to_translate) else "")
+                                continue
+
+                            # Per-item retranslate (default; timed for explainability).
+                            try:
+                                start = time.perf_counter()
+                                translation = await ai_translator.translate(fallback_input)
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                zh_retranslate_items += 1
+                                zh_retranslate_ms += elapsed_ms
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
+                            except Exception:
+                                pass
+
+                            if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
+                                gt_class = self._translator_class
+                                if gt_class is None:
+                                    try:
+                                        from deep_translator import GoogleTranslator
+                                        gt_class = GoogleTranslator
+                                    except ImportError:
+                                        gt_class = None
+                                if gt_class is not None:
+                                    loop = asyncio.get_event_loop()
+                                    google_source = _normalize_google_lang(self.source_lang, for_target=False)
+                                    google_target = _normalize_google_lang(self.target_lang, for_target=True)
+                                    try:
+                                        translator = gt_class(source=google_source, target=google_target)
+                                    except Exception as init_exc:
+                                        logger.warning(
+                                            "[%s] Google fallback init failed: source=%s target=%s err=%s",
+                                            context.task_id,
+                                            google_source,
+                                            google_target,
+                                            init_exc,
                                         )
-                                        google_target = _normalize_google_lang(
-                                            self.target_lang, for_target=True
-                                        )
+                                    else:
                                         try:
-                                            translator = gt_class(
-                                                source=google_source,
-                                                target=google_target,
+                                            start = time.perf_counter()
+                                            translation = await loop.run_in_executor(
+                                                None, translator.translate, fallback_input
                                             )
+                                            elapsed_ms = (time.perf_counter() - start) * 1000
+                                            google_fallback_items += 1
+                                            google_fallback_ms += elapsed_ms
+                                            total_translate_ms += elapsed_ms
+                                        except Exception as gt_exc:
+                                            logger.warning(
+                                                "[%s] Google fallback translate failed: err=%s",
+                                                context.task_id,
+                                                gt_exc,
+                                            )
+                            fixed_translations[i] = translation
+
+                        if use_batched_fallback and fallback_indices:
+                            batch_translations = None
+                            try:
+                                start = time.perf_counter()
+                                try:
+                                    batch_translations = await ai_translator.translate_batch(
+                                        fallback_inputs,
+                                        contexts=fallback_contexts,
+                                    )
+                                except TypeError:
+                                    batch_translations = await ai_translator.translate_batch(fallback_inputs)
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                zh_retranslate_items += len(fallback_inputs)
+                                zh_retranslate_ms += elapsed_ms
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
+                            except Exception:
+                                batch_translations = None
+
+                            if batch_translations:
+                                for idx, out in zip(fallback_indices, batch_translations):
+                                    fixed_translations[idx] = out
+
+                            # Final fallback to Google Translate for still-bad items.
+                            gt_class = self._translator_class
+                            if gt_class is None:
+                                try:
+                                    from deep_translator import GoogleTranslator
+                                    gt_class = GoogleTranslator
+                                except ImportError:
+                                    gt_class = None
+                            if gt_class is not None:
+                                loop = asyncio.get_event_loop()
+                                google_source = _normalize_google_lang(self.source_lang, for_target=False)
+                                google_target = _normalize_google_lang(self.target_lang, for_target=True)
+                                for idx in fallback_indices:
+                                    translation = fixed_translations[idx]
+                                    if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
+                                        fallback_input = fallback_input_by_index.get(idx) or (texts_to_translate[idx] or "")
+                                        try:
+                                            translator = gt_class(source=google_source, target=google_target)
                                         except Exception as init_exc:
                                             logger.warning(
                                                 "[%s] Google fallback init failed: source=%s target=%s err=%s",
@@ -1122,23 +1197,24 @@ class TranslatorModule(BaseModule):
                                                 google_target,
                                                 init_exc,
                                             )
-                                        else:
-                                            try:
-                                                start = time.perf_counter()
-                                                translation = await loop.run_in_executor(
-                                                    None, translator.translate, fallback_input
-                                                )
-                                                elapsed_ms = (time.perf_counter() - start) * 1000
-                                                google_fallback_items += 1
-                                                google_fallback_ms += elapsed_ms
-                                                total_translate_ms += elapsed_ms
-                                            except Exception as gt_exc:
-                                                logger.warning(
-                                                    "[%s] Google fallback translate failed: err=%s",
-                                                    context.task_id,
-                                                    gt_exc,
-                                                )
-                            fixed_translations.append(translation)
+                                            break
+                                        try:
+                                            start = time.perf_counter()
+                                            translation = await loop.run_in_executor(
+                                                None, translator.translate, fallback_input
+                                            )
+                                            elapsed_ms = (time.perf_counter() - start) * 1000
+                                            google_fallback_items += 1
+                                            google_fallback_ms += elapsed_ms
+                                            total_translate_ms += elapsed_ms
+                                            fixed_translations[idx] = translation
+                                        except Exception as gt_exc:
+                                            logger.warning(
+                                                "[%s] Google fallback translate failed: err=%s",
+                                                context.task_id,
+                                                gt_exc,
+                                            )
+
                         translations = fixed_translations
                 
                 # 4. 将翻译结果分配到原始区域
