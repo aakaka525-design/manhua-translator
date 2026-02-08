@@ -79,6 +79,9 @@
     - `translator` 120.1s -> 83.8s（约 -30%）
     - `requests_fallback` 9 -> 5；`zh_retranslate_ms` 43.8s -> 4.0s
     - `primary timeout` 6 -> 2（AI 日志计数）
+  - W2 tail（章节并发采样，pages 7+9, `-w 2`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`；用于验证稳定性而非对比收益）:
+    - Page 9: `translator` 104.0s；`total` 173.1s；`[翻译失败]=0`；`no_cjk_with_ascii=0`
+    - AI log（本次 run 全局计数）: `primary timeout after 15000ms=3`；`fallback provider=3`
 - 验收指标:
   - W3: `translator` p95 下降，且 `primary timeout`/`fallback provider` 次数显著下降。
   - 质量守门: OCR regions 不下降、`[翻译失败]` 不上升、mixed-language heuristic 不回退。

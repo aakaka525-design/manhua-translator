@@ -100,3 +100,21 @@ Verdict:
   - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`: `no_cjk_with_ascii=4` (improved; aligns with fewer timeouts/fallbacks)
   - Both A/B runs have `"[翻译失败]"=0` in quality report JSON.
 - Inpaint/repair: NOT RE-VALIDATED IN M3 (no code changes in inpaint/renderer, but still requires 3-region manual spot-check on output images)
+
+### 6.4 W2 Tail Sampling (chapter-68 pages 7+9, `-w 2`, timeout=15000)
+Context:
+- Workload: `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/7.jpg` + `9.jpg` (tail pages only)
+- Fixed knobs: `UPSCALE_ENABLE=0`, `OCR_RESULT_CACHE_ENABLE=0`, `OCR_TILE_OVERLAP_RATIO=0.25`, `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- Evidence:
+  - Reports: `/tmp/quality_reports_m3_w2tail_t15_20260208_161650/*.json`
+  - `MANHUA_LOG_DIR=/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.OfkmC0GfFL`
+
+Results (from reports + AI log counters):
+- AI log (global for this run): `primary timeout after 15000ms=3`, `fallback provider=3`, `missing number|missing items lines=29`.
+- Per-page (quality report; merged regions):
+  - Page 7: total=99.5s; translator=64.5s; regions=33; `"[翻译失败]"=0`; `no_cjk_with_ascii=2`; `hangul_left=0`.
+  - Page 9: total=173.1s; translator=104.0s; regions=58; `"[翻译失败]"=0`; `no_cjk_with_ascii=0`; `hangul_left=0`.
+
+Conclusion:
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` 在章节并发 tail 页下仍有少量 timeout，但未引入翻译失败/韩文残留，且 mixed-language 指标可接受。
+- 该结果支持将 15000ms 作为 Gemini + fallback chain 的部署侧推荐配置；但 W2 全量 9 页尚未验证，本轮不跑（成本控制），建议在正式大规模推广前至少补一次 W2 全量采样。

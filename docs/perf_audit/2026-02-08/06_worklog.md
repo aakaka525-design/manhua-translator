@@ -224,3 +224,71 @@ Recommendation (config-only; keep code default unchanged):
 Open questions:
 - Is 15000ms the best tradeoff across W2 (chapter, concurrency)? Need additional sampling on W2 to confirm stability under concurrency.
 - Should we consider 18000ms for extreme tail cases, or keep 15000ms as a safe default recommendation?
+
+### W2 tail sampling (7+9, `-w 2`): `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+Context:
+- Workload: W2 tail pages (chapter-68): `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/7.jpg` + `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/9.jpg`
+- Concurrency: `main.py chapter ... -w 2` (2 pages in-flight)
+- Fixed knobs: `UPSCALE_ENABLE=0`, `OCR_RESULT_CACHE_ENABLE=0`, `OCR_TILE_OVERLAP_RATIO=0.25`, `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- Output dir: `/tmp/perf_m3_ch68_tail_t15`
+- Reports: `/tmp/quality_reports_m3_w2tail_t15_20260208_161650/*.json`
+- Logs:
+  - `MANHUA_LOG_DIR=/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.OfkmC0GfFL`
+  - AI log: `/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.OfkmC0GfFL/ai/20260208/ai_translator.log`
+  - Translator log: `/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.OfkmC0GfFL/translator/20260208/translator.log`
+- Purpose: verify that the `15000ms` recommendation remains stable under chapter concurrency tail pages.
+
+Evidence:
+- AI log counters (global for this run):
+  - `primary timeout after 15000ms`: 3
+  - `fallback provider=`: 3
+  - `missing number|missing items` lines: 29
+
+Per-page (quality report; note: regions in report are merged, raw OCR regions are shown in translator.log):
+
+| page | total_ms | ocr_ms | translator_ms | regions_report | `[翻译失败]` | no_cjk_with_ascii | ai_timeouts | ai_fallback_provider | missing_number_lines | report_path |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 7 | 99522.65 | 20162.19 | 64505.19 | 33 | 0 | 2 | 3 | 3 | 29 | `/tmp/quality_reports_m3_w2tail_t15_20260208_161650/tmp__ch68-tail_852n0l__7__250ba346-b3a5-48ff-8e4e-a3eab01fec7f.json` |
+| 9 | 173092.51 | 52294.92 | 104037.59 | 58 | 0 | 0 | 3 | 3 | 29 | `/tmp/quality_reports_m3_w2tail_t15_20260208_161650/tmp__ch68-tail_852n0l__9__4b4dbc82-6830-402a-ba35-819d642083ef.json` |
+
+Notes:
+- Translator log shows raw OCR region counts:
+  - Page 7 task `250ba346-...`: "开始翻译 38 个区域"
+  - Page 9 task `4b4dbc82-...`: "开始翻译 84 个区域"
+- Quality guardrails:
+  - `[翻译失败]` stays 0 on both pages (PASS)
+  - `hangul_left=0` on both pages (PASS)
+  - `no_cjk_with_ascii` is low (page 9 is 0; page 7 has 2 entries, likely short tags/labels)
+
+Interpretation:
+- Under `-w 2` concurrency, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` still has a small number of timeouts (3), but no failure markers or Hangul leftovers.
+- This supports keeping `15000ms` as a deploy-side recommendation for Gemini + fallback chain, while acknowledging chapter-level p95 is still dominated by remote-call tail latency and other translator strategies (M1#3/#4) are needed to further reduce long-tail.
+
+Open questions / follow-ups:
+- W2 full chapter (9 pages) was NOT re-run under `15000ms` in this round (cost control). Keep as an optional follow-up sampling before promoting the recommendation broadly in production.
+
+Repro / extraction commands:
+- Count timeouts/fallbacks:
+  - `rg -n "primary timeout after" "$MANHUA_LOG_DIR/ai/20260208/ai_translator.log" | wc -l`
+  - `rg -n "fallback provider=" "$MANHUA_LOG_DIR/ai/20260208/ai_translator.log" | wc -l`
+- Parse W2 tail quality reports (timings + guardrails):
+  ```bash
+  python - <<'PY'
+  import json, glob
+  paths = sorted(glob.glob("/tmp/quality_reports_m3_w2tail_t15_20260208_161650/*.json"))
+  for p in paths:
+      with open(p, "r", encoding="utf-8") as f:
+          d = json.load(f)
+      t = d.get("timings_ms") or {}
+      regions = d.get("regions") or []
+      fail = sum(1 for r in regions if (r.get("target_text") or "").startswith("[翻译失败]"))
+      print(
+          p,
+          {"total": t.get("total"), "ocr": t.get("ocr"), "translator": t.get("translator")},
+          "regions",
+          len(regions),
+          "fail",
+          fail,
+      )
+  PY
+  ```
