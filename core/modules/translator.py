@@ -987,7 +987,21 @@ class TranslatorModule(BaseModule):
                             i for i, meta in enumerate(crosspage_meta) if not meta
                         ]
                         if crosspage_indices:
-                            crosspage_texts = [texts_to_translate[i] for i in crosspage_indices]
+                            # Provide explicit TOP/BOTTOM segments so the model does not
+                            # interpret JSON fields as {source,target}.
+                            crosspage_texts = []
+                            for i in crosspage_indices:
+                                meta = crosspage_meta[i]
+                                region = meta.get("region") if meta else None
+                                extra = (meta.get("extra") if meta else "") or ""
+                                if region:
+                                    top_src = (region.source_text or "").strip()
+                                    bottom_src = extra.strip()
+                                    crosspage_texts.append(
+                                        f"TOP: {top_src}\nBOTTOM: {bottom_src}"
+                                    )
+                                else:
+                                    crosspage_texts.append(texts_to_translate[i])
                             crosspage_contexts = [contexts_to_translate[i] for i in crosspage_indices]
                             start = time.perf_counter()
                             crosspage_translations = await _batch_translate(
@@ -1063,6 +1077,11 @@ class TranslatorModule(BaseModule):
                             if not needs_fallback:
                                 continue
                             if _skip_zh_retranslate(src_text, translation):
+                                # If we purposely skip zh fallback for short ASCII tokens, never keep
+                                # hallucinated/foreign-language output. Prefer erase-only behavior.
+                                src_clean = (src_text or "").strip()
+                                if _VERY_SHORT_ALNUM_RE.match(src_clean) and _has_hangul(translation or ""):
+                                    fixed_translations[i] = "[INPAINT_ONLY]"
                                 if debug:
                                     logger.info(
                                         "[%s] skip retranslate src=%s out=%s",
@@ -1251,17 +1270,20 @@ class TranslatorModule(BaseModule):
                                     if assign_idx < len(contexts_to_translate)
                                     else ""
                                 )
+                                retry_top = (crosspage_region.source_text or "").strip()
+                                retry_bottom = (crosspage_extra or "").strip()
+                                retry_text = f"TOP: {retry_top}\nBOTTOM: {retry_bottom}"
                                 start = time.perf_counter()
                                 retry_out = None
                                 try:
                                     retry_out = await ai_translator.translate_batch(
-                                        [texts_to_translate[assign_idx]],
+                                        [retry_text],
                                         output_format="json",
                                         contexts=[retry_ctx],
                                     )
                                 except TypeError:
                                     retry_out = await ai_translator.translate_batch(
-                                        [texts_to_translate[assign_idx]],
+                                        [retry_text],
                                         output_format="json",
                                     )
                                 elapsed_ms = (time.perf_counter() - start) * 1000
