@@ -711,6 +711,13 @@ class TranslatorModule(BaseModule):
         content_chars_total = 0
         text_chars_total = 0
         ctx_chars_total = 0
+        # Fallback timing/counters (needed to make stage wall-time explainable).
+        zh_retranslate_items = 0
+        zh_retranslate_ms = 0.0
+        google_fallback_items = 0
+        google_fallback_ms = 0.0
+        crosspage_extra_items = 0
+        crosspage_extra_ms = 0.0
 
         def _accumulate_ai_calls(translator) -> None:
             nonlocal ai_calls_primary_total, ai_calls_fallback_total
@@ -1077,7 +1084,12 @@ class TranslatorModule(BaseModule):
                                         _snippet(fallback_input),
                                     )
                                 try:
+                                    start = time.perf_counter()
                                     translation = await ai_translator.translate(fallback_input)
+                                    elapsed_ms = (time.perf_counter() - start) * 1000
+                                    zh_retranslate_items += 1
+                                    zh_retranslate_ms += elapsed_ms
+                                    total_translate_ms += elapsed_ms
                                     _accumulate_ai_calls(ai_translator)
                                 except Exception:
                                     pass
@@ -1112,9 +1124,14 @@ class TranslatorModule(BaseModule):
                                             )
                                         else:
                                             try:
+                                                start = time.perf_counter()
                                                 translation = await loop.run_in_executor(
                                                     None, translator.translate, fallback_input
                                                 )
+                                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                                google_fallback_items += 1
+                                                google_fallback_ms += elapsed_ms
+                                                total_translate_ms += elapsed_ms
                                             except Exception as gt_exc:
                                                 logger.warning(
                                                     "[%s] Google fallback translate failed: err=%s",
@@ -1148,9 +1165,12 @@ class TranslatorModule(BaseModule):
                         fallback_mode = None
                         if not bottom_text and crosspage_extra:
                             if ai_translator:
-                                translated_extra = await ai_translator.translate_batch(
-                                    [crosspage_extra]
-                                )
+                                start = time.perf_counter()
+                                translated_extra = await ai_translator.translate_batch([crosspage_extra])
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                crosspage_extra_items += 1
+                                crosspage_extra_ms += elapsed_ms
+                                total_translate_ms += elapsed_ms
                                 _accumulate_ai_calls(ai_translator)
                                 candidate = (
                                     (translated_extra[0] if translated_extra else "") or ""
@@ -1286,6 +1306,12 @@ class TranslatorModule(BaseModule):
             "content_chars_total": content_chars_total,
             "text_chars_total": text_chars_total,
             "ctx_chars_total": ctx_chars_total,
+            "zh_retranslate_items": zh_retranslate_items,
+            "zh_retranslate_ms": round(zh_retranslate_ms, 2),
+            "google_fallback_items": google_fallback_items,
+            "google_fallback_ms": round(google_fallback_ms, 2),
+            "crosspage_extra_items": crosspage_extra_items,
+            "crosspage_extra_ms": round(crosspage_extra_ms, 2),
         }
 
         try:

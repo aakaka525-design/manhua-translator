@@ -80,6 +80,14 @@ Branch/worktree: codex/perf-m1-ocr-translator
   - Run OCR tiling A/B on W3 and record results (defaults unchanged; recommend safe knobs).
   - Re-run W1/W2/W3 end-to-end and update acceptance criteria and roadmap.
 
+### 2026-02-08 (M3 Task 2 - Translator Fallback Timing)
+- Added explicit fallback timing + counters to `TranslatorModule.last_metrics`:
+  - `zh_retranslate_items` / `zh_retranslate_ms`
+  - `google_fallback_items` / `google_fallback_ms`
+  - `crosspage_extra_items` / `crosspage_extra_ms`
+- `total_ms` now includes these fallback durations (in addition to batch translate timings).
+- Added tests to lock behavior: `tests/test_translator_fallback_metrics.py`.
+
 ## Questions / Risks (to validate)
 - PaddleOCR concurrency: previous implementation used a global lock to avoid race conditions. Any increase of OCR parallelism must be opt-in and validated under load (crash-free and stable outputs).
 - Gemini/PPIO batching: large single prompts can increase tail latency and failure rate; chunking can reduce risk but may change outputs. We will keep chunking controls opt-in and add fallback to preserve quality.
