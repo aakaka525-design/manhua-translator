@@ -60,11 +60,18 @@ async def pipeline_status_callback(stage: str, status: TaskStatus, task_id: UUID
 def _build_pipeline_error_detail(result, fallback_message: str) -> dict:
     task = result.task
     return {
+        "code": task.error_code or "pipeline_failed",
         "message": task.error_message or fallback_message,
         "task_id": str(task.task_id),
         "status": task.status.value,
         "output_path": task.output_path,
     }
+
+
+def _pipeline_failure_status_code(result) -> int:
+    if getattr(result.task, "error_code", None) == "ocr_no_text":
+        return status.HTTP_422_UNPROCESSABLE_ENTITY
+    return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 @router.get("/events")
@@ -115,7 +122,7 @@ async def translate_image(
     _tasks[result.task.task_id] = result.task
     if not result.success:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=_pipeline_failure_status_code(result),
             detail=_build_pipeline_error_detail(result, "Image translation failed"),
         )
     return TranslateImageResponse(
@@ -212,6 +219,7 @@ async def translate_chapter_endpoint(
             pipeline_success_count = 0
             failed_translation_count = 0
             failed_pipeline_count = 0
+            failed_ocr_empty_count = 0
 
             for img_path, result in zip(image_files, results):
                 translated_file = find_translated_file(output_base, img_path.stem)
@@ -222,6 +230,10 @@ async def translate_chapter_endpoint(
                 if result.success:
                     pipeline_success_count += 1
 
+                regions_count = len(result.task.regions or [])
+                if regions_count == 0:
+                    failed_ocr_empty_count += 1
+
                 has_failure_marker = any(
                     (region.target_text or "").strip().startswith("[翻译失败]")
                     for region in (result.task.regions or [])
@@ -229,7 +241,12 @@ async def translate_chapter_endpoint(
                 if has_failure_marker:
                     failed_translation_count += 1
 
-                is_effective_success = result.success and has_output_file and not has_failure_marker
+                is_effective_success = (
+                    result.success
+                    and has_output_file
+                    and not has_failure_marker
+                    and regions_count > 0
+                )
                 if is_effective_success:
                     effective_success_count += 1
                 elif not result.success:
@@ -254,6 +271,7 @@ async def translate_chapter_endpoint(
                     "pipeline_success_count": pipeline_success_count,
                     "failed_pipeline_count": failed_pipeline_count,
                     "failed_translation_count": failed_translation_count,
+                    "failed_ocr_empty_count": failed_ocr_empty_count,
                     "failed_count": failed_count,
                     "saved_count": saved_count,
                     "total_count": total_count,
@@ -273,6 +291,7 @@ async def translate_chapter_endpoint(
                     "status": "error",
                     "success_count": 0,
                     "failed_count": total_count or len(image_files),
+                    "failed_ocr_empty_count": 0,
                     "saved_count": 0,
                     "total_count": total_count or len(image_files),
                     "error_message": str(exc),
@@ -351,7 +370,7 @@ async def retranslate_page(
             }
         )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=_pipeline_failure_status_code(result),
             detail=_build_pipeline_error_detail(result, "Page translation failed"),
         )
 
