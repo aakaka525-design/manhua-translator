@@ -884,7 +884,13 @@ class TranslatorModule(BaseModule):
             if group_is_sfx:
                 for region in group:
                     sfx_src = region.normalized_text or region.source_text or ""
-                    region.target_text = translate_sfx(sfx_src)
+                    sfx_out = translate_sfx(sfx_src)
+                    # For zh targets, never render Hangul SFX that we can't translate reliably.
+                    # Keep original art/text by leaving target_text empty.
+                    if (self.target_lang or "").startswith("zh") and _has_hangul(sfx_out):
+                        region.target_text = ""
+                    else:
+                        region.target_text = sfx_out
                 sfx_count += len(group)
                 group_context_ok[idx] = False
                 continue
@@ -1095,8 +1101,12 @@ class TranslatorModule(BaseModule):
                             fallback_source = "src"
                             if translation and not translation.strip().startswith("[翻译失败]"):
                                 if translation.strip() != (src_text or "").strip():
-                                    fallback_input = translation
-                                    fallback_source = "corrected"
+                                    # If the model output still contains Hangul for a zh target,
+                                    # treat it as corrupted and retry from original source text
+                                    # instead of feeding the corrupted output back into the model.
+                                    if not _has_hangul(translation):
+                                        fallback_input = translation
+                                        fallback_source = "corrected"
                             fallback_input_by_index[i] = fallback_input
 
                             if debug:
