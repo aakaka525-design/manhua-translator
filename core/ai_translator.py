@@ -103,6 +103,32 @@ def _read_env_int(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+_GLOBAL_API_SEMAPHORE: asyncio.Semaphore | None = None
+_GLOBAL_API_SEMAPHORE_LIMIT: int | None = None
+
+
+def _get_global_api_semaphore() -> asyncio.Semaphore | None:
+    """
+    Optional cross-task backpressure for AI calls.
+
+    This is intentionally disabled by default to preserve existing behavior.
+    When enabled, it caps concurrent primary+fallback requests across the process,
+    which helps reduce provider overload (503/timeout) under multi-chapter load.
+    """
+    global _GLOBAL_API_SEMAPHORE, _GLOBAL_API_SEMAPHORE_LIMIT
+
+    limit = _read_env_int("AI_TRANSLATE_MAX_INFLIGHT_CALLS", 0)
+    if limit <= 0:
+        _GLOBAL_API_SEMAPHORE = None
+        _GLOBAL_API_SEMAPHORE_LIMIT = None
+        return None
+
+    if _GLOBAL_API_SEMAPHORE is None or _GLOBAL_API_SEMAPHORE_LIMIT != limit:
+        _GLOBAL_API_SEMAPHORE = asyncio.Semaphore(limit)
+        _GLOBAL_API_SEMAPHORE_LIMIT = limit
+    return _GLOBAL_API_SEMAPHORE
+
+
 def _get_log_config():
     mode = (os.getenv("AI_TRANSLATOR_LOG_MODE") or "off").strip().lower()
     limit = _read_env_int("AI_TRANSLATOR_LOG_SNIPPET_CHARS", 120)
@@ -344,16 +370,24 @@ class AITranslator:
         """
         timeout_ms = _read_env_int("AI_TRANSLATE_PRIMARY_TIMEOUT_MS", 12000)
         has_fallback = bool(self._fallback_translator_chain())
-        if timeout_ms <= 0 or not has_fallback:
-            return await self._call_api(prompt, max_tokens=max_tokens)
 
-        try:
-            return await asyncio.wait_for(
-                self._call_api(prompt, max_tokens=max_tokens),
-                timeout=timeout_ms / 1000.0,
-            )
-        except asyncio.TimeoutError as exc:
-            raise RuntimeError(f"primary timeout after {timeout_ms}ms") from exc
+        async def _do_call() -> str:
+            if timeout_ms <= 0 or not has_fallback:
+                return await self._call_api(prompt, max_tokens=max_tokens)
+            try:
+                return await asyncio.wait_for(
+                    self._call_api(prompt, max_tokens=max_tokens),
+                    timeout=timeout_ms / 1000.0,
+                )
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError(f"primary timeout after {timeout_ms}ms") from exc
+
+        sem = _get_global_api_semaphore()
+        if sem is None:
+            return await _do_call()
+
+        async with sem:
+            return await _do_call()
     
     async def translate(self, text: str) -> str:
         """翻译单个文本。"""

@@ -649,3 +649,33 @@ def test_translate_batch_falls_back_when_primary_returns_none(monkeypatch):
 
     assert result == ["好的"]
     assert fallback.calls == 1
+
+
+def test_translate_batch_global_api_semaphore_limits_inflight(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("AI_TRANSLATE_MAX_INFLIGHT_CALLS", "1")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CHUNK_SIZE", "1")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CONCURRENCY", "8")
+
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+
+    state = {"active": 0, "max_active": 0}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        state["active"] += 1
+        state["max_active"] = max(state["max_active"], state["active"])
+        # Give other tasks time to start and contend on the global semaphore.
+        await asyncio.sleep(0.02)
+        state["active"] -= 1
+        return "1. OK"
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    result = asyncio.run(translator.translate_batch(["A", "B", "C", "D"]))
+
+    assert result == ["OK", "OK", "OK", "OK"]
+    assert state["max_active"] == 1
