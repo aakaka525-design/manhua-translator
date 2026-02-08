@@ -33,10 +33,11 @@ logger = logging.getLogger(__name__)
 # for advanced users to reduce chapter-level tail latency.
 _ocr_gate: asyncio.Semaphore | None = None
 _ocr_gate_size: int | None = None
+_ocr_gate_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _get_ocr_gate() -> tuple[asyncio.Semaphore, int]:
-    global _ocr_gate, _ocr_gate_size
+    global _ocr_gate, _ocr_gate_size, _ocr_gate_loop
     raw = (os.getenv("OCR_MAX_CONCURRENCY") or "").strip()
     size = 1
     if raw:
@@ -46,9 +47,14 @@ def _get_ocr_gate() -> tuple[asyncio.Semaphore, int]:
             size = 1
     # Clamp to keep memory usage predictable.
     size = max(1, min(8, size))
-    if _ocr_gate is None or _ocr_gate_size != size:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _ocr_gate is None or _ocr_gate_size != size or (_ocr_gate_loop is not loop):
         _ocr_gate = asyncio.Semaphore(size)
         _ocr_gate_size = size
+        _ocr_gate_loop = loop
     return _ocr_gate, size
 
 
@@ -192,11 +198,9 @@ class OCRModule(BaseModule):
             return context
 
         # 根据 context.source_language 动态切换 OCR 引擎
+        # NOTE: engine switching must be synchronized with OCR calls (gate-protected);
+        # see tests/test_ocr_module_engine_switch_lock.py.
         target_lang = context.source_language or "en"
-        if hasattr(self.engine, 'lang') and self.engine.lang != target_lang:
-            logger.info(f"[{context.task_id}] 切换 OCR 语言: {self.engine.lang} -> {target_lang}")
-            self.engine = PaddleOCREngine(lang=target_lang)
-            self.engine._init_ocr()
 
         logger.info(f"[{context.task_id}] OCR 开始: {context.image_path}")
         start_time = time.perf_counter()
@@ -239,6 +243,15 @@ class OCRModule(BaseModule):
             await gate.acquire()
             gate_wait_ms = (time.perf_counter() - wait_start) * 1000
             try:
+                if hasattr(self.engine, "lang") and self.engine.lang != target_lang:
+                    logger.info(
+                        "[%s] 切换 OCR 语言: %s -> %s",
+                        context.task_id,
+                        getattr(self.engine, "lang", None),
+                        target_lang,
+                    )
+                    self.engine = PaddleOCREngine(lang=target_lang)
+                    self.engine._init_ocr()
                 # Use detect_and_recognize unified entrypoint (supports long-image tiling).
                 context.regions = await self.engine.detect_and_recognize(
                     context.image_path,
@@ -329,10 +342,30 @@ class OCRModule(BaseModule):
                 "prev_bottom": [],
                 "next_top": [],
             }
+
+            async def _detect_and_recognize_band(page_path: Path, edge: str) -> list[RegionData]:
+                # Band OCR must be concurrency-safe too; otherwise it can overlap
+                # with another task's main OCR and crash PaddleOCR.
+                gate, _gate_size = _get_ocr_gate()
+                await gate.acquire()
+                try:
+                    if hasattr(self.engine, "lang") and self.engine.lang != target_lang:
+                        logger.info(
+                            "[%s] 切换 OCR 语言 (band): %s -> %s",
+                            context.task_id,
+                            getattr(self.engine, "lang", None),
+                            target_lang,
+                        )
+                        self.engine = PaddleOCREngine(lang=target_lang)
+                        self.engine._init_ocr()
+                    return await self.engine.detect_and_recognize_band(
+                        str(page_path), edge=edge, band_height=band_height
+                    )
+                finally:
+                    gate.release()
+
             if prev_path and top_candidates and hasattr(self.engine, "detect_and_recognize_band"):
-                prev_bottom_regions = await self.engine.detect_and_recognize_band(
-                    str(prev_path), edge="bottom", band_height=band_height
-                )
+                prev_bottom_regions = await _detect_and_recognize_band(prev_path, edge="bottom")
                 prev_bottom_regions = filter_noise_regions(
                     prev_bottom_regions, image_height=band_height, relaxed=False
                 )
@@ -358,9 +391,7 @@ class OCRModule(BaseModule):
 
             # Match current bottom -> next top (append context)
             if next_path and bottom_candidates and hasattr(self.engine, "detect_and_recognize_band"):
-                next_top_regions = await self.engine.detect_and_recognize_band(
-                    str(next_path), edge="top", band_height=band_height
-                )
+                next_top_regions = await _detect_and_recognize_band(next_path, edge="top")
                 next_top_regions = filter_noise_regions(
                     next_top_regions, image_height=band_height, relaxed=False
                 )
