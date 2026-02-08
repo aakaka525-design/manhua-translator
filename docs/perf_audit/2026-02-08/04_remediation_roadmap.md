@@ -130,6 +130,12 @@
     - `pages_has_hangul=0`（保持 PASS）
     - `pages_has_failure_marker=2`（较旧 S6/S9 明显减少，但尚未达成 0）
     - Evidence: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.summary.json`
+  - 质量/资源权衡（S6 re-run stricter backpressure, inflight=2 + page_conc=1）:
+    - `pages_has_failure_marker=3`（仍未达成 0；每页仅 1 个失败 region）
+    - `no_cjk_with_ascii=10`（显著下降；mixed-language 风险降低）
+    - `max_rss_max_mb=3358.0`（较前一 run 下降；内存压力降低）
+    - `translator_p95=95812ms`（略降），但 `translator_max=266933ms`（更差，等待/尾延迟更重）
+    - Evidence: `output/quality_reports/_stress_20260209_000350_api_s6_inflight2_pc1.summary.json`
   - 稳定性: 多章节并发下仍未观察到 OOM/restart（Evidence: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.docker_state.txt` + kernel OOM 0 lines）
 - 验收指标:
   - 云端 API 压测（>=6 章并发，UPSCALE=0）下：`pages_has_failure_marker=0` 且 `pages_has_hangul=0`（硬门槛）。

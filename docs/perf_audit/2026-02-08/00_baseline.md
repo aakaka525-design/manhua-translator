@@ -2,7 +2,7 @@
 
 - 生成日期: 2026-02-08
 - 样本来源: `output/quality_reports`（有效报告 12）
-- 说明: 当前日志无 CPU/内存峰值字段，本轮先完成 OCR/translator 分段基线，资源峰值列为待补采。
+- 说明: 本基线采样时质量报告尚未包含进程级资源字段；当前分支已在 QualityReport 写入 `process.*`（`cpu_user_s`/`cpu_system_s`/`max_rss_mb`）与 `queue_wait_ms`/`run_config`，后续压测以报告为准闭环资源与配置归因（不依赖 psutil）。
 
 ## Workload 定义
 
@@ -22,7 +22,7 @@
 
 - W2/W3 中 OCR 与 translator 共同主导总耗时；OCR 抖动和 translator 尾延迟同时存在。
 - translator 在高文本页存在显著长尾，符合大批次请求 + 回退链路叠加开销。
-- 需在后续整改补齐 CPU/内存峰值采集（psutil）完成资源瓶颈闭环。
+- 资源峰值已通过 `resource.getrusage()` 写入质量报告（`process.max_rss_mb` 等），后续仅需在压测汇总时统计 p95/max 做证据闭环。
 
 ## M3 Targeted Benchmarks (UPSCALE_ENABLE=0)
 

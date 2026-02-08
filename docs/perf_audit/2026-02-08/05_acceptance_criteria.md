@@ -299,3 +299,42 @@ Results (from summary; nearest-rank p50/p95):
 Verdict:
 - Stability: PASS (no restarts/OOM observed)
 - Quality: NOT PASS yet (failure markers persist but reduced; next step is stricter backpressure to push `"[翻译失败]"` to 0)
+
+### 6.11 Cloud Stress S6 Re-run (API, 6 concurrent chapters, 104 pages, UPSCALE=0; stricter backpressure inflight=2 + page_conc=1)
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (6 chapters started concurrently)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260209_000350_api_s6_inflight2_pc1`
+- Evidence:
+  - Report list: `output/quality_reports/_stress_20260209_000350_api_s6_inflight2_pc1.list`
+  - Summary: `output/quality_reports/_stress_20260209_000350_api_s6_inflight2_pc1.summary.json`
+  - Failures: `output/quality_reports/_stress_20260209_000350_api_s6_inflight2_pc1.failures.txt`
+  - Docker: `output/quality_reports/_stress_20260209_000350_api_s6_inflight2_pc1.docker_state.txt` (`OOMKilled=false`, `RestartCount=0`)
+  - Kernel OOM grep: `/tmp/kernel_oom_20260209_000350_api_s6_inflight2_pc1.txt` (`0` lines)
+
+Env (key; no secrets):
+- `UPSCALE_ENABLE=0`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+- `AI_TRANSLATE_FASTFAIL=1`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+- `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=1`
+
+Results (from summary; nearest-rank p50/p95):
+- `pages_total=104`
+- quality:
+  - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+  - `pages_has_failure_marker=3`, `regions_with_failure_marker=3` (NOT PASS)
+  - `no_cjk_with_ascii=10`, `empty_target_regions=192`
+- timings (ms):
+  - `translator_p50=24645`, `translator_p95=95812`, `translator_max=266933`
+  - `ocr_p50=1532`, `ocr_p95=13648`, `ocr_max=18120`
+  - `total_p50=30571`, `total_p95=112782`, `total_max=269404`
+- process peak (from reports):
+  - `max_rss_max_mb=3358.0`
+
+Verdict:
+- Stability: PASS (no restarts/OOM observed)
+- Quality: NOT PASS (failure markers persist under this load; next step is failure-marker salvage retry or stricter caps)
