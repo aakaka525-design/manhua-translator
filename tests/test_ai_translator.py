@@ -631,6 +631,96 @@ def test_translate_batch_retries_when_numbered_output_missing_items(monkeypatch)
     assert translator.last_metrics["api_calls"] == 2
 
 
+def test_translate_batch_falls_back_when_missing_numbered_items_persist(monkeypatch):
+    """
+    Regression/robustness: if numbered output keeps missing items even after strict-output retries,
+    treat it as fallback-worthy so we don't return all failure markers.
+    """
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini")
+    monkeypatch.setenv("PPIO_API_KEY", "dummy-ppio")
+    monkeypatch.setenv("AI_TRANSLATE_GEMINI_FALLBACK_MODELS", "off")
+
+    from core.ai_translator import AITranslator
+
+    monkeypatch.setattr(AITranslator, "_init_gemini", lambda self: None)
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+    calls = {"primary": 0, "fallback": 0}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        calls["primary"] += 1
+        # Always omit the last item to trigger missing-number retries and then fallback.
+        return "1. A\n2. B"
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api, raising=False)
+
+    class _FallbackTranslator:
+        provider = "ppio"
+        model = "zai-org/glm-4.7-flash"
+        last_metrics = {"api_calls": 1}
+
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
+            calls["fallback"] += 1
+            return ["FB1", "FB2", "FB3"]
+
+    monkeypatch.setattr(translator, "_fallback_translator_chain", lambda: [_FallbackTranslator()], raising=False)
+
+    result = asyncio.run(translator.translate_batch(["one", "two", "three"]))
+    assert result == ["FB1", "FB2", "FB3"]
+    # 3 attempts for missing-number retry (max_retries=2) then 1 fallback call.
+    assert calls["primary"] == 3
+    assert calls["fallback"] == 1
+
+
+def test_translate_batch_chunk_fallback_shrinks_when_default_chunk_is_too_large(monkeypatch):
+    """
+    If the full batch fails and the configured fallback chunk size is >= batch size,
+    we still want to shrink it so chunk fallback actually reduces prompt/output size.
+    """
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CHUNK_SIZE", "100")
+    monkeypatch.setenv("AI_TRANSLATE_BATCH_CONCURRENCY", "1")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+
+    # Avoid slowing test down due to retry backoff.
+    async def _fast_sleep(_seconds: float):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+
+    calls = {"count": 0}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        calls["count"] += 1
+        import re
+
+        # Count items in the numbered input section.
+        start = prompt.find("# 待翻译文本")
+        section = prompt[start:] if start >= 0 else prompt
+        item_count = 0
+        for line in section.splitlines():
+            if re.match(r"^(\d+)\.\s+", line.strip()):
+                item_count += 1
+
+        # Simulate overload for larger batches; small slices succeed.
+        if item_count > 2:
+            raise RuntimeError("503 UNAVAILABLE: model overloaded")
+        return "\n".join([f"{i + 1}. OUT:{i}" for i in range(item_count)])
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    result = asyncio.run(translator.translate_batch(["A", "B", "C", "D", "E"]))
+    assert result == ["OUT:0", "OUT:1", "OUT:0", "OUT:1", "OUT:0"]
+    # Full batch retries 3 times, then chunk fallback should split into smaller slices and succeed.
+    assert calls["count"] == 6
+
+
 def test_translate_batch_marks_hangul_leak_as_failure_for_zh(monkeypatch):
     monkeypatch.setenv("PPIO_API_KEY", "dummy")
     monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)

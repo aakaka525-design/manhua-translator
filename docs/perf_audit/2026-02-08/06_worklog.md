@@ -179,19 +179,27 @@ Slow pages to investigate first:
 - Missing attribution in reports: quality reports currently do not persist the env knob snapshot (e.g. overlap ratio / batch fallback), making A/B attribution rely on external notes. Consider writing a minimal `run_config` field into quality report JSON.
 
 ## Follow-ups (M3.1)
-### Translator: retry on missing numbered items (reduce per-item fallback + tail)
+### Translator: missing-number recovery (reduce per-item fallback + tail + fail markers)
 Evidence:
-- `logs/ai/20260208/ai_translator.log` contains repeated warnings like `AI response missing number 10/11/12`, which leads to empty translations for those items.
-- Downstream then marks them as `[翻译失败] ...` and triggers per-item fallback calls, increasing remote calls and p95/p99 latency.
+- AI logs can contain repeated warnings like `AI response missing number N`, indicating truncated/format-drift numbered outputs.
+- Under high concurrency, this can cascade into `[翻译失败]` regions if the batch cannot be recovered and all fallbacks are exhausted.
 
-Change:
-- In `core/ai_translator.py` `translate_batch()`: when numbered output is detected but some indices are missing (parsed as empty strings), retry the same batch immediately with:
-  - stricter format instructions (must output exactly `1..N`), and
-  - additional `max_tokens` headroom via env `AI_TRANSLATE_BATCH_MAX_TOKENS_MISSING_NUMBER_BONUS` (default 800).
-- Add test: `tests/test_ai_translator.py::test_translate_batch_retries_when_numbered_output_missing_items`.
+Implementation (branch `codex/stress-quality-fixes`):
+- `core/ai_translator.py:AITranslator.translate_batch()`:
+  - Immediate strict-output retry when numbered items are missing (`max_retries=2`).
+  - Adds a token headroom bonus via `AI_TRANSLATE_BATCH_MAX_TOKENS_MISSING_NUMBER_BONUS` (default 800) on strict retries.
+  - If missing-number persists after retries, treat it as fallback-worthy so the fallback chain (gemini model fallback / provider fallback) can recover instead of returning all failure markers.
+  - If a full batch still returns all failures, chunk fallback now shrinks `fallback_chunk_size` for small batches so it actually reduces prompt/output size (previously `min(12, chunk_size)` could be >= batch size and no fallback happened).
+- Tests:
+  - `tests/test_ai_translator.py::test_translate_batch_retries_when_numbered_output_missing_items`
+  - `tests/test_ai_translator.py::test_translate_batch_falls_back_when_missing_numbered_items_persist`
+  - `tests/test_ai_translator.py::test_translate_batch_chunk_fallback_shrinks_when_default_chunk_is_too_large`
 
-Open questions:
-- Should we add similar retry logic for `output_format=json` when JSON extraction returns fewer than expected items (partial/malformed)? Current fix targets the dominant numbered-output truncation case.
+Status / next evidence:
+- Needs cloud stress re-run evidence (S6/S9, UPSCALE=0) to confirm `pages_has_failure_marker` drops (target 0) without introducing mixed-language regressions.
+
+Open question:
+- Consider similar recovery for `output_format=json` when JSON extraction yields fewer than expected objects (crosspage path). Only do if stress evidence shows json parse is a contributor.
 
 ### W3 A/B: `AI_TRANSLATE_PRIMARY_TIMEOUT_MS` 12000 vs 15000 (Gemini)
 Context:
@@ -430,7 +438,7 @@ Verification:
 - Full suite: `pytest -q` PASS.
 
 Open question:
-- Need to confirm server crash mode (OOMKilled vs. unhandled exception) by inspecting Docker container state and kernel OOM logs.
+- Crash mode inspection (OOMKilled vs unhandled exception): CLOSED (cloud S3b/S6/S9 all show `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=0; see sections below).
 
 ## 2026-02-08 Cloud Stress S2: Hangul leakage fix validated (UPSCALE=0)
 

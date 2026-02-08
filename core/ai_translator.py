@@ -850,7 +850,10 @@ class AITranslator:
                         )
                         force_strict_output = True
                         continue
-                    if self._is_overload_error(e):
+                    # Treat persistent missing-number errors as retryable/fallback-worthy:
+                    # they are often caused by provider truncation or formatting drift and
+                    # can be recovered by a different model/provider in the fallback chain.
+                    if self._is_overload_error(e) or isinstance(e, _MissingNumberedItems):
                         for fallback_translator in self._fallback_translator_chain():
                             fallback_provider = getattr(fallback_translator, "provider", "unknown")
                             fallback_model = getattr(fallback_translator, "model", "unknown")
@@ -1032,20 +1035,23 @@ class AITranslator:
 
         if len(slices) == 1:
             single_results = await _translate_pairs(slices[0])
-            should_fallback = (
-                len(valid_pairs) > 1
-                and fallback_chunk_size < len(valid_pairs)
-                and _all_failed(single_results)
-            )
+            should_fallback = len(valid_pairs) > 1 and _all_failed(single_results)
             if should_fallback:
+                # If the configured fallback chunk size is >= current batch size (common for
+                # small pages), shrink it so we actually reduce prompt/output size and can
+                # recover from format/truncation failures.
+                effective_chunk_size = fallback_chunk_size
+                if effective_chunk_size >= len(valid_pairs):
+                    effective_chunk_size = max(1, len(valid_pairs) // 2)
                 logger.warning(
-                    "batch: full batch failed, fallback chunk_size=%d concurrency=%d",
+                    "batch: full batch failed, fallback chunk_size=%d effective_chunk_size=%d concurrency=%d",
                     fallback_chunk_size,
+                    effective_chunk_size,
                     concurrency,
                 )
                 fallback_slices = _split_pairs(
                     valid_pairs,
-                    max_items=fallback_chunk_size,
+                    max_items=effective_chunk_size,
                     max_chars=char_budget,
                 )
                 chunked_results = await _translate_slices(fallback_slices, concurrency)
