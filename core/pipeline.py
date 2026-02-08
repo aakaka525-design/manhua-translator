@@ -98,11 +98,21 @@ class Pipeline:
             PipelineResult with success status and final context
         """
         start_time = time.time()
+        # Queue wait is the time from task creation to the moment this pipeline run starts.
+        # This is usually ~0 for CLI single-image runs, but can be significant in API/chapter
+        # workloads when tasks wait behind concurrency semaphores.
+        try:
+            queue_wait_ms = max(0.0, (start_time - context.created_at.timestamp()) * 1000)
+        except Exception:
+            queue_wait_ms = 0.0
         stages_completed = []
         
         # Initialize metrics
         metrics = PipelineMetrics() if collect_metrics else None
         stage_timings = {}
+        if metrics is not None:
+            # PipelineMetrics is a dataclass; we attach this attribute without changing public APIs.
+            metrics.queue_wait_ms = queue_wait_ms
 
         logger.info(f"[{context.task_id}] Pipeline 开始: {context.image_path}")
 

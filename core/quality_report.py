@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import resource
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -29,6 +31,67 @@ def _timings_from_metrics(metrics: Any) -> Dict[str, float]:
     if total is not None:
         timings["total"] = total
     return timings
+
+
+_RUN_CONFIG_KEYS = [
+    # Provider / model selection (safe: does not include API keys)
+    "AI_PROVIDER",
+    "PPIO_MODEL",
+    "GEMINI_MODEL",
+    # Translator knobs
+    "AI_TRANSLATE_PRIMARY_TIMEOUT_MS",
+    "AI_TRANSLATE_ZH_FALLBACK_BATCH",
+    "AI_TRANSLATE_BATCH_CHUNK_SIZE",
+    "AI_TRANSLATE_BATCH_CONCURRENCY",
+    "AI_TRANSLATE_FASTFAIL",
+    # OCR knobs
+    "OCR_TILE_HEIGHT",
+    "OCR_TILE_OVERLAP_RATIO",
+    "OCR_EDGE_TILE_MODE",
+    # Upscale is forced off in perf runs but keep it for attribution
+    "UPSCALE_ENABLE",
+]
+
+
+def _collect_run_config() -> Dict[str, str]:
+    cfg: Dict[str, str] = {}
+    for key in _RUN_CONFIG_KEYS:
+        # Defensive: even though we use a whitelist, never persist secrets.
+        if any(s in key.upper() for s in ("KEY", "TOKEN", "PASSWORD", "SECRET")):
+            continue
+        value = os.getenv(key)
+        if value is None:
+            continue
+        cfg[key] = value
+    return cfg
+
+
+def _collect_process_metrics() -> Dict[str, float]:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    # Linux: ru_maxrss is KB; macOS: bytes. Normalize to MB.
+    if sys.platform == "darwin":
+        max_rss_mb = float(usage.ru_maxrss) / (1024 * 1024)
+    else:
+        max_rss_mb = float(usage.ru_maxrss) / 1024
+    return {
+        "cpu_user_s": float(getattr(usage, "ru_utime", 0.0)),
+        "cpu_system_s": float(getattr(usage, "ru_stime", 0.0)),
+        "max_rss_mb": max_rss_mb,
+    }
+
+
+def _queue_wait_ms_from_metrics(metrics: Any) -> float:
+    if metrics is None:
+        return 0.0
+    if isinstance(metrics, dict):
+        raw = metrics.get("queue_wait_ms")
+    else:
+        raw = getattr(metrics, "queue_wait_ms", None)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, value)
 
 
 def _sanitize_component(text: str) -> str:
@@ -124,6 +187,9 @@ def write_quality_report(result) -> str:
         "error_message": ctx.error_message,
         "target_language": ctx.target_language,
         "timings_ms": _timings_from_metrics(result.metrics),
+        "queue_wait_ms": _queue_wait_ms_from_metrics(result.metrics),
+        "run_config": _collect_run_config(),
+        "process": _collect_process_metrics(),
         "regions": [],
     }
     if getattr(ctx, "crosspage_debug", None):

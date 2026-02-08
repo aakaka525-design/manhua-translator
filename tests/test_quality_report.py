@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -141,14 +142,23 @@ def test_pipeline_writes_quality_report(tmp_path, monkeypatch):
         translator=_NoopModule(),
         inpainter=_NoopModule(),
         renderer=_NoopModule(),
+        upscaler=_NoopModule(),
     )
 
     ctx = TaskContext(image_path="/tmp/input.png", target_language="zh-CN")
+    # Simulate queue wait (e.g. page tasks waiting behind a semaphore in API/chapter runs).
+    ctx.created_at = datetime.now() - timedelta(seconds=2)
 
     asyncio.run(pipeline.process(ctx))
 
     report_paths = list(tmp_path.glob(f"*{ctx.task_id}.json"))
     assert report_paths
+
+    data = json.loads(Path(report_paths[0]).read_text())
+    assert isinstance(data.get("run_config"), dict)
+    assert isinstance(data.get("process"), dict)
+    assert isinstance(data.get("queue_wait_ms"), (int, float))
+    assert data["queue_wait_ms"] >= 1500
 
 
 def test_quality_report_skips_glossary_for_sfx(tmp_path, monkeypatch):
@@ -335,3 +345,46 @@ def test_quality_report_filename_includes_source(tmp_path, monkeypatch):
     name = Path(report_path).name
     assert "demo-manga__ch-1__01" in name
     assert str(ctx.task_id) in name
+
+
+def test_quality_report_includes_run_config_and_sanitizes_secrets(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path))
+
+    monkeypatch.setenv("UPSCALE_ENABLE", "0")
+    monkeypatch.setenv("AI_TRANSLATE_PRIMARY_TIMEOUT_MS", "15000")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-should-not-leak")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-should-not-leak")
+
+    ctx = TaskContext(
+        image_path="/tmp/input.png",
+        target_language="zh-CN",
+        regions=[
+            RegionData(
+                box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+                source_text="Hello",
+                target_text="你好",
+                confidence=0.9,
+            )
+        ],
+    )
+    result = PipelineResult(
+        success=True,
+        task=ctx,
+        processing_time_ms=10,
+        stages_completed=["ocr"],
+        metrics=PipelineMetrics(total_duration_ms=10).to_dict(),
+    )
+
+    from core.quality_report import write_quality_report
+
+    data = json.loads(Path(write_quality_report(result)).read_text())
+    run_config = data["run_config"]
+    assert run_config["UPSCALE_ENABLE"] == "0"
+    assert run_config["AI_TRANSLATE_PRIMARY_TIMEOUT_MS"] == "15000"
+    assert "OPENAI_API_KEY" not in run_config
+    assert "GEMINI_API_KEY" not in run_config
+
+    proc = data["process"]
+    assert proc["cpu_user_s"] >= 0
+    assert proc["cpu_system_s"] >= 0
+    assert proc["max_rss_mb"] >= 0
