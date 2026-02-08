@@ -418,6 +418,12 @@ class OCRModule(BaseModule):
             tile_avg_ms = getattr(self.engine, "last_tile_avg_ms", None)
             if tile_avg_ms is not None:
                 self.last_metrics["tile_avg_ms"] = round(tile_avg_ms, 2)
+        if hasattr(self.engine, "last_edge_tile_count"):
+            self.last_metrics["edge_tile_count"] = getattr(self.engine, "last_edge_tile_count", None)
+        if hasattr(self.engine, "last_edge_tile_avg_ms"):
+            edge_avg_ms = getattr(self.engine, "last_edge_tile_avg_ms", None)
+            if edge_avg_ms is not None:
+                self.last_metrics["edge_tile_avg_ms"] = round(edge_avg_ms, 2)
 
         logger.info(f"[{context.task_id}] OCR 完成: 识别 {len(context.regions)} 个区域, 耗时 {duration_ms:.0f}ms")
         

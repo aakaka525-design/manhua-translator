@@ -36,6 +36,68 @@ class PaddleOCREngine(OCREngine):
         self._ocr = None
         self.last_tile_count = None
         self.last_tile_avg_ms = None
+        self.last_edge_tile_count = None
+        self.last_edge_tile_avg_ms = None
+
+    @staticmethod
+    def _small_image_scale_mode() -> str:
+        # Keep default behavior unchanged (always do scaled pass on small images),
+        # but allow A/B tuning via env to reduce latency.
+        raw = os.getenv("OCR_SMALL_IMAGE_SCALE_MODE", "always").strip().lower()
+        if raw in {"0", "false", "off", "no"}:
+            return "off"
+        if raw in {"auto"}:
+            return "auto"
+        return "always"
+
+    @staticmethod
+    def _small_image_scale_factor() -> float:
+        raw = (os.getenv("OCR_SMALL_IMAGE_SCALE_FACTOR") or "").strip()
+        if not raw:
+            return 1.5
+        try:
+            value = float(raw)
+        except ValueError:
+            return 1.5
+        # Keep within a sane range.
+        return max(1.1, min(3.0, value))
+
+    @staticmethod
+    def _small_image_scale_thresholds() -> tuple[int, float]:
+        min_regions_raw = (os.getenv("OCR_SMALL_IMAGE_SCALE_MIN_REGIONS") or "").strip()
+        min_conf_raw = (os.getenv("OCR_SMALL_IMAGE_SCALE_MIN_CONF") or "").strip()
+        min_regions = 4
+        min_conf = 0.60
+        if min_regions_raw:
+            try:
+                min_regions = int(min_regions_raw)
+            except ValueError:
+                pass
+        if min_conf_raw:
+            try:
+                min_conf = float(min_conf_raw)
+            except ValueError:
+                pass
+        min_regions = max(1, min(50, min_regions))
+        min_conf = max(0.0, min(1.0, min_conf))
+        return min_regions, min_conf
+
+    @classmethod
+    def _should_run_small_image_scale(cls, regions: list[RegionData]) -> bool:
+        mode = cls._small_image_scale_mode()
+        if mode == "off":
+            return False
+        if mode == "always":
+            return True
+        # auto
+        if not regions:
+            return True
+        min_regions, min_conf = cls._small_image_scale_thresholds()
+        if len(regions) < min_regions:
+            return True
+        confidences = [r.confidence for r in regions if isinstance(r.confidence, (int, float))]
+        avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
+        return avg_conf < min_conf
 
     def _init_ocr(self):
         if self._ocr is None:
@@ -43,9 +105,36 @@ class PaddleOCREngine(OCREngine):
         return self._ocr
 
     @staticmethod
-    def _edge_tiles_enabled() -> bool:
-        raw = os.getenv("OCR_EDGE_TILE_ENABLE", "0").strip().lower()
-        return raw in {"1", "true", "yes", "on"}
+    def _edge_tiles_mode() -> str:
+        """
+        Edge tiles are an optional extra OCR pass on top/bottom bands.
+
+        Defaults remain OFF for safety. Modes:
+        - off: never run
+        - on: always run when tiling is used
+        - auto: run only when we suspect border clipping (cheap heuristic)
+        """
+        raw = (os.getenv("OCR_EDGE_TILE_MODE") or "").strip().lower()
+        if raw:
+            if raw in {"on", "1", "true", "yes"}:
+                return "on"
+            if raw in {"auto"}:
+                return "auto"
+            return "off"
+        # Backward compat: old boolean flag.
+        legacy = os.getenv("OCR_EDGE_TILE_ENABLE", "0").strip().lower()
+        return "on" if legacy in {"1", "true", "yes", "on"} else "off"
+
+    @staticmethod
+    def _edge_tiles_touch_px() -> int:
+        raw = (os.getenv("OCR_EDGE_TILE_TOUCH_PX") or "").strip()
+        if not raw:
+            return 8
+        try:
+            value = int(raw)
+        except ValueError:
+            return 8
+        return max(1, min(128, value))
 
     def _min_len_for_lang(self) -> int:
         lang = (self.lang or "").lower()
@@ -187,6 +276,9 @@ class PaddleOCREngine(OCREngine):
         if tiling_manager.should_tile(height):
             tiles = tiling_manager.create_tiles(processed_image)
             tile_times = []
+            edge_tile_times = []
+            self.last_edge_tile_count = 0
+            self.last_edge_tile_avg_ms = 0
 
             # 串行处理切片，避免并发导致 OCR 结果不稳定
             for tile in tiles:
@@ -205,21 +297,38 @@ class PaddleOCREngine(OCREngine):
             )
 
             # Edge band OCR to catch boundary text (top/bottom)
-            if self._edge_tiles_enabled():
+            edge_mode = self._edge_tiles_mode()
+            should_run_edge = edge_mode == "on"
+            if edge_mode == "auto":
+                touch_px = self._edge_tiles_touch_px()
+                # If OCR boxes touch the image border, we may have clipped text.
+                should_run_edge = any(
+                    r.box_2d
+                    and (r.box_2d.y1 <= touch_px or r.box_2d.y2 >= height - touch_px)
+                    for r in all_regions
+                )
+
+            if should_run_edge:
                 edge_tiles = tiling_manager.create_edge_tiles(processed_image)
                 for edge_tile in edge_tiles:
+                    start = time.perf_counter()
                     edge_regions = self._process_chunk(
                         ocr, edge_tile.image, 0, min_score=0.4, min_len=1
                     )
+                    edge_tile_times.append((time.perf_counter() - start) * 1000)
                     remapped = tiling_manager.remap_regions(edge_regions, edge_tile)
                     all_regions.extend(remapped)
                 all_regions = tiling_manager.merge_regions(all_regions, iou_threshold=0.5)
+                self.last_edge_tile_count = len(edge_tiles)
+                self.last_edge_tile_avg_ms = (
+                    sum(edge_tile_times) / len(edge_tile_times) if edge_tile_times else 0
+                )
         else:
             all_regions = self._process_chunk(
                 ocr, processed_image, 0, min_len=min_len
             )
-            if width < 1200 and height < 2000:
-                scale = 1.5
+            if width < 1200 and height < 2000 and self._should_run_small_image_scale(all_regions):
+                scale = self._small_image_scale_factor()
                 scaled_image = cv2.resize(
                     processed_image,
                     None,
@@ -253,6 +362,8 @@ class PaddleOCREngine(OCREngine):
 
             self.last_tile_count = 1
             self.last_tile_avg_ms = 0
+            self.last_edge_tile_count = 0
+            self.last_edge_tile_avg_ms = 0
 
         # 简化后处理：只做必要的过滤和排序
         filtered = filter_noise_regions(all_regions, image_height=height, relaxed=True)
