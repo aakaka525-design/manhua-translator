@@ -30,9 +30,21 @@ logger = logging.getLogger(__name__)
 
 # In-memory task storage
 _tasks: Dict[UUID, TaskContext] = {}
+_task_meta: Dict[UUID, dict] = {}
 
 # SSE event listeners
 _listeners: Set[asyncio.Queue] = set()
+
+_STAGE_ORDER = {
+    "init": 0,
+    "ocr": 1,
+    "translator": 2,
+    "inpainter": 3,
+    "renderer": 4,
+    "upscaler": 5,
+    "complete": 6,
+    "failed": 6,
+}
 
 
 async def broadcast_event(data: dict):
@@ -47,14 +59,18 @@ async def broadcast_event(data: dict):
 
 async def pipeline_status_callback(stage: str, status: TaskStatus, task_id: UUID):
     """Callback for pipeline progress updates."""
-    await broadcast_event(
-        {
-            "type": "progress",
-            "task_id": str(task_id),
-            "stage": stage,
-            "status": status.value,
-        }
-    )
+    payload = {
+        "type": "progress",
+        "task_id": str(task_id),
+        "stage": stage,
+        "status": status.value,
+        "stage_index": _STAGE_ORDER.get(stage, 0),
+        "stage_total": 6,
+    }
+    meta = _task_meta.get(task_id)
+    if meta:
+        payload.update(meta)
+    await broadcast_event(payload)
 
 
 def _build_pipeline_error_detail(result, fallback_message: str) -> dict:
@@ -70,7 +86,7 @@ def _build_pipeline_error_detail(result, fallback_message: str) -> dict:
 
 def _pipeline_failure_status_code(result) -> int:
     if getattr(result.task, "error_code", None) == "ocr_no_text":
-        return status.HTTP_422_UNPROCESSABLE_CONTENT
+        return status.HTTP_422_UNPROCESSABLE_ENTITY
     return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
@@ -174,6 +190,7 @@ async def translate_chapter_endpoint(
 
     # Background processing function
     async def process_chapter():
+        contexts = []
         total_count = 0
         # 使用 request 中的语言，如果为 None 则从 settings 获取
         try:
@@ -197,6 +214,11 @@ async def translate_chapter_endpoint(
                 img_name = Path(ctx.image_path).name
                 ctx.output_path = str(output_base / img_name)
                 _tasks[ctx.task_id] = ctx
+                _task_meta[ctx.task_id] = {
+                    "manga_id": request.manga_id,
+                    "chapter_id": request.chapter_id,
+                    "image_name": img_name,
+                }
 
             total_count = len(contexts)
             await broadcast_event(
@@ -297,6 +319,9 @@ async def translate_chapter_endpoint(
                     "error_message": str(exc),
                 }
             )
+        finally:
+            for ctx in contexts:
+                _task_meta.pop(ctx.task_id, None)
 
     background_tasks.add_task(process_chapter)
 
