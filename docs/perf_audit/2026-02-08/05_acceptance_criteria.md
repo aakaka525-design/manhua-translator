@@ -177,3 +177,35 @@ Results (nearest-rank p50/p95; parsed from quality reports):
 Verdict:
 - Quality: PASS (no failure markers; Hangul leakage removed)
 - Performance: PASS for this sampling (translator long-tail improved); still need larger-scope sampling to claim p95 improvement is stable across titles.
+
+### 6.7 Cloud Stress S3b (API, 4 concurrent chapters, 43 pages, UPSCALE=0; post `4e6263a`)
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (4 chapters started concurrently)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260208_190604_api_s3b`
+- Evidence:
+  - Report list: `output/quality_reports/_stress_20260208_190604_api_s3b.list`
+  - Docker: `manhua-translator-api-1` healthy; `OOMKilled=false`, `RestartCount=0`
+  - Kernel OOM grep: `/tmp/kernel_oom_s3b_20260208_190604.txt` (`0` lines)
+
+Gates:
+- `pages_has_hangul` / `regions_with_hangul`: must be 0 for zh output (PASS)
+- `"[翻译失败]"` in quality reports: must stay 0 (NOT PASS in this sampling)
+
+Results (nearest-rank p50/p95; parsed from quality reports):
+- `pages_total=43`
+- quality:
+  - `pages_has_hangul=0`, `regions_with_hangul=0`
+  - `pages_has_fail_marker=1`, `regions_with_fail_marker=7`
+  - `no_cjk_with_ascii=23`, `empty_target_regions=52`
+- timings (ms):
+  - `translator_p50=14277`, `translator_p95=53667`, `translator_max=97212`
+  - `total_p95=72163`, `total_max=121280`
+- process peak (from reports):
+  - `max_rss_max_mb=4376.7`
+- failure file (all regions failed):
+  - `taming-a-female-bully__chapter-57-raw__12__8d767d9a-dbcb-410a-a621-58f9512b8f9f.json`
+
+Verdict:
+- Stability: PASS at this concurrency (no restarts/OOM observed)
+- Quality: NOT PASS (provider overload/timeout can still yield `[翻译失败]` under multi-chapter load; requires backpressure/concurrency cap to drive fail marker back to 0)

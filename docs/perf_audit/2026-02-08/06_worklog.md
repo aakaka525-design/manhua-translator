@@ -479,3 +479,53 @@ TDD coverage:
 Open questions / follow-ups:
 - Docker CPU image has no LaMa inpainting, uses OpenCV fallback (seen in chapter logs). This may affect erase quality and latency; decide if we need LaMa on server deployments.
 - Crash reproduction: not observed at 3 concurrent chapters with `UPSCALE_ENABLE=0`. If user still sees crashes, likely higher concurrency (more simultaneous chapters) and/or upscaler enabled.
+
+## 2026-02-08 Cloud Stress S3b: API multi-chapter (4 chapters, 43 pages, UPSCALE=0) on 185.218.204.62
+Context:
+- Server: `185.218.204.62` (docker)
+- Repo: `/root/manhua-translator`
+- Deployed branch: `codex/stress-quality-fixes` (includes commit `4e6263a`)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260208_190604_api_s3b`
+- Report list: `output/quality_reports/_stress_20260208_190604_api_s3b.list` (43 json)
+- Trigger: start 4 chapters concurrently via API `POST /api/v1/translate/chapter`
+- Env (key; no secrets):
+  - `UPSCALE_ENABLE=0`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+  - `AI_TRANSLATE_BATCH_CONCURRENCY=2`
+  - `AI_TRANSLATE_FASTFAIL=1`
+
+Evidence:
+- Aggregated report summary (python snippet on server; nearest-rank p50/p95):
+  - `pages_total=43`
+  - quality:
+    - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+    - `pages_has_failure_marker=1`, `regions_with_failure_marker=7` (FAIL)
+    - `no_cjk_with_ascii=23`, `empty_target_regions=52`
+  - timings (ms):
+    - `translator_p50=14277`, `translator_p95=53667`, `translator_max=97212`
+    - `total_p95=72163`, `total_max=121280`
+  - process peak (from reports):
+    - `max_rss_max_mb=4376.7`
+  - failure file:
+    - `taming-a-female-bully__chapter-57-raw__12__8d767d9a-dbcb-410a-a621-58f9512b8f9f.json` (7 regions, all `[翻译失败]`)
+- Failure page details (from report):
+  - image: `data/raw/taming-a-female-bully/chapter-57-raw/12.jpg`
+  - timings (ms): `translator=97212`, `total=108542`
+  - regions_total=7, fail_regions=7
+- Docker/kernel evidence (server):
+  - container: `manhua-translator-api-1` is healthy
+  - `OOMKilled=false`, `RestartCount=0`
+  - kernel OOM lines: `0` (`/tmp/kernel_oom_s3b_20260208_190604.txt`)
+
+Interpretation:
+- Hangul leakage regression stays fixed under API multi-chapter concurrency (good).
+- Under this load, Gemini overload / timeout still happens (AI log shows many `503 UNAVAILABLE` and timeouts), and at least one page fell through all fallbacks -> `[翻译失败]` (quality regression).
+- Memory peak is already ~4.3GB at 4 concurrent chapters; higher concurrency is likely to increase OOM risk.
+
+Open questions / follow-ups:
+- Concurrency escalation: run 6 and 9 concurrent chapters (still `UPSCALE_ENABLE=0`) to find crash boundary and measure `[翻译失败]` rate under load.
+- Mitigation candidates (low risk, quality-preserving):
+  - Add a global AI-call semaphore (cross-task) to keep provider 503/timeout rate low.
+  - Cap chapter concurrency (`TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS`) to avoid pushing provider into overload.

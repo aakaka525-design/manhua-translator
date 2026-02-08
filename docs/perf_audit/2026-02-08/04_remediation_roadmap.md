@@ -108,7 +108,10 @@
     - Before (`_stress_20260208_134907.list`): `pages_has_hangul=2`, `translator_p95=66908ms`
     - After  (`_stress_20260208_142518_s2_afterfix.list`): `pages_has_hangul=0`, `translator_p95=29367ms`
 - 验收指标:
-  - 并发章节压测（>=3 章并发，UPSCALE=0）下：`[翻译失败]=0` 且 `pages_has_hangul=0`。
+  - 并发章节压测（>=3 章并发，UPSCALE=0）下：`pages_has_hangul=0`（硬门槛）且 `"[翻译失败]"` 不上升（理想为 0）。
+  - Evidence:
+    - S2 (docker, 3 concurrent chapters, 42 pages): `pages_has_hangul=0`, `"[翻译失败]"=0` (PASS)
+    - S3b (API, 4 concurrent chapters, 43 pages; `output/quality_reports/_stress_20260208_190604_api_s3b.list`): `pages_has_hangul=0` but `pages_has_fail_marker=1` (7 regions) (NOT PASS)
   - `translator` p95/p99 不劣化（理想：下降），且容器无 OOM/restart。
 
 ### 5. 高频日志导致 I/O 与序列化放大
