@@ -621,3 +621,73 @@ Interpretation:
 Open questions / follow-ups:
 - Crash reproduction (UPSCALE=0): CLOSED (not reproduced up to 9 concurrent chapters in S9).
 - Next: implement global backpressure to reduce provider overload, then re-run S6/S9 to target `"[翻译失败]"=0` while keeping `pages_has_hangul=0`.
+
+## 2026-02-09 Cloud Stress S6 Re-run: missing-number recovery + global AI-call backpressure (6 chapters, 104 pages, UPSCALE=0) on 185.218.204.62
+
+Purpose:
+- Validate whether translator failure markers (`[翻译失败]`) can be driven back to 0 under multi-chapter API load without reintroducing Hangul leakage.
+- Close the follow-up from S6/S9: add global backpressure and re-run for evidence.
+
+Context:
+- Server: `185.218.204.62` (docker)
+- Repo: `/root/manhua-translator`
+- Deployed branch: `codex/stress-quality-fixes`
+- Deployed commit: `3bd11f8` (merge commit; includes missing-number recovery + `AI_TRANSLATE_MAX_INFLIGHT_CALLS` backpressure)
+- Trigger: start 6 chapters concurrently via API `POST /api/v1/translate/chapter`
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260209_064151_api_s6_missingfix`
+- Evidence (server artifacts):
+  - report list: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.list` (104 json; expected_pages=104)
+  - summary: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.summary.json`
+  - failures: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.failures.txt`
+  - docker: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.docker_state.txt`
+  - kernel OOM: `/tmp/kernel_oom_20260209_064151_api_s6_missingfix.txt` (0 lines)
+
+Dataset (chapters started concurrently; expected_pages=104):
+- `hole-inspection-is-a-task/chapter-16-raw` (32)
+- `hole-inspection-is-a-task/chapter-18-raw` (29)
+- `taming-a-female-bully/chapter-57-raw` (23)
+- `hole-inspection-is-a-task/chapter-12-raw` (13)
+- `hole-inspection-is-a-task/chapter-1` (6)
+- `wireless-onahole/chapter-71-raw` (1)
+
+Env (key; no secrets):
+- `UPSCALE_ENABLE=0`
+- `OCR_TILE_OVERLAP_RATIO=0.25`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+- `AI_TRANSLATE_FASTFAIL=1`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=4`
+- `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+- `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=2`
+
+Evidence (summary):
+- `pages_total=104`
+- quality:
+  - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+  - `pages_has_failure_marker=2`, `regions_with_failure_marker=3` (NOT PASS; target is 0)
+  - `no_cjk_with_ascii=43`, `empty_target_regions=193`
+- timings (ms; nearest-rank p50/p95):
+  - `translator_p50=21014`, `translator_p95=102972`, `translator_max=199678`
+  - `ocr_p50=1777`, `ocr_p95=33364`, `ocr_max=39303`
+  - `total_p50=35477`, `total_p95=107546`, `total_max=215703`
+- process peak (from reports):
+  - `max_rss_p95_mb=3985.7`, `max_rss_max_mb=3985.7`
+- failure pages (from summary + failures.txt):
+  - `data/raw/hole-inspection-is-a-task/chapter-12-raw/5.jpg`: `regions=8`, `fail_regions=2`, `translator_ms=121311.89`
+  - `data/raw/hole-inspection-is-a-task/chapter-12-raw/7.jpg`: `regions=5`, `fail_regions=1`, `translator_ms=70214.15`
+
+AI log counters (this run; counted from `MANHUA_LOG_DIR/ai/*/ai_translator.log`):
+- `primary timeout after 15000ms`: 11
+- `fallback provider=`: 33
+- `missing number|missing items` lines: 227
+- `503` lines: 36
+
+Interpretation:
+- Stability (crash/OOM): PASS (no restarts; kernel OOM lines=0).
+- Quality: improved but not yet closed (2/104 pages still fell through all fallbacks to `[翻译失败]`).
+- Tail latency: still heavy (`translator_p95~103s`, `translator_max~200s`), consistent with provider overload (503/timeouts) dominating under multi-chapter load.
+
+Open questions / follow-ups:
+- Re-run S6 with stricter backpressure to target `pages_has_failure_marker=0`:
+  - reduce `AI_TRANSLATE_MAX_INFLIGHT_CALLS` (e.g. 2) and reduce `TRANSLATE_CHAPTER_PAGE_CONCURRENCY` (e.g. 1), keep `UPSCALE_ENABLE=0`.

@@ -259,3 +259,43 @@ Results (nearest-rank p50/p95; parsed from quality reports):
 Verdict:
 - Stability: PASS with `UPSCALE_ENABLE=0` (no crash reproduced up to 9 concurrent chapters)
 - Quality: NOT PASS (failure markers remain under high concurrency; requires backpressure to keep `"[翻译失败]"` at 0)
+
+### 6.10 Cloud Stress S6 Re-run (API, 6 concurrent chapters, 104 pages, UPSCALE=0; missing-number recovery + AI-call backpressure)
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (6 chapters started concurrently)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260209_064151_api_s6_missingfix`
+- Evidence:
+  - Report list: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.list`
+  - Summary: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.summary.json`
+  - Failures: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.failures.txt`
+  - Docker: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.docker_state.txt` (`OOMKilled=false`, `RestartCount=0`)
+  - Kernel OOM grep: `/tmp/kernel_oom_20260209_064151_api_s6_missingfix.txt` (`0` lines)
+
+Env (key; no secrets):
+- `UPSCALE_ENABLE=0`
+- `OCR_TILE_OVERLAP_RATIO=0.25`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+- `AI_TRANSLATE_FASTFAIL=1`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=4`
+- `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+- `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=2`
+
+Results (from summary; nearest-rank p50/p95):
+- `pages_total=104`
+- quality:
+  - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+  - `pages_has_failure_marker=2`, `regions_with_failure_marker=3` (NOT PASS)
+  - `no_cjk_with_ascii=43`, `empty_target_regions=193`
+- timings (ms):
+  - `translator_p50=21014`, `translator_p95=102972`, `translator_max=199678`
+  - `ocr_p50=1777`, `ocr_p95=33364`, `ocr_max=39303`
+  - `total_p50=35477`, `total_p95=107546`, `total_max=215703`
+- process peak (from reports):
+  - `max_rss_max_mb=3985.7`
+
+Verdict:
+- Stability: PASS (no restarts/OOM observed)
+- Quality: NOT PASS yet (failure markers persist but reduced; next step is stricter backpressure to push `"[翻译失败]"` to 0)

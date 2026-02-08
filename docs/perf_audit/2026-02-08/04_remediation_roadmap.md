@@ -116,6 +116,25 @@
     - S9 (API, 9 concurrent chapters, 211 pages; `output/quality_reports/_stress_20260208_193832_api_s9.list`): `pages_has_hangul=0` but `pages_has_fail_marker=6` (16 regions) (NOT PASS)
   - `translator` p95/p99 不劣化（理想：下降），且容器无 OOM/restart。
 
+### 4e. Global AI-call backpressure（config-only，降低 provider overload 导致的 `[翻译失败]`）
+- 问题: API 多章节并发时，Gemini/PPIO 侧可能出现 `503`/timeout/格式漂移（missing numbered items），导致 batch 级 fallback 链耗尽，最终在报告中出现 `[翻译失败]`（这会直接导致该气泡保持原文，属于质量回退）。
+- 涉及文件: `core/ai_translator.py`
+- 改造动作（可执行步骤）:
+  1. 部署侧设置 `AI_TRANSLATE_MAX_INFLIGHT_CALLS=<N>`（默认 0 表示关闭；建议从 2~4 起步），对“主+回退”远端调用做进程级并发上限。
+  2. 若仍出现 `[翻译失败]`，同时下调 `TRANSLATE_CHAPTER_PAGE_CONCURRENCY`（例如 2 -> 1）以降低同一时刻的 in-flight 页数。
+  3. 继续保留 `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`（Gemini + fallback chain）避免过紧 timeout 触发不必要的 fallback 堆叠。
+- 风险与兼容性:
+  - 吞吐降低（p50 可能上升），但可以显著降低 503/timeout 的错误放大，优先保证质量与稳定性。
+- 预计收益（耗时/质量）:
+  - 质量收益（S6 re-run, 6 chapters, 104 pages, UPSCALE=0）:
+    - `pages_has_hangul=0`（保持 PASS）
+    - `pages_has_failure_marker=2`（较旧 S6/S9 明显减少，但尚未达成 0）
+    - Evidence: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.summary.json`
+  - 稳定性: 多章节并发下仍未观察到 OOM/restart（Evidence: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.docker_state.txt` + kernel OOM 0 lines）
+- 验收指标:
+  - 云端 API 压测（>=6 章并发，UPSCALE=0）下：`pages_has_failure_marker=0` 且 `pages_has_hangul=0`（硬门槛）。
+  - AI log 中 `503` 与 `primary timeout` 计数相对下降（作为间接证据）。
+
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
 - 涉及文件: `core/ai_translator.py`, `core/modules/translator.py`, `core/modules/ocr.py`
