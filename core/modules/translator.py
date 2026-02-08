@@ -1032,7 +1032,8 @@ class TranslatorModule(BaseModule):
                             for idx, translation in zip(normal_indices, normal_translations):
                                 translations[idx] = translation
                     else:
-                        translations = [f"[翻译失败] {t}" for t in texts_to_translate]
+                        # Avoid leaking source text (may contain Hangul) into target_text.
+                        translations = ["[翻译失败]"] * len(texts_to_translate)
                 else:
                     # Google Translate 逐个翻译
                     translations = []
@@ -1434,7 +1435,8 @@ class TranslatorModule(BaseModule):
                 logger.error(f"[{context.task_id}] 翻译失败: {e}")
                 for group in groups_to_translate:
                     for region in group:
-                        region.target_text = f"[翻译失败] {region.source_text}"
+                        # Keep a stable marker (no source text) so reports don't contain Hangul.
+                        region.target_text = "[翻译失败]"
 
         # 获取模型名称用于日志
         model_name = "unknown"

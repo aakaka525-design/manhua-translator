@@ -27,6 +27,8 @@ logger = setup_module_logger(
     level=get_log_level("AI_TRANSLATOR_LOG_LEVEL", logging.INFO),
 )
 
+_FAILURE_MARKER = "[翻译失败]"
+
 # 启用 OpenAI SDK 详细日志（显示重试原因）
 if os.getenv("DEBUG_OPENAI") == "1":
     logging.getLogger("openai").setLevel(logging.DEBUG)
@@ -371,7 +373,7 @@ class AITranslator:
             result_list = await self.translate_batch([text])
             result = ((result_list[0] if result_list else "") or "").strip()
             if not result:
-                result = f"[翻译失败] {text}"
+                result = _FAILURE_MARKER
             duration_ms = (time.perf_counter() - start) * 1000
             logger.info(f"translate: ok model={self.model} ms={duration_ms:.0f} out_len={len(result)}")
             log_output = _format_log_text(result, log_mode, log_limit)
@@ -381,10 +383,10 @@ class AITranslator:
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             logger.error(f"translate: error model={self.model} ms={duration_ms:.0f} err={type(e).__name__}: {e}")
-            log_output = _format_log_text(f"[翻译失败] {text}", log_mode, log_limit)
+            log_output = _format_log_text(_FAILURE_MARKER, log_mode, log_limit)
             if log_output is not None:
                 logger.info(f'translate: out="{_sanitize_log_text(log_output)}"')
-            return f"[翻译失败] {text}"
+            return _FAILURE_MARKER
     
     async def _call_api(self, prompt: str, max_tokens: int = 500) -> str:
         """统一的 API 调用方法。"""
@@ -743,17 +745,17 @@ class AITranslator:
                         cleaned = _clean_ai_annotations(trans)
                         # Empty translation means AI skipped this number
                         if not cleaned.strip():
-                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
                         # Detect Korean text returned unchanged (AI failed to translate names)
                         elif _hangul_check.search(cleaned) and cleaned.strip() == orig_text.strip():
                             logger.warning(f"AI returned Korean unchanged: {orig_text}")
-                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
                         else:
                             slice_results.append((orig_idx, cleaned))
                     if len(translations) < len(pairs):
                         for i in range(len(translations), len(pairs)):
                             orig_idx, orig_text = pairs[i]
-                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
 
                     logger.info(
                         f"batch: ok model={self.model} ms={duration_ms:.0f} out_count={len(slice_results)}{slice_note}"
@@ -839,7 +841,7 @@ class AITranslator:
                                     return [
                                         (
                                             orig_idx,
-                                            (_clean_ai_annotations(trans).strip() or f"[翻译失败] {orig_text}")
+                                            (_clean_ai_annotations(trans).strip() or _FAILURE_MARKER)
                                         )
                                         for (orig_idx, orig_text), trans in zip(pairs, fallback_results)
                                     ]
@@ -869,12 +871,12 @@ class AITranslator:
                             f"batch: error model={self.model} err={e} count={len(pairs)} len={len(numbered_texts)}{slice_note}"
                         )
                         return [
-                            (orig_idx, f"[翻译失败] {orig_text}")
+                            (orig_idx, _FAILURE_MARKER)
                             for orig_idx, orig_text in pairs
                         ]
 
             return [
-                (orig_idx, f"[翻译失败] {orig_text}")
+                (orig_idx, _FAILURE_MARKER)
                 for orig_idx, orig_text in pairs
             ]
 

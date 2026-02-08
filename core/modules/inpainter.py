@@ -98,6 +98,9 @@ class InpainterModule(BaseModule):
                 return True
             if not region.target_text:
                 return False
+            # Keep original text/art when translation failed; don't erase then render a marker.
+            if region.target_text.strip().startswith("[翻译失败]"):
+                return False
             if region.target_text.startswith("[SFX:") and region.target_text.endswith("]"):
                 return False
             return True
