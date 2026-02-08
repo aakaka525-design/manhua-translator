@@ -52,6 +52,34 @@ Branch/worktree: codex/perf-m1-ocr-translator
   - `OCR_SMALL_IMAGE_SCALE_MODE=auto`
   - `AI_TRANSLATE_CONTEXT_CHAR_CAP` / `AI_TRANSLATE_BATCH_CHAR_BUDGET`
 
+### 2026-02-08 (M2 Baseline Sampling)
+- Ran 1 real W3-like sample with upscaler disabled to establish a fresh baseline for OCR + Translator.
+  - Command (worktree):
+    - `QUALITY_REPORT_DIR=output/quality_reports_m2 OCR_RESULT_CACHE_ENABLE=0 UPSCALE_ENABLE=0 python main.py image <img>`
+  - Image:
+    - `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/9.jpg` (720x19152)
+  - Result:
+    - Total: 168.3s
+    - OCR: 48.0s, regions=84, tile_count=36, tile_avg_ms=1316ms
+    - Translator: 101.0s, requests=18 (primary=14, fallback=4)
+      - prompt_chars_total=21461, content_chars_total=6017, text_chars_total=1921, ctx_chars_total=2512
+    - Inpainter: 18.1s, Renderer: 1.3s, Upscaler: 0s (disabled)
+
+## Open Questions (M2)
+- Translator stage time (101s) is much higher than `translator.last_metrics.total_ms` (46.6s) because several fallback paths (per-item retranslate / Google fallback / crosspage extra translation) are not timed today. Next action: add explicit timing + counters for these fallback paths, then decide whether to batch retranslate calls to reduce tail latency and remote call count.
+
+## M3 (Planned / In Progress)
+
+### 2026-02-08 (M3 Kickoff)
+- Plan doc added: `docs/perf_audit/2026-02-08/08_m3_plan.md`.
+- Current HEAD (start of M3): `fe1c0ff9`.
+- Primary blocker to explainability: Translator fallback paths are not timed, causing stage wall-time to exceed `translator.last_metrics.total_ms`.
+- Next actions (M3):
+  - Add explicit timing + counters for zh retranslate / Google fallback / crosspage extra translation, and include these durations in `TranslatorModule.last_metrics`.
+  - Add opt-in batched zh fallback retranslate (`AI_TRANSLATE_ZH_FALLBACK_BATCH=1`) to reduce remote calls and tail latency; default remains off.
+  - Run OCR tiling A/B on W3 and record results (defaults unchanged; recommend safe knobs).
+  - Re-run W1/W2/W3 end-to-end and update acceptance criteria and roadmap.
+
 ## Questions / Risks (to validate)
 - PaddleOCR concurrency: previous implementation used a global lock to avoid race conditions. Any increase of OCR parallelism must be opt-in and validated under load (crash-free and stable outputs).
 - Gemini/PPIO batching: large single prompts can increase tail latency and failure rate; chunking can reduce risk but may change outputs. We will keep chunking controls opt-in and add fallback to preserve quality.
