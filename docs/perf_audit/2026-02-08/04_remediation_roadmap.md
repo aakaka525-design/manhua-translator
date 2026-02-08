@@ -82,6 +82,14 @@
   - W2 tail（章节并发采样，pages 7+9, `-w 2`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`；用于验证稳定性而非对比收益）:
     - Page 9: `translator` 104.0s；`total` 173.1s；`[翻译失败]=0`；`no_cjk_with_ascii=0`
     - AI log（本次 run 全局计数）: `primary timeout after 15000ms=3`；`fallback provider=3`
+  - W2 full（章节全量采样，chapter-68 9 pages, `-w 2`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`）:
+    - timings（nearest-rank p50/p95; N=9 so p95==max）:
+      - `total` p50=70.7s; p95=188.3s
+      - `ocr` p50=15.7s; p95=33.8s
+      - `translator` p50=40.3s; p95=133.6s（page 9 dominates tail）
+    - quality: `"[翻译失败]"=0`, `hangul_left=0`
+    - AI log（本次 run 全局计数）: `primary timeout after 15000ms=7`；`fallback provider=14`；`missing number|missing items lines=65`
+    - process peak（from reports）: `max_rss_mb` ~= 5263.7
 - 验收指标:
   - W3: `translator` p95 下降，且 `primary timeout`/`fallback provider` 次数显著下降。
   - 质量守门: OCR regions 不下降、`[翻译失败]` 不上升、mixed-language heuristic 不回退。

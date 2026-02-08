@@ -38,7 +38,7 @@
   - `baseline_metrics.json`（前/后）
   - 关键任务日志片段（task_id 级）
   - 质量报告样本（至少 3 页）
-- 需补齐进程级指标（CPU%、RSS、队列等待）后再做第二轮复审
+- 进程级指标已补齐到 QualityReport（见 `process.*`、`queue_wait_ms` 与 `run_config`）；后续复审应直接从 report 取证（不要依赖外部笔记）
 
 ## 4. 通过/不通过判定
 
@@ -65,6 +65,11 @@ Recommended runtime knobs (deploy; config-only):
 - `OCR_TILE_OVERLAP_RATIO=0.25` (W3: OCR ~44.8s -> ~31.1s; raw regions stable at 84)
 - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1` (opt-in; reduces zh fallback remote-call tail)
 - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` (Gemini + fallback chain only; reduces timeout->fallback stacking)
+
+QualityReport explainability additions (commit `44449b9`):
+- `run_config`: sanitized env whitelist (no secrets)
+- `process`: `cpu_user_s`, `cpu_system_s`, `max_rss_mb`
+- `queue_wait_ms`: measured at pipeline start (useful for API/chapter workloads)
 
 ### 6.2 M3 Gates (W3)
 M3 gate definition is in `docs/perf_audit/2026-02-08/08_m3_plan.md` and uses W3 as the primary workload.
@@ -117,7 +122,35 @@ Results (from reports + AI log counters):
 
 Conclusion:
 - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` 在章节并发 tail 页下仍有少量 timeout，但未引入翻译失败/韩文残留，且 mixed-language 指标可接受。
-- 该结果支持将 15000ms 作为 Gemini + fallback chain 的部署侧推荐配置；但 W2 全量 9 页尚未验证，本轮不跑（成本控制），建议在正式大规模推广前至少补一次 W2 全量采样。
+- 该结果支持将 15000ms 作为 Gemini + fallback chain 的部署侧推荐配置；W2 全量 9 页采样已补齐（见 6.6），但 p95 仍被尾页（page 9）远端调用尾延迟主导。
+
+### 6.6 W2 Full Chapter Sampling (chapter-68, 9 pages, `-w 2`, timeout=15000)
+Context:
+- Workload: `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/` (9 pages)
+- Fixed knobs: `UPSCALE_ENABLE=0`, `OCR_RESULT_CACHE_ENABLE=0`, `OCR_TILE_OVERLAP_RATIO=0.25`, `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- Evidence:
+  - Reports: `output/quality_reports_m3_w2full_t15/*.json`
+  - `MANHUA_LOG_DIR=/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.yIOpbiWXDs`
+
+Results (nearest-rank p50/p95; N=9 so p95==max):
+- total: p50=70.7s; p95=188.3s
+- ocr: p50=15.7s; p95=33.8s
+- translator: p50=40.3s; p95=133.6s
+- process peak (from reports): `max_rss_mb` ~= 5263.7
+
+Quality:
+- All pages: `"[翻译失败]"=0`, `hangul_left=0`
+- `no_cjk_with_ascii` exists but low (likely short labels/tags); no systemic mixed-language regression observed
+- Some pages have `empty_target` (page 9 has 12); requires output spot-check if this becomes frequent
+
+AI log counters (global for this run):
+- `primary timeout after 15000ms=7`
+- `fallback provider=14`
+- `missing number|missing items lines=65`
+
+Conclusion:
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` 在 W2 全量章节并发（`-w 2`）下仍能维持质量门槛（无失败标记/韩文残留）。
+- 尾延迟仍主要由远端调用与回退链决定；下一步证据需要来自云端更高并发多章节压测与崩溃模式（OOMKilled vs exception）确认。
 
 ### 6.5 Cloud Stress Sampling (3 concurrent chapters, 42 pages, UPSCALE=0)
 Context:

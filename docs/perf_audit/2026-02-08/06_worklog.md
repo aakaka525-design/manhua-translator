@@ -222,8 +222,8 @@ Recommendation (config-only; keep code default unchanged):
 - For deployments using Gemini with fallback chain enabled, set `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` in docker env/.env to reduce avoidable timeout->fallback stacking and improve p95/p99 stability.
 
 Open questions:
-- Is 15000ms the best tradeoff across W2 (chapter, concurrency)? Need additional sampling on W2 to confirm stability under concurrency.
-- Should we consider 18000ms for extreme tail cases, or keep 15000ms as a safe default recommendation?
+- W2 stability under concurrency: CLOSED (W2 full chapter re-run at `-w 2`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`; see "W2 full chapter sampling" section below).
+- 18000ms: NOT PLANNED (keep `15000ms` as the deploy-side recommendation unless new evidence shows persistent timeout stacking).
 
 ### W2 tail sampling (7+9, `-w 2`): `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
 Context:
@@ -265,7 +265,7 @@ Interpretation:
 - This supports keeping `15000ms` as a deploy-side recommendation for Gemini + fallback chain, while acknowledging chapter-level p95 is still dominated by remote-call tail latency and other translator strategies (M1#3/#4) are needed to further reduce long-tail.
 
 Open questions / follow-ups:
-- W2 full chapter (9 pages) was NOT re-run under `15000ms` in this round (cost control). Keep as an optional follow-up sampling before promoting the recommendation broadly in production.
+- W2 full chapter (9 pages) under `-w 2` + `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`: CLOSED (re-run completed; see next section).
 
 Repro / extraction commands:
 - Count timeouts/fallbacks:
@@ -289,6 +289,104 @@ Repro / extraction commands:
           len(regions),
           "fail",
           fail,
+      )
+  PY
+  ```
+
+### W2 full chapter sampling (9 pages, `-w 2`): `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+Context:
+- Workload: W2 full chapter-68 (9 pages): `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/*`
+- Concurrency: `main.py chapter ... -w 2`
+- Fixed knobs: `UPSCALE_ENABLE=0`, `OCR_RESULT_CACHE_ENABLE=0`, `OCR_TILE_OVERLAP_RATIO=0.25`, `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- Output dir: `/tmp/perf_m3_ch68_full_t15` (note: output dir existed and might be overwritten)
+- Reports: `output/quality_reports_m3_w2full_t15/*.json`
+- Logs:
+  - `MANHUA_LOG_DIR=/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.yIOpbiWXDs`
+  - AI log: `/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.yIOpbiWXDs/ai/20260208/ai_translator.log`
+  - Translator log: `/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.yIOpbiWXDs/translator/20260208/translator.log`
+- Purpose: close the "W2 full chapter sampling" gap for promoting the `15000ms` deploy-side recommendation.
+
+Evidence:
+- CLI summary (hot run):
+  - success=9, fail=0
+  - total regions (merged)=259
+  - total wall-time=484.3s (53.8s/page)
+- AI log counters (global for this run):
+  - `primary timeout after 15000ms`: 7
+  - `fallback provider=`: 14
+  - `missing number|missing items` lines: 65
+- Report schema upgrades (commit `44449b9`):
+  - Each quality report now includes `run_config` (sanitized env whitelist), `process` (`cpu_user_s`, `cpu_system_s`, `max_rss_mb`), and `queue_wait_ms`.
+
+Per-page (quality report; merged regions):
+
+| page | total_ms | ocr_ms | translator_ms | regions_report | fail_regions | empty_target | hangul_left | no_cjk_with_ascii | report |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 102033.27 | 33840.82 | 57349.82 | 28 | 0 | 4 | 0 | 3 | `wireless-onahole__chapter-68__1__dec898bf-fd8f-47e9-b78e-b3f8cd2f91dc.json` |
+| 2 | 70669.95 | 32749.19 | 28576.96 | 21 | 0 | 6 | 0 | 1 | `wireless-onahole__chapter-68__2__7218b24c-c684-4c27-a197-8ebfacc7cebc.json` |
+| 3 | 67870.85 | 15398.64 | 40335.49 | 29 | 0 | 4 | 0 | 2 | `wireless-onahole__chapter-68__3__4d50b635-6b28-478a-ae0c-fa50a7efe295.json` |
+| 4 | 70503.34 | 14732.51 | 45424.79 | 28 | 0 | 2 | 0 | 4 | `wireless-onahole__chapter-68__4__95c2fca5-6c8b-42ee-ada2-53b630594b1b.json` |
+| 5 | 58872.88 | 15660.94 | 25571.56 | 23 | 0 | 1 | 0 | 2 | `wireless-onahole__chapter-68__5__35979747-ef56-498a-907d-1a1c98ba3d27.json` |
+| 6 | 63112.68 | 14758.95 | 36438.65 | 23 | 0 | 2 | 0 | 2 | `wireless-onahole__chapter-68__6__1bbfe6be-7ff3-48ac-b86d-55958c06aa21.json` |
+| 7 | 75679.38 | 18614.87 | 40828.15 | 33 | 0 | 1 | 0 | 4 | `wireless-onahole__chapter-68__7__36d20521-d9aa-4505-8eee-5954494e1c58.json` |
+| 8 | 77561.20 | 12500.65 | 31941.60 | 16 | 0 | 0 | 0 | 0 | `wireless-onahole__chapter-68__8__0f37c83c-af29-4e1a-8937-d354a5bd86d9.json` |
+| 9 | 188303.02 | 32993.90 | 133648.88 | 58 | 0 | 12 | 0 | 4 | `wireless-onahole__chapter-68__9__72a59579-86bd-4b3a-bc86-83e415c7bfe6.json` |
+
+Aggregated timings (nearest-rank p50/p95; N=9 so p95==max):
+- total: p50=70.7s, p95=188.3s (page 9)
+- ocr: p50=15.7s, p95=33.8s
+- translator: p50=40.3s, p95=133.6s (page 9)
+- process peak (from reports): `max_rss_mb` ~= 5263.7
+
+Quality guardrails:
+- `[翻译失败]` regions: 0 (PASS)
+- `hangul_left` regions: 0 (PASS)
+- `no_cjk_with_ascii` exists (<=4/page), likely short tags/labels; not a systemic mixed-language regression.
+
+Interpretation:
+- Under chapter concurrency `-w 2`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` remains stable (no failure markers, no Hangul leakage).
+- The long-tail is still dominated by remote-call latency and fallback/retry (timeouts=7, fallback provider=14, missing-number lines=65). Next evidence target is higher-concurrency cloud stress + crash-mode inspection (OOMKilled vs exception).
+
+Repro / extraction commands:
+- Count timeouts/fallbacks:
+  - `rg -n "primary timeout after" "$MANHUA_LOG_DIR/ai/20260208/ai_translator.log" | wc -l`
+  - `rg -n "fallback provider=" "$MANHUA_LOG_DIR/ai/20260208/ai_translator.log" | wc -l`
+  - `rg -n "missing (number|items)" "$MANHUA_LOG_DIR/ai/20260208/ai_translator.log" | wc -l`
+- Parse W2 full quality reports (timings + guardrails):
+  ```bash
+  python - <<'PY'
+  import json, glob, re
+
+  CJK = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af]")
+  HANGUL = re.compile(r"[\uac00-\ud7af]")
+  ASCII = re.compile(r"[A-Za-z]")
+
+  def no_cjk_with_ascii(s: str) -> bool:
+      return bool(s) and (not CJK.search(s)) and bool(ASCII.search(s))
+
+  paths = sorted(glob.glob("output/quality_reports_m3_w2full_t15/*.json"))
+  for p in paths:
+      with open(p, "r", encoding="utf-8") as f:
+          d = json.load(f)
+      t = d.get("timings_ms") or {}
+      regs = d.get("regions") or []
+      fail = sum(1 for r in regs if "[翻译失败]" in (r.get("target_text") or ""))
+      empty = sum(1 for r in regs if (r.get("target_text") or "") == "")
+      hangul = sum(1 for r in regs if HANGUL.search(r.get("target_text") or ""))
+      no_cjk = sum(1 for r in regs if no_cjk_with_ascii(r.get("target_text") or ""))
+      print(
+          p,
+          {"total": t.get("total"), "ocr": t.get("ocr"), "translator": t.get("translator")},
+          "regions",
+          len(regs),
+          "fail",
+          fail,
+          "empty",
+          empty,
+          "hangul",
+          hangul,
+          "no_cjk_with_ascii",
+          no_cjk,
       )
   PY
   ```
