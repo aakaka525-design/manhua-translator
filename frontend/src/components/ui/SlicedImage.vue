@@ -24,7 +24,9 @@ const isLoading = computed(() => mode.value === "loading");
 function sliceStyle(index) {
   const overlapPx = Math.max(0, Number(overlap.value) || 0);
   if (index === 0 || overlapPx <= 0) return {};
-  const gradient = `linear-gradient(to bottom, transparent 0px, black ${overlapPx}px, black 100%)`;
+  // Use white (not black) for the opaque region so the mask works in both alpha and luminance modes
+  // across browsers. Some browsers interpret CSS masks via luminance where black means fully masked.
+  const gradient = `linear-gradient(to bottom, transparent 0px, white ${overlapPx}px, white 100%)`;
   return {
     marginTop: `-${overlapPx}px`,
     maskImage: gradient,
@@ -106,6 +108,8 @@ watch(
         :src="baseDir + slice.file"
         :style="sliceStyle(index)"
         class="w-full h-auto block"
+        :loading="index < 2 ? 'eager' : 'lazy'"
+        decoding="async"
         draggable="false"
       />
     </div>
@@ -114,6 +118,8 @@ watch(
       v-else-if="singleSrc"
       :src="singleSrc"
       class="w-full h-auto block"
+      loading="eager"
+      decoding="async"
       draggable="false"
       @error="onImageError"
     />
