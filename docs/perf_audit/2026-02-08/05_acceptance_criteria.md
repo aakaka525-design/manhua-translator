@@ -118,3 +118,29 @@ Results (from reports + AI log counters):
 Conclusion:
 - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` 在章节并发 tail 页下仍有少量 timeout，但未引入翻译失败/韩文残留，且 mixed-language 指标可接受。
 - 该结果支持将 15000ms 作为 Gemini + fallback chain 的部署侧推荐配置；但 W2 全量 9 页尚未验证，本轮不跑（成本控制），建议在正式大规模推广前至少补一次 W2 全量采样。
+
+### 6.5 Cloud Stress Sampling (3 concurrent chapters, 42 pages, UPSCALE=0)
+Context:
+- Workload: 3 chapters in parallel (total 42 pages), each ran `python main.py chapter ... -w 2` inside docker.
+- Fixed knobs: `UPSCALE_ENABLE=0`, `OCR_RESULT_CACHE_ENABLE=0`, `OCR_TILE_OVERLAP_RATIO=0.25`, `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`, `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- Evidence (server lists):
+  - Before fix: `output/quality_reports/_stress_20260208_134907.list`
+  - After fix: `output/quality_reports/_stress_20260208_142518_s2_afterfix.list`
+
+Gates:
+- `"[翻译失败]"` in quality reports: must stay 0 (PASS)
+- `pages_has_hangul` / `regions_with_hangul`: must be 0 for zh output (PASS after fix)
+
+Results (nearest-rank p50/p95; parsed from quality reports):
+- Before fix:
+  - `pages_total=42`, `pages_has_fail_marker=0`
+  - `pages_has_hangul=2`, `regions_with_hangul=2`
+  - timings (ms): `translator_p95=66908`, `translator_max=85902`, `total_p95=74367`
+- After fix:
+  - `pages_total=42`, `pages_has_fail_marker=0`
+  - `pages_has_hangul=0`, `regions_with_hangul=0`
+  - timings (ms): `translator_p95=29367`, `translator_max=77959`, `total_p95=66471`
+
+Verdict:
+- Quality: PASS (no failure markers; Hangul leakage removed)
+- Performance: PASS for this sampling (translator long-tail improved); still need larger-scope sampling to claim p95 improvement is stable across titles.

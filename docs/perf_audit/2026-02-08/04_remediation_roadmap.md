@@ -86,6 +86,23 @@
   - W3: `translator` p95 下降，且 `primary timeout`/`fallback provider` 次数显著下降。
   - 质量守门: OCR regions 不下降、`[翻译失败]` 不上升、mixed-language heuristic 不回退。
 
+### 4d. Prevent Hangul leakage in zh outputs（zh fallback 输入选择 + unknown SFX 保留原画）
+- 问题: 并发压力场景下，部分 zh 目标输出中出现韩文残留（Hangul），会造成读者不可读/观感差；并且会触发额外的回退与重试，放大 `translator` 的尾延迟。
+- 涉及文件: `core/modules/translator.py`, `core/sfx_dict.py`
+- 改造动作（可执行步骤）:
+  1. zh fallback 重翻译时，若首轮输出包含 Hangul，则强制使用 `src_text` 作为 fallback 输入（避免把“损坏输出”喂回模型）。
+  2. SFX 路径对“不在词典中的 Hangul SFX”不渲染替换文字（`target_text=""`），保留原画（避免用中文字体重新绘制韩文）。
+  3. 增加回归测试覆盖（Hangul+英文混杂输出、unknown Hangul SFX）。
+- 风险与兼容性: 可能减少“强行覆盖”SFX 的范围（未知 SFX 不再尝试替换），但质量更稳定；对非 zh 目标无影响。
+- 预计收益（耗时下降区间）:
+  - 质量收益: `pages_has_hangul` -> 0（硬质量门槛）
+  - 性能收益（云端 3 章并发采样，42 页）:
+    - Before (`_stress_20260208_134907.list`): `pages_has_hangul=2`, `translator_p95=66908ms`
+    - After  (`_stress_20260208_142518_s2_afterfix.list`): `pages_has_hangul=0`, `translator_p95=29367ms`
+- 验收指标:
+  - 并发章节压测（>=3 章并发，UPSCALE=0）下：`[翻译失败]=0` 且 `pages_has_hangul=0`。
+  - `translator` p95/p99 不劣化（理想：下降），且容器无 OOM/restart。
+
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
 - 涉及文件: `core/ai_translator.py`, `core/modules/translator.py`, `core/modules/ocr.py`

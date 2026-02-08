@@ -333,3 +333,51 @@ Verification:
 
 Open question:
 - Need to confirm server crash mode (OOMKilled vs. unhandled exception) by inspecting Docker container state and kernel OOM logs.
+
+## 2026-02-08 Cloud Stress S2: Hangul leakage fix validated (UPSCALE=0)
+
+Context:
+- Server: Docker compose (API container `manhua-translator-api-1`)
+- Branch: `codex/stress-quality-fixes`
+- Deployed commit: `27e8b96`
+- Stress workload: 3 concurrent chapters (total 42 pages), each runs `python main.py chapter ... -w 2`
+- Env (key):
+  - `UPSCALE_ENABLE=0`
+  - `OCR_RESULT_CACHE_ENABLE=0`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+
+Evidence (quality report lists on server):
+- Before fix: `output/quality_reports/_stress_20260208_134907.list`
+- After fix: `output/quality_reports/_stress_20260208_142518_s2_afterfix.list`
+
+Aggregated results (parsed inside container with a python snippet; nearest-rank p50/p95):
+- Before fix (`_stress_20260208_134907.list`):
+  - `pages_total=42`, `[翻译失败]=0`
+  - `pages_has_hangul=2`, `regions_with_hangul=2`
+  - timings (ms): `translator_p95=66908.39`, `translator_max=85901.53`, `total_p95=74367.29`
+  - Hangul files:
+    - `hole-inspection-is-a-task__chapter-1__1__42eef2ef-175a-4488-b03c-12f91f5e85d2.json`
+    - `taming-a-female-bully__chapter-57-raw__19__3a14ca9e-2e7b-40db-863a-776cac923019.json`
+- After fix (`_stress_20260208_142518_s2_afterfix.list`):
+  - `pages_total=42`, `[翻译失败]=0`
+  - `pages_has_hangul=0`, `regions_with_hangul=0`
+  - timings (ms): `translator_p95=29367.05`, `translator_max=77958.95`, `total_p95=66470.57`
+
+Root cause (quality regression source, now fixed):
+1) zh fallback input selection:
+   - Previous behavior: when initial translation differed from `src_text`, fallback used `fallback_input=translation` even if translation contained Hangul.
+   - Symptom: a corrupted model output like `"<hangul> (After completing the"` would get retranslated from itself and stay corrupted, leaving Hangul in zh output.
+   - Fix: if `translation` contains Hangul, force `fallback_input=src_text` (never feed corrupted output back).
+2) SFX path for unknown Hangul:
+   - Previous behavior: `translate_sfx()` returns original Hangul when not in dictionary; pipeline rendered Hangul as new overlay text.
+   - Fix: for zh targets, if `translate_sfx()` output still contains Hangul, set `target_text=\"\"` to keep original art/text (no inpaint + no render).
+
+TDD coverage:
+- Added regression tests: `tests/test_translator_hangul_guard.py`
+- Updated expectation: `tests/test_translator_sfx.py` unknown Hangul SFX keeps original art (`target_text==\"\"`) for zh targets.
+
+Open questions / follow-ups:
+- Docker CPU image has no LaMa inpainting, uses OpenCV fallback (seen in chapter logs). This may affect erase quality and latency; decide if we need LaMa on server deployments.
+- Crash reproduction: not observed at 3 concurrent chapters with `UPSCALE_ENABLE=0`. If user still sees crashes, likely higher concurrency (more simultaneous chapters) and/or upscaler enabled.
