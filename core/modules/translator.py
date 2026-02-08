@@ -1219,12 +1219,14 @@ class TranslatorModule(BaseModule):
                 
                 # 4. 将翻译结果分配到原始区域
                 from ..translation_splitter import parse_top_bottom
-                for group, translation, group_idx, meta, skip_ids in zip(
-                    groups_to_translate,
-                    translations,
-                    group_indexes,
-                    crosspage_meta,
-                    skip_region_ids_list,
+                for assign_idx, (group, translation, group_idx, meta, skip_ids) in enumerate(
+                    zip(
+                        groups_to_translate,
+                        translations,
+                        group_indexes,
+                        crosspage_meta,
+                        skip_region_ids_list,
+                    )
                 ):
                     crosspage_region = meta["region"] if meta else None
                     crosspage_extra = meta["extra"] if meta else ""
@@ -1239,6 +1241,48 @@ class TranslatorModule(BaseModule):
                         parsed_bottom = bottom_text
                         fallback_used = False
                         fallback_mode = None
+                        # Quality guard: never leave Hangul in zh outputs for crosspage top text.
+                        # When this happens (seen in stress runs), do a one-shot AI re-translate
+                        # for the whole crosspage payload (json output) to recover.
+                        if (self.target_lang or "").startswith("zh") and _has_hangul(top_text):
+                            if ai_translator and assign_idx < len(texts_to_translate):
+                                retry_ctx = (
+                                    contexts_to_translate[assign_idx]
+                                    if assign_idx < len(contexts_to_translate)
+                                    else ""
+                                )
+                                start = time.perf_counter()
+                                retry_out = None
+                                try:
+                                    retry_out = await ai_translator.translate_batch(
+                                        [texts_to_translate[assign_idx]],
+                                        output_format="json",
+                                        contexts=[retry_ctx],
+                                    )
+                                except TypeError:
+                                    retry_out = await ai_translator.translate_batch(
+                                        [texts_to_translate[assign_idx]],
+                                        output_format="json",
+                                    )
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
+                                candidate = ((retry_out[0] if retry_out else "") or "").strip()
+                                if candidate:
+                                    try:
+                                        new_top, new_bottom = parse_top_bottom(candidate)
+                                    except Exception:
+                                        new_top, new_bottom = candidate, ""
+                                    if new_top and not _has_hangul(new_top):
+                                        top_text = new_top
+                                        if new_bottom and not _has_hangul(new_bottom):
+                                            bottom_text = new_bottom
+                                        fallback_used = True
+                                        fallback_mode = "retranslate_top"
+                                    else:
+                                        fallback_mode = "retranslate_failed_lang_top"
+                            else:
+                                fallback_mode = "retranslate_skipped_no_ai"
                         if not bottom_text and crosspage_extra:
                             if ai_translator:
                                 start = time.perf_counter()

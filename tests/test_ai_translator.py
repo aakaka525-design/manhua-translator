@@ -589,3 +589,44 @@ def test_translate_batch_retries_when_numbered_output_missing_items(monkeypatch)
     assert "输出格式严格要求" in captured["prompts"][1]
     assert captured["max_tokens"][1] >= captured["max_tokens"][0]
     assert translator.last_metrics["api_calls"] == 2
+
+
+def test_translate_batch_falls_back_when_primary_returns_none(monkeypatch):
+    """
+    Regression: provider call can yield None (e.g. Gemini response.text=None).
+    We must not crash with NoneType.split and should use fallback when available.
+    """
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+
+    # Avoid slowing test down due to retry backoff.
+    async def _fast_sleep(_seconds: float):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+
+    async def fake_call_api_with_timeout(prompt: str, max_tokens: int = 2000):
+        return None
+
+    monkeypatch.setattr(translator, "_call_api_with_timeout", fake_call_api_with_timeout)
+
+    class _DummyFallback:
+        def __init__(self):
+            self.calls = 0
+            self.last_metrics = {"api_calls": 1}
+
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
+            self.calls += 1
+            return ["好的"] * len(texts)
+
+    fallback = _DummyFallback()
+    monkeypatch.setattr(translator, "_fallback_translator_chain", lambda: [fallback])
+
+    result = asyncio.run(translator.translate_batch(["hello"]))
+
+    assert result == ["好的"]
+    assert fallback.calls == 1

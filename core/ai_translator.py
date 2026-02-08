@@ -285,6 +285,7 @@ class AITranslator:
             or "overloaded" in msg
             or "timeout" in msg
             or "timed out" in msg
+            or "empty response" in msg
         )
 
     def _get_fallback_translator(self) -> Optional["AITranslator"]:
@@ -401,7 +402,13 @@ class AITranslator:
                             temperature=0.3,  # Lower temp for faster, more consistent output
                         )
                     )
-                    return response.text
+                    text = getattr(response, "text", None)
+                    if text is None:
+                        raise RuntimeError("empty response")
+                    text = str(text).strip()
+                    if not text:
+                        raise RuntimeError("empty response")
+                    return text
                 except Exception as e:
                     logger.error(f"Gemini API error: {type(e).__name__}: {e}")
                     raise
@@ -417,7 +424,13 @@ class AITranslator:
                         max_tokens=max_tokens,
                         stream=False,
                     )
-                    return response.choices[0].message.content.strip()
+                    content = response.choices[0].message.content
+                    if content is None:
+                        raise RuntimeError("empty response")
+                    content = str(content).strip()
+                    if not content:
+                        raise RuntimeError("empty response")
+                    return content
                 except Exception as e:
                     # 记录详细错误信息
                     error_msg = f"{type(e).__name__}: {e}"
@@ -492,6 +505,7 @@ class AITranslator:
             return objects
 
         def _parse_numbered_lines(text: str, expected_count: int | None = None):
+            text = text or ""
             lines = text.split("\n")
             translations = []
             numbered: dict[int, str] = {}
@@ -680,6 +694,15 @@ class AITranslator:
                     result = await self._call_api_with_timeout(
                         prompt_to_use, max_tokens=max_tokens
                     )
+                    # Defensive: some providers can return empty/None text without raising.
+                    # Treat this as transient overload so fallback chain can take over.
+                    if result is None:
+                        raise RuntimeError("empty response")
+                    if not isinstance(result, str):
+                        raise RuntimeError(f"empty response (type={type(result).__name__})")
+                    result = result.strip()
+                    if not result:
+                        raise RuntimeError("empty response")
                     duration_ms = (time.perf_counter() - start) * 1000
 
                     # 解析结果
