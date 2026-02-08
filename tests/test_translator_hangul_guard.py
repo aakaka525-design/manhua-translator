@@ -68,6 +68,66 @@ def test_zh_fallback_prefers_source_when_model_output_contains_hangul(monkeypatc
     assert dummy.translate_calls and dummy.translate_calls[0] == src
 
 
+def test_zh_fallback_triggers_when_output_contains_cjk_and_hangul(monkeypatch):
+    """
+    Regression (cloud/API stress evidence):
+    Some LLM outputs contain a mix of Chinese + Hangul (e.g. analysis-like corrections).
+    For zh targets, any Hangul leakage must be treated as invalid and retried via zh fallback.
+    """
+    monkeypatch.setenv("BUBBLE_GROUPING", "0")
+
+    src = "네오빠한테는그냥 똑같이담배빵을1번놓는 걸로 끝내줄게."
+    first_out = '*Refining Text 4/5:* "빨라고" -> "舔". "흉측한 걸" -> "恶心的东西"'
+
+    class _NoopGoogleTranslator:
+        def __init__(self, source=None, target=None):
+            self.source = source
+            self.target = target
+
+        def translate(self, text):
+            return text
+
+    class _DummyAI:
+        def __init__(self):
+            self.model = "dummy"
+            self.last_metrics = {"api_calls": 0, "api_calls_fallback": 0}
+            self.translate_calls = []
+
+        async def translate_batch(self, texts, **kwargs):
+            self.last_metrics = {"api_calls": 1, "api_calls_fallback": 0}
+            return [first_out for _ in texts]
+
+        async def translate(self, text):
+            self.translate_calls.append(text)
+            self.last_metrics = {"api_calls": 1, "api_calls_fallback": 0}
+            if text == src:
+                return "你哥哥那边我就只烫一根烟，结束。"
+            return text
+
+    dummy = _DummyAI()
+    module = TranslatorModule(source_lang="korean", target_lang="zh-CN", use_ai=True)
+    module._translator_class = _NoopGoogleTranslator  # prevent deep_translator import
+    module._get_ai_translator = lambda: dummy
+
+    region = RegionData(
+        box_2d=Box2D(x1=0, y1=0, x2=10, y2=10),
+        source_text=src,
+    )
+    ctx = TaskContext(
+        image_path="/tmp/hangul_guard_mixed.png",
+        source_language="korean",
+        target_language="zh-CN",
+        regions=[region],
+    )
+
+    asyncio.run(module.process(ctx))
+
+    out = (ctx.regions[0].target_text or "").strip()
+    assert re.search(r"[\u4e00-\u9fff]", out)
+    assert not re.search(r"[\uac00-\ud7a3\u3130-\u318f\u1100-\u11ff]", out)
+    assert dummy.translate_calls and dummy.translate_calls[0] == src
+
+
 def test_unknown_hangul_sfx_is_kept_original_without_render_or_inpaint(monkeypatch):
     """
     Regression (stress evidence):
@@ -93,4 +153,3 @@ def test_unknown_hangul_sfx_is_kept_original_without_render_or_inpaint(monkeypat
     asyncio.run(module.process(ctx))
 
     assert (ctx.regions[0].target_text or "") == ""
-

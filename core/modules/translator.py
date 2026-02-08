@@ -1080,7 +1080,13 @@ class TranslatorModule(BaseModule):
                         ):
                             if meta:
                                 continue
-                            needs_fallback = (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35)
+                            # For zh targets, any Hangul leakage is considered invalid even if the
+                            # output contains some CJK (e.g. analysis-like text such as '"빨라고" -> "舔"').
+                            needs_fallback = (
+                                (not _has_cjk(translation))
+                                or _has_hangul(translation)
+                                or (_english_ratio(translation) >= 0.35)
+                            )
                             if not needs_fallback:
                                 continue
                             if _skip_zh_retranslate(src_text, translation):
