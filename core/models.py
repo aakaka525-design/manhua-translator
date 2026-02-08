@@ -122,6 +122,7 @@ class TaskContext(BaseModel):
     mask_path: Optional[str] = Field(default=None, description="Path to combined inpaint mask")
     regions: list[RegionData] = Field(default_factory=list, description="Detected text regions")
     status: TaskStatus = Field(default=TaskStatus.PENDING, description="Current task status")
+    error_code: Optional[str] = Field(default=None, description="Machine-readable error code if failed")
     error_message: Optional[str] = Field(default=None, description="Error message if failed")
     created_at: datetime = Field(default_factory=datetime.now, description="Task creation time")
     updated_at: datetime = Field(default_factory=datetime.now, description="Last update time")
@@ -133,12 +134,19 @@ class TaskContext(BaseModel):
     image_height: int | None = Field(default=None, description="Image height in pixels")
     crosspage_debug: Optional[dict] = Field(default=None, description="Debug info for cross-page OCR matching")
 
-    def update_status(self, status: TaskStatus, error: Optional[str] = None) -> "TaskContext":
+    def update_status(
+        self,
+        status: TaskStatus,
+        error: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ) -> "TaskContext":
         """Update task status and timestamp."""
         self.status = status
         self.updated_at = datetime.now()
         if error:
             self.error_message = error
+        if error_code is not None:
+            self.error_code = error_code
         return self
 
     model_config = ConfigDict(

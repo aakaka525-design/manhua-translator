@@ -70,7 +70,7 @@ def _build_pipeline_error_detail(result, fallback_message: str) -> dict:
 
 def _pipeline_failure_status_code(result) -> int:
     if getattr(result.task, "error_code", None) == "ocr_no_text":
-        return status.HTTP_422_UNPROCESSABLE_ENTITY
+        return status.HTTP_422_UNPROCESSABLE_CONTENT
     return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 

@@ -172,7 +172,8 @@ class Pipeline:
 
         except Exception as e:
             logger.error(f"[{context.task_id}] Pipeline 失败: {e}")
-            context.update_status(TaskStatus.FAILED, error=str(e))
+            error_code = getattr(e, "error_code", None) or context.error_code
+            context.update_status(TaskStatus.FAILED, error=str(e), error_code=error_code)
             if status_callback:
                 await status_callback("failed", TaskStatus.FAILED, context.task_id)
             

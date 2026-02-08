@@ -1,6 +1,12 @@
-from fastapi import APIRouter, HTTPException, Request
+import os
+import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import List
+
+from fastapi import APIRouter, Request
+
+from app.deps import get_settings
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -15,6 +21,68 @@ async def get_models_status(request: Request):
             "lama": {"status": "missing"},
         }
     return registry.snapshot()
+
+
+def _pkg_version(*names: str) -> str:
+    for name in names:
+        try:
+            return version(name)
+        except PackageNotFoundError:
+            continue
+        except Exception:
+            continue
+    return "missing"
+
+
+def _module_version(module_name: str) -> str:
+    try:
+        module = __import__(module_name)
+        return str(getattr(module, "__version__", "unknown"))
+    except Exception:
+        return "missing"
+
+
+@router.get("/runtime")
+async def get_runtime_status(request: Request):
+    settings = get_settings()
+    registry = getattr(request.app.state, "model_registry", None)
+    model_snapshot = registry.snapshot() if registry else {}
+
+    ocr_cache_dir = Path(os.getenv("OCR_RESULT_CACHE_DIR", "temp/ocr_cache")).expanduser()
+
+    return {
+        "versions": {
+            "python": sys.version.split()[0],
+            "fastapi": _pkg_version("fastapi"),
+            "pydantic": _pkg_version("pydantic"),
+            "paddle": _pkg_version("paddlepaddle"),
+            "paddleocr": _pkg_version("paddleocr"),
+            "opencv": _module_version("cv2"),
+            "torch": _pkg_version("torch"),
+        },
+        "settings": {
+            "source_language": settings.source_language,
+            "target_language": settings.target_language,
+            "ocr": {
+                "fail_on_empty": os.getenv("OCR_FAIL_ON_EMPTY", "1"),
+                "result_cache_enable": os.getenv("OCR_RESULT_CACHE_ENABLE", "1"),
+                "cache_empty_results": os.getenv("OCR_CACHE_EMPTY_RESULTS", "0"),
+                "crosspage_edge_enable": os.getenv("OCR_CROSSPAGE_EDGE_ENABLE", "1"),
+                "edge_tile_enable": os.getenv("OCR_EDGE_TILE_ENABLE", "0"),
+            },
+            "translator": {
+                "ai_provider": os.getenv("AI_PROVIDER", "ppio"),
+                "ai_translate_fastfail": os.getenv("AI_TRANSLATE_FASTFAIL", "1"),
+            },
+        },
+        "paths": {
+            "data_dir": str(Path(settings.data_dir).expanduser().resolve()),
+            "output_dir": str(Path(settings.output_dir).expanduser().resolve()),
+            "temp_dir": str(Path(settings.temp_dir).expanduser().resolve()),
+            "ocr_cache_dir": str(ocr_cache_dir.resolve()),
+        },
+        "model_registry": model_snapshot,
+    }
 
 @router.get("/logs", response_model=List[str])
 async def get_system_logs(lines: int = 100):

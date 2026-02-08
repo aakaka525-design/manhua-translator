@@ -20,6 +20,7 @@ from ..vision import OCREngine, PaddleOCREngine, MockOCREngine
 from ..ocr_postprocessor import OCRPostProcessor
 from ..watermark_detector import WatermarkDetector
 from ..debug_artifacts import DebugArtifactWriter
+from ..errors import OCRNoTextError
 from ..vision.ocr.postprocessing import build_edge_box, match_crosspage_regions, filter_noise_regions
 from PIL import Image
 
@@ -100,6 +101,12 @@ class OCRModule(BaseModule):
     def _cache_enabled(self) -> bool:
         return self._env_flag("OCR_RESULT_CACHE_ENABLE", "1")
 
+    def _cache_empty_results_enabled(self) -> bool:
+        return self._env_flag("OCR_CACHE_EMPTY_RESULTS", "0")
+
+    def _fail_on_empty(self) -> bool:
+        return self._env_flag("OCR_FAIL_ON_EMPTY", "1")
+
     @staticmethod
     def _cache_dir() -> Path:
         raw = os.getenv("OCR_RESULT_CACHE_DIR", "temp/ocr_cache")
@@ -131,6 +138,9 @@ class OCRModule(BaseModule):
 
     def _save_cached_regions(self, image_path: str, lang: str, regions: list[RegionData]) -> None:
         if not self._cache_enabled():
+            return
+        if (not regions) and (not self._cache_empty_results_enabled()):
+            logger.info("OCR cache skip empty result: %s (%s)", image_path, lang)
             return
         cache_dir = self._cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -179,12 +189,25 @@ class OCRModule(BaseModule):
             image_height = 0
             image_width = 0
 
+        cache_key = self._build_cache_key(context.image_path, target_lang)
         cached_regions = self._load_cached_regions(context.image_path, target_lang)
+        cache_hit = cached_regions is not None
+        logger.info(
+            "[%s] OCR runtime: lang=%s size=%sx%s cache_enabled=%s cache_hit=%s cache_key=%s",
+            context.task_id,
+            target_lang,
+            image_width,
+            image_height,
+            self._cache_enabled(),
+            cache_hit,
+            cache_key,
+        )
         if cached_regions is not None:
             context.regions = cached_regions
             logger.info(
-                "[%s] OCR cache hit: %s regions",
+                "[%s] OCR cache hit: key=%s regions=%s",
                 context.task_id,
+                cache_key,
                 len(context.regions),
             )
         else:
@@ -197,6 +220,14 @@ class OCRModule(BaseModule):
             # Post-process OCR text (normalize + SFX detection + locale fixes)
             OCRPostProcessor().process_regions(context.regions, lang=target_lang)
             self._save_cached_regions(context.image_path, target_lang, context.regions)
+
+        if len(context.regions) == 0 and self._fail_on_empty():
+            msg = (
+                f"OCR found no text regions (lang={target_lang}, "
+                f"size={image_width}x{image_height}, cache_hit={cache_hit})"
+            )
+            logger.warning("[%s] %s", context.task_id, msg)
+            raise OCRNoTextError(msg)
         if os.getenv("DEBUG_OCR") == "1":
             logger.info(
                 "[%s] OCR raw regions: %s",

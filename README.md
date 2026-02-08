@@ -138,6 +138,10 @@ GEMINI_API_KEY=your_gemini_api_key
 SOURCE_LANGUAGE=korean
 TARGET_LANGUAGE=zh
 
+# OCR 空结果策略（推荐）
+OCR_FAIL_ON_EMPTY=1
+OCR_CACHE_EMPTY_RESULTS=0
+
 # 模型自动初始化
 AUTO_SETUP_MODELS=on
 OCR_WARMUP_LANGS=korean
@@ -307,9 +311,13 @@ curl -X POST http://localhost:8000/api/v1/parser/list \
 
 **3) OCR 返回空结果（`regions_count: 0`）**
 - 现象：质量报告 `regions: []`，但图片有文字。
+- 当前默认行为：会按业务错误 `ocr_no_text` 失败（单图/单页接口返回 422）。
 - 排查：
   - 确认 OCR 语言：`SOURCE_LANGUAGE=korean`、`OCR_WARMUP_LANGS=korean`
+  - 确认空结果缓存未开启：`OCR_CACHE_EMPTY_RESULTS=0`
+  - 确认严格失败开启：`OCR_FAIL_ON_EMPTY=1`
   - 查看 OCR 原始输出：`DEBUG_OCR=1` 并查看 `logs/*_app.log`
+  - 对比运行时配置：`curl http://localhost:8000/api/v1/system/runtime`
   - 检查 PaddlePaddle 兼容性（见下一条）
 
 **4) Paddle 运行报错 / PIR / OneDNN 相关**
