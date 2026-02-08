@@ -108,8 +108,72 @@ Branch/worktree: codex/perf-m1-ocr-translator
   - `1024/0.25` is a clear win with stable regions (84) and fewer tiles; recommended safe knob for long images.
   - `1536/0.25` is slightly faster but changes regions (+2); keep experimental until we confirm no duplicate/noise regression.
 
+### 2026-02-08 (M3 Task 5 - End-to-end Benchmarks)
+
+Common setup (all runs):
+- `UPSCALE_ENABLE=0`
+- `OCR_RESULT_CACHE_ENABLE=0`
+- `QUALITY_REPORT_DIR=output/quality_reports_m3`
+- Evidence:
+  - Reports: `output/quality_reports_m3/*.json`
+  - Translator stage timing: `logs/translator/20260208/translator.log` (raw_regions / translated_done / translator_internal_ms)
+  - AI call/fallback evidence: `logs/ai/20260208/ai_translator.log` (timeouts + provider/model fallbacks)
+
+Important note:
+- `TranslatorModule` logs raw region count before merge.
+- Then it runs `merge_line_regions(...)`, so `regions` in the quality report is the merged region count.
+
+#### W3 (single long page)
+- Image: `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/9.jpg` (720x19152)
+- Raw OCR regions (pre-merge): 84 (stable; see `translator.log`)
+
+| Label | AI_TRANSLATE_ZH_FALLBACK_BATCH | OCR_TILE_OVERLAP_RATIO | total_ms | ocr_ms | translator_stage_ms | translator_internal_ms | gap_pct | raw_regions | merged_regions | translated_done | report |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| A1 | 0 | 0.50 | 123264.29 | 44746.41 | 63176.60 | 62272 | 1.43 | 84 | 59 | 42 | `wireless-onahole__chapter-68__9__c708a11e-b8b8-48e4-9cd5-42a049cc1598.json` |
+| A2 | 0 | 0.50 | 203465.72 | 44904.60 | 143175.89 | 142349 | 0.58 | 84 | 59 | 42 | `wireless-onahole__chapter-68__9__90240554-72cb-4070-a502-d7627247c778.json` |
+| B1 | 1 | 0.25 | 134515.78 | 31405.14 | 88764.54 | 87936 | 0.93 | 84 | 58 | 42 | `wireless-onahole__chapter-68__9__e0aed731-7874-479c-8184-901903555a7a.json` |
+| B2 | 1 | 0.25 | 119098.35 | 31089.75 | 73614.15 | 72787 | 1.12 | 84 | 58 | 42 | `wireless-onahole__chapter-68__9__4e2e3452-7389-4c97-8068-171a1d132009.json` |
+| C1 (safe) | 0 | 0.25 | 133075.09 | 31343.50 | 87481.19 | 86655 | 0.94 | 84 | 58 | 42 | `wireless-onahole__chapter-68__9__6a090d5f-bb18-41a0-ad9f-9402cb301b16.json` |
+
+Observations:
+- Explainability: translator stage vs internal translate time gap stays <= 1.43% (PASS).
+- OCR: overlap ratio 0.25 improves OCR stage (~44.8s -> ~31.1s) without reducing raw region count (84).
+- Translator tail: A2 shows large long-tail even under same knob set. This aligns with remote timeouts and fallback stacking, not local CPU saturation.
+  - Evidence (from `logs/ai/20260208/ai_translator.log`):
+    - `fallback provider=ppio ... due to primary error=primary timeout after 12000ms`
+    - `fallback provider=gemini model=gemini-2.5-flash due to primary error=primary timeout after 12000ms`
+
+Quality quick-check (heuristic, merged regions on W3):
+- For multiple W3 runs, `no_cjk_with_ascii=4` (English-only outputs) and remained stable (no regression observed).
+- Manual semantic spot-check (10 samples) still required before promoting any default changes.
+
+#### W1 (single short page)
+- Image: `/Users/xa/Desktop/projiect/manhua/data/raw/sexy-woman/chapter-1/15.jpg`
+- Timings (report): total=86342.96ms, ocr=17226.63ms, translator=59582.24ms
+- Report: `sexy-woman__chapter-1__15__39249e5d-dc7a-4172-9838-86af55c554eb.json`
+
+#### W2 (chapter, `-w 2`)
+- Input: `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/` (9 pages)
+- Note: per-page totals overlap due to concurrency; use this table to locate slow pages (tail).
+
+| Page | total_ms | ocr_ms | translator_stage_ms | report |
+|---:|---:|---:|---:|---|
+| 1 | 98381.19 | 19762.15 | 69688.25 | `wireless-onahole__chapter-68__1__50ccdef4-c4a8-4234-a4ba-4dedbb187d98.json` |
+| 2 | 72392.01 | 32648.64 | 30995.72 | `wireless-onahole__chapter-68__2__783a63dd-5577-4f42-af32-105c1c315120.json` |
+| 3 | 65619.24 | 14948.36 | 39676.08 | `wireless-onahole__chapter-68__3__4543ceb9-2659-47e7-864b-75c88df2dfe8.json` |
+| 4 | 65621.96 | 14077.92 | 42281.58 | `wireless-onahole__chapter-68__4__9854e685-d909-4554-b940-0d85cd5f7f8c.json` |
+| 5 | 59390.36 | 15572.56 | 31749.88 | `wireless-onahole__chapter-68__5__7ba7e746-7417-49dc-aa33-86dff2ec0b0f.json` |
+| 6 | 66476.74 | 14208.14 | 42382.42 | `wireless-onahole__chapter-68__6__b7c94e49-a7de-4154-9130-e0af5425563b.json` |
+| 7 | 132200.69 | 18136.94 | 99890.27 | `wireless-onahole__chapter-68__7__d075436d-85cb-46b4-8cf7-c8379ad65fc7.json` |
+| 8 | 54765.80 | 12157.19 | 33614.00 | `wireless-onahole__chapter-68__8__c9b0dfb9-7ac7-42cf-a744-32ad5d208040.json` |
+| 9 | 133075.09 | 31343.50 | 87481.19 | `wireless-onahole__chapter-68__9__6a090d5f-bb18-41a0-ad9f-9402cb301b16.json` |
+
+Slow pages to investigate first:
+- Page 7/9 dominate tail by total_ms; translator stage is the major contributor on both.
+
 ## Questions / Risks (to validate)
 - PaddleOCR concurrency: previous implementation used a global lock to avoid race conditions. Any increase of OCR parallelism must be opt-in and validated under load (crash-free and stable outputs).
 - Gemini/PPIO batching: large single prompts can increase tail latency and failure rate; chunking can reduce risk but may change outputs. We will keep chunking controls opt-in and add fallback to preserve quality.
 - Chapter translation limits are in-memory (per process). If the deployment uses multiple API workers/containers, limits/deduplication will be per-worker unless moved to a shared store (Redis).
 - Signature introspection for `pipeline.process_batch(page_concurrency=...)` is defensive but should be monitored; if signature changes, the feature silently degrades to the pipeline default.
+- Missing attribution in reports: quality reports currently do not persist the env knob snapshot (e.g. overlap ratio / batch fallback), making A/B attribution rely on external notes. Consider writing a minimal `run_config` field into quality report JSON.

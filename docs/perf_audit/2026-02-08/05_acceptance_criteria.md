@@ -52,3 +52,35 @@
 - 前端关闭超分后不应触发超分阶段
 - 长图切片输出索引与切片顺序一致
 - OCR 空结果与 fallback 路径行为符合预期
+
+## 6. M3 Checkpoint (2026-02-08, OCR + Translator)
+
+### 6.1 Setup (strict)
+- `UPSCALE_ENABLE=0`
+- `OCR_RESULT_CACHE_ENABLE=0`
+- Reports: `output/quality_reports_m3/*.json`
+- Translator log evidence: `logs/translator/20260208/translator.log`
+
+### 6.2 M3 Gates (W3)
+M3 gate definition is in `docs/perf_audit/2026-02-08/08_m3_plan.md` and uses W3 as the primary workload.
+
+Baseline (M2, W3):
+- OCR: 48.0s
+- Translator: 101.0s
+- OCR raw regions: 84
+
+Measured (M3, W3; sample runs on 2026-02-08):
+- OCR with `OCR_TILE_OVERLAP_RATIO=0.25`: ~31.1s (stable)
+- Translator stage: 63.2s .. 143.2s (large variance across runs)
+- Explainability gap (Translator stage vs internal `total_translate_ms`): <= 1.43% (across sampled runs)
+
+Verdict:
+- OCR gate (<=36s): PASS
+- Explainability gate (<=10%): PASS
+- Translator gate (<=70s): NOT CONSISTENTLY MET
+  - Notes: variance looks dominated by remote-call tail latency / fallback stacking rather than local compute. Needs more sampling and/or tighter provider-side call strategy to reduce p95.
+
+### 6.3 Quality Guardrails (M3 sampling)
+- OCR raw regions: PASS (W3 raw regions remained 84; see `translator.log` “开始翻译 84 个区域”)
+- Mixed-language regression heuristic: PASS (W3: `no_cjk_with_ascii=4` for multiple runs; stable across runs)
+- Inpaint/repair: NOT RE-VALIDATED IN M3 (no code changes in inpaint/renderer, but still requires 3-region manual spot-check on output images)
