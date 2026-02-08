@@ -529,3 +529,87 @@ Open questions / follow-ups:
 - Mitigation candidates (low risk, quality-preserving):
   - Add a global AI-call semaphore (cross-task) to keep provider 503/timeout rate low.
   - Cap chapter concurrency (`TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS`) to avoid pushing provider into overload.
+
+## 2026-02-08 Cloud Stress S6: API multi-chapter (6 chapters, 108 pages, UPSCALE=0) on 185.218.204.62
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (6 chapters started concurrently)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260208_192710_api_s6`
+- Report list: `output/quality_reports/_stress_20260208_192710_api_s6.list` (108 json; expected_pages=108)
+- Env (key; no secrets):
+  - `UPSCALE_ENABLE=0`
+  - `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+  - `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=2`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+
+Evidence:
+- Aggregated report summary (nearest-rank p50/p95):
+  - `pages_total=108`
+  - quality:
+    - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+    - `pages_has_failure_marker=4`, `regions_with_failure_marker=18` (FAIL)
+    - `no_cjk_with_ascii=50`, `empty_target_regions=209`
+  - timings (ms):
+    - `translator_p50=11313`, `translator_p95=38087`, `translator_max=54892`
+    - `total_p95=66145`, `total_max=82515`
+  - process peak (from reports):
+    - `max_rss_max_mb=5666.1`
+  - failure files (examples):
+    - `hole-inspection-is-a-task__chapter-15-raw__4__8be15ec2-5a36-4d69-8ba8-bfd6a1055b08.json` (6 regions, all `[翻译失败]`)
+    - `hole-inspection-is-a-task__chapter-12-raw__5__35d4e1e2-9734-4959-bc8f-5741d062159c.json` (8 regions, 3 failed)
+- Docker/kernel:
+  - api container healthy; `OOMKilled=false`, `RestartCount=0`
+  - kernel OOM lines: `0` (`/tmp/kernel_oom_s6_20260208_192710.txt`)
+
+Interpretation:
+- With 6 concurrent chapters (page inflight up to ~12), the system stays up, but translation failure markers increase (4/108 pages).
+- RSS peak rises to ~5.7GB. This supports the hypothesis that higher concurrency can push both:
+  - provider overload (timeouts/503 -> failures), and
+  - memory pressure (risk of OOM at higher concurrency).
+
+Open questions / follow-ups:
+- Run 9 concurrent chapters (short-window sampling is ok) to confirm whether OOM/restart appears and how fast `[翻译失败]` rate grows.
+- If S9 further degrades: implement global backpressure (max in-flight pages and/or AI-call semaphore) and rerun S6/S9 for evidence.
+
+## 2026-02-08 Cloud Stress S9: API multi-chapter (9 chapters, 211 pages, UPSCALE=0) on 185.218.204.62
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (9 chapters started concurrently)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260208_193832_api_s9`
+- Report list: `output/quality_reports/_stress_20260208_193832_api_s9.list` (211 json; expected_pages=211)
+- Env (key; no secrets):
+  - `UPSCALE_ENABLE=0`
+  - `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=9`
+  - `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=2`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+
+Evidence:
+- Aggregated report summary (nearest-rank p50/p95):
+  - `pages_total=211`
+  - quality:
+    - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+    - `pages_has_failure_marker=6`, `regions_with_failure_marker=16` (FAIL)
+    - `no_cjk_with_ascii=78`, `empty_target_regions=340`
+  - timings (ms):
+    - `translator_p50=11839`, `translator_p95=42156`, `translator_max=73991`
+    - `total_p95=72736`, `total_max=110472`
+  - process peak (from reports):
+    - `max_rss_p95_mb=5667.7`, `max_rss_max_mb=5749.6`
+  - failure files (examples):
+    - `taming-a-female-bully__chapter-57-raw__12__f2284788-3bda-4e6e-80b9-276dcdb1c5cc.json`
+    - `hole-inspection-is-a-task__chapter-12-raw__7__35a2925b-cdf1-4124-bc54-b1e6177c44eb.json`
+- Docker/kernel:
+  - api container healthy; `OOMKilled=false`, `RestartCount=0`
+  - kernel OOM lines: `0` (`/tmp/kernel_oom_s9_20260208_193832.txt`)
+
+Interpretation:
+- With `UPSCALE_ENABLE=0`, the API container did not crash up to 9 concurrent chapters (no OOM/restarts observed).
+- Quality still degrades with concurrency: failure markers persist and increase vs S3b, which aligns with provider overload / fallback exhaustion rather than local compute.
+
+Open questions / follow-ups:
+- Crash reproduction (UPSCALE=0): CLOSED (not reproduced up to 9 concurrent chapters in S9).
+- Next: implement global backpressure to reduce provider overload, then re-run S6/S9 to target `"[翻译失败]"=0` while keeping `pages_has_hangul=0`.

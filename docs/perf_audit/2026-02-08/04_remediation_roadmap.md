@@ -112,6 +112,8 @@
   - Evidence:
     - S2 (docker, 3 concurrent chapters, 42 pages): `pages_has_hangul=0`, `"[翻译失败]"=0` (PASS)
     - S3b (API, 4 concurrent chapters, 43 pages; `output/quality_reports/_stress_20260208_190604_api_s3b.list`): `pages_has_hangul=0` but `pages_has_fail_marker=1` (7 regions) (NOT PASS)
+    - S6 (API, 6 concurrent chapters, 108 pages; `output/quality_reports/_stress_20260208_192710_api_s6.list`): `pages_has_hangul=0` but `pages_has_fail_marker=4` (18 regions) (NOT PASS)
+    - S9 (API, 9 concurrent chapters, 211 pages; `output/quality_reports/_stress_20260208_193832_api_s9.list`): `pages_has_hangul=0` but `pages_has_fail_marker=6` (16 regions) (NOT PASS)
   - `translator` p95/p99 不劣化（理想：下降），且容器无 OOM/restart。
 
 ### 5. 高频日志导致 I/O 与序列化放大
