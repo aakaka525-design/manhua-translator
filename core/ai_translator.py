@@ -893,13 +893,25 @@ class AITranslator:
                                     elif key == "ctx_chars_total":
                                         ctx_chars_total += value
                                 if len(fallback_results) == len(pairs):
-                                    return [
-                                        (
-                                            orig_idx,
-                                            (_clean_ai_annotations(trans).strip() or _FAILURE_MARKER)
+                                    cleaned_results: list[tuple[int, str]] = []
+                                    all_failed = True
+                                    for (orig_idx, _orig_text), trans in zip(pairs, fallback_results):
+                                        cleaned = _clean_ai_annotations(trans).strip() or _FAILURE_MARKER
+                                        if not cleaned.startswith(_FAILURE_MARKER):
+                                            all_failed = False
+                                        cleaned_results.append((orig_idx, cleaned))
+
+                                    # If a fallback returns only failure markers (common under overload),
+                                    # continue down the fallback chain instead of short-circuiting.
+                                    if all_failed:
+                                        logger.warning(
+                                            "batch: fallback returned all failures provider=%s model=%s%s",
+                                            fallback_provider,
+                                            fallback_model,
+                                            slice_note,
                                         )
-                                        for (orig_idx, orig_text), trans in zip(pairs, fallback_results)
-                                    ]
+                                        continue
+                                    return cleaned_results
                             except Exception as fallback_exc:
                                 logger.error(
                                     "batch: fallback failed provider=%s model=%s err=%s%s",

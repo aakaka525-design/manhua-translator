@@ -455,6 +455,46 @@ def test_translate_batch_prefers_gemini_model_fallback_before_provider(monkeypat
     assert result == ["GEMINI25"]
 
 
+def test_translate_batch_continues_fallback_chain_when_first_fallback_all_failed(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini")
+    monkeypatch.setenv("PPIO_API_KEY", "dummy-ppio")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
+
+    from core.ai_translator import AITranslator, _FAILURE_MARKER
+
+    monkeypatch.setattr(AITranslator, "_init_gemini", lambda self: None)
+    monkeypatch.setattr(AITranslator, "_init_ppio", lambda self: None)
+
+    translator = AITranslator(source_lang="en", target_lang="zh")
+
+    async def _raise_overload(prompt: str, max_tokens: int = 2000):
+        raise RuntimeError("503 UNAVAILABLE: model overloaded")
+
+    monkeypatch.setattr(translator, "_call_api", _raise_overload, raising=False)
+
+    calls = []
+
+    class _FallbackTranslator:
+        def __init__(self, provider: str, model: str, outputs: list[str]):
+            self.provider = provider
+            self.model = model
+            self._outputs = outputs
+            self.last_metrics = {"api_calls": 1}
+
+        async def translate_batch(self, texts, output_format="numbered", contexts=None):
+            calls.append((self.provider, self.model))
+            return list(self._outputs)
+
+    fb1 = _FallbackTranslator("gemini", "gemini-2.5-flash", [_FAILURE_MARKER, _FAILURE_MARKER])
+    fb2 = _FallbackTranslator("ppio", "zai-org/glm-4.7-flash", ["OK1", "OK2"])
+    monkeypatch.setattr(translator, "_fallback_translator_chain", lambda: [fb1, fb2], raising=False)
+
+    result = asyncio.run(translator.translate_batch(["A", "B"]))
+    assert result == ["OK1", "OK2"]
+    assert calls == [("gemini", "gemini-2.5-flash"), ("ppio", "zai-org/glm-4.7-flash")]
+
+
 def test_estimate_batch_max_tokens_scales_with_input_size():
     from core.ai_translator import _estimate_batch_max_tokens
 
