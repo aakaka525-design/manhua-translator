@@ -554,3 +554,38 @@ def test_translate_batch_prompt_metrics_count_retries(monkeypatch):
     metrics = translator.last_metrics
     assert metrics["api_calls"] == 2
     assert metrics["prompt_chars_total"] == captured["prompt_len"] * 2
+
+
+def test_translate_batch_retries_when_numbered_output_missing_items(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+    captured = {"calls": 0, "prompts": [], "max_tokens": []}
+
+    # Avoid slowing test down due to retry backoff (shouldn't run for missing-number retry, but safe).
+    async def _fast_sleep(_seconds: float):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        captured["calls"] += 1
+        captured["prompts"].append(prompt)
+        captured["max_tokens"].append(max_tokens)
+        if captured["calls"] == 1:
+            # Missing "3." on purpose to trigger strict-output retry.
+            return "1. A\n2. B"
+        return "1. A\n2. B\n3. C"
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    result = asyncio.run(translator.translate_batch(["one", "two", "three"]))
+
+    assert result == ["A", "B", "C"]
+    assert captured["calls"] == 2
+    assert "输出格式严格要求" in captured["prompts"][1]
+    assert captured["max_tokens"][1] >= captured["max_tokens"][0]
+    assert translator.last_metrics["api_calls"] == 2

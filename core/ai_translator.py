@@ -578,6 +578,14 @@ class AITranslator:
         content_chars_total = 0
         text_chars_total = 0
         ctx_chars_total = 0
+        # When the model returns numbered output but misses some indices (often due to truncation),
+        # retry the same batch once with stricter formatting instructions and a larger max_tokens
+        # headroom. This is usually faster/more stable than letting downstream mark them failed and
+        # triggering per-item fallbacks.
+        class _MissingNumberedItems(Exception):
+            def __init__(self, missing: int):
+                super().__init__(f"missing numbered items: {missing}")
+                self.missing = missing
 
         async def _translate_pairs(
             pairs: list[tuple[int, str]],
@@ -638,13 +646,30 @@ class AITranslator:
             logger.info(
                 f"batch: model={self.model} count={len(pairs)} total_len={len(numbered_texts)}{slice_note}"
             )
+            force_strict_output = False
             for attempt in range(max_retries + 1):
                 try:
                     start = time.perf_counter()
-                    max_tokens = _estimate_batch_max_tokens(
+                    base_max_tokens = _estimate_batch_max_tokens(
                         item_count=len(pairs),
                         total_chars=len(numbered_texts),
                     )
+                    max_tokens = base_max_tokens
+                    prompt_to_use = prompt
+                    if force_strict_output:
+                        hard_cap = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS", 4000)
+                        min_tokens = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS_MIN", 320)
+                        bonus = _read_env_int(
+                            "AI_TRANSLATE_BATCH_MAX_TOKENS_MISSING_NUMBER_BONUS",
+                            800,
+                        )
+                        max_tokens = max(min_tokens, min(hard_cap, base_max_tokens + bonus))
+                        prompt_to_use = (
+                            prompt
+                            + "\n\n# 输出格式严格要求\n"
+                            + f"你必须输出 1..{len(pairs)} 共 {len(pairs)} 行，每行以 `n.` 开头，禁止漏号。"
+                        )
+                    prompt_len = len(prompt_to_use)
                     # Count prompt/content sizes per attempt (retries included) so we can
                     # explain latency and provider behavior post-hoc.
                     prompt_chars_total += prompt_len
@@ -653,7 +678,7 @@ class AITranslator:
                     ctx_chars_total += slice_ctx_chars
                     api_calls_primary += 1
                     result = await self._call_api_with_timeout(
-                        prompt, max_tokens=max_tokens
+                        prompt_to_use, max_tokens=max_tokens
                     )
                     duration_ms = (time.perf_counter() - start) * 1000
 
@@ -671,6 +696,13 @@ class AITranslator:
                         translations, has_numbered = _parse_numbered_lines(
                             result, expected_count=len(pairs)
                         )
+
+                    # Retry if numbered output misses indices; otherwise downstream will mark them
+                    # as failures and trigger per-item fallback, which is slower and less stable.
+                    if has_numbered:
+                        missing = sum(1 for t in translations if not (t or "").strip())
+                        if missing:
+                            raise _MissingNumberedItems(missing)
 
                     if not has_numbered:
                         # Fallback: split single-line output by common separators
@@ -728,6 +760,16 @@ class AITranslator:
                     return slice_results
 
                 except Exception as e:
+                    if isinstance(e, _MissingNumberedItems) and attempt < max_retries:
+                        logger.warning(
+                            "batch: retry %d/%d due to missing numbered items=%d%s",
+                            attempt + 1,
+                            max_retries,
+                            e.missing,
+                            slice_note,
+                        )
+                        force_strict_output = True
+                        continue
                     if self._is_overload_error(e):
                         for fallback_translator in self._fallback_translator_chain():
                             fallback_provider = getattr(fallback_translator, "provider", "unknown")

@@ -177,3 +177,18 @@ Slow pages to investigate first:
 - Chapter translation limits are in-memory (per process). If the deployment uses multiple API workers/containers, limits/deduplication will be per-worker unless moved to a shared store (Redis).
 - Signature introspection for `pipeline.process_batch(page_concurrency=...)` is defensive but should be monitored; if signature changes, the feature silently degrades to the pipeline default.
 - Missing attribution in reports: quality reports currently do not persist the env knob snapshot (e.g. overlap ratio / batch fallback), making A/B attribution rely on external notes. Consider writing a minimal `run_config` field into quality report JSON.
+
+## Follow-ups (M3.1)
+### Translator: retry on missing numbered items (reduce per-item fallback + tail)
+Evidence:
+- `logs/ai/20260208/ai_translator.log` contains repeated warnings like `AI response missing number 10/11/12`, which leads to empty translations for those items.
+- Downstream then marks them as `[翻译失败] ...` and triggers per-item fallback calls, increasing remote calls and p95/p99 latency.
+
+Change:
+- In `core/ai_translator.py` `translate_batch()`: when numbered output is detected but some indices are missing (parsed as empty strings), retry the same batch immediately with:
+  - stricter format instructions (must output exactly `1..N`), and
+  - additional `max_tokens` headroom via env `AI_TRANSLATE_BATCH_MAX_TOKENS_MISSING_NUMBER_BONUS` (default 800).
+- Add test: `tests/test_ai_translator.py::test_translate_batch_retries_when_numbered_output_missing_items`.
+
+Open questions:
+- Should we add similar retry logic for `output_format=json` when JSON extraction returns fewer than expected items (partial/malformed)? Current fix targets the dominant numbered-output truncation case.
