@@ -27,8 +27,29 @@ from PIL import Image
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 全局 OCR 锁 - 解决 PaddleOCR 并发时的竞争条件问题
-_ocr_lock = asyncio.Lock()
+# Global OCR gate.
+# PaddleOCR has historically shown race conditions under concurrency in some setups.
+# Keep default concurrency=1 (same as previous global lock), but allow opt-in parallelism
+# for advanced users to reduce chapter-level tail latency.
+_ocr_gate: asyncio.Semaphore | None = None
+_ocr_gate_size: int | None = None
+
+
+def _get_ocr_gate() -> tuple[asyncio.Semaphore, int]:
+    global _ocr_gate, _ocr_gate_size
+    raw = (os.getenv("OCR_MAX_CONCURRENCY") or "").strip()
+    size = 1
+    if raw:
+        try:
+            size = int(raw)
+        except ValueError:
+            size = 1
+    # Clamp to keep memory usage predictable.
+    size = max(1, min(8, size))
+    if _ocr_gate is None or _ocr_gate_size != size:
+        _ocr_gate = asyncio.Semaphore(size)
+        _ocr_gate_size = size
+    return _ocr_gate, size
 
 
 class OCRModule(BaseModule):
@@ -210,13 +231,20 @@ class OCRModule(BaseModule):
                 cache_key,
                 len(context.regions),
             )
+            gate_wait_ms = 0.0
+            gate_size = _get_ocr_gate()[1]
         else:
-            # 使用全局锁确保 PaddleOCR 串行执行，避免并发竞争问题
-            async with _ocr_lock:
-                # 使用 detect_and_recognize 统一入口（支持长图切片）
+            gate, gate_size = _get_ocr_gate()
+            wait_start = time.perf_counter()
+            await gate.acquire()
+            gate_wait_ms = (time.perf_counter() - wait_start) * 1000
+            try:
+                # Use detect_and_recognize unified entrypoint (supports long-image tiling).
                 context.regions = await self.engine.detect_and_recognize(
                     context.image_path,
                 )
+            finally:
+                gate.release()
             # Post-process OCR text (normalize + SFX detection + locale fixes)
             OCRPostProcessor().process_regions(context.regions, lang=target_lang)
             self._save_cached_regions(context.image_path, target_lang, context.regions)
@@ -376,6 +404,9 @@ class OCRModule(BaseModule):
         
         # Collect metrics from engine if available
         self.last_metrics = {
+            "cache_hit": bool(cache_hit),
+            "gate_size": int(gate_size),
+            "gate_wait_ms": round(float(gate_wait_ms), 2),
             "regions_detected": len(context.regions) if context.regions else 0,
             "duration_ms": round(duration_ms, 2),
         }
