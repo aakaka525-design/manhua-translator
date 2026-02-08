@@ -129,6 +129,27 @@ def test_save_image_webp_slices_removes_stale_single_file(tmp_path, monkeypatch)
     assert not out_path.exists()
 
 
+def test_save_image_webp_slices_respects_slice_height_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    monkeypatch.setenv("WEBP_SLICE_OVERLAP", "10")
+    monkeypatch.setenv("WEBP_SLICE_HEIGHT", "4096")
+    arr = np.zeros((20000, 10, 3), dtype=np.uint8)
+    saved = save_image(arr, str(tmp_path / "out.png"), purpose="final")
+    assert saved.endswith("_slices.json")
+    data = json.loads(Path(saved).read_text())
+    assert data["slice_height"] == 4096
+    assert max(entry["height"] for entry in data["slices"]) <= 4096
+
+
+def test_save_image_webp_slices_respects_slice_threshold_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_FORMAT", "webp")
+    monkeypatch.setenv("WEBP_SLICE_THRESHOLD", "8192")
+    monkeypatch.setenv("WEBP_SLICE_HEIGHT", "4096")
+    arr = np.zeros((9000, 10, 3), dtype=np.uint8)
+    saved = save_image(arr, str(tmp_path / "out.png"), purpose="final")
+    assert saved.endswith("_slices.json")
+
+
 def test_save_image_webp_slices_cleans_stale_slice_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("OUTPUT_FORMAT", "webp")
     arr = np.zeros((20000, 10, 3), dtype=np.uint8)

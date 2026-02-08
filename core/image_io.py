@@ -9,6 +9,9 @@ import numpy as np
 from PIL import Image
 
 
+WEBP_MAX_DIM = 16383
+
+
 def _output_format() -> str:
     fmt = os.getenv("OUTPUT_FORMAT", "webp").strip().lower()
     if fmt not in {"webp", "png"}:
@@ -29,8 +32,39 @@ def _webp_slices_lossless() -> bool:
     return os.getenv("WEBP_SLICES_LOSSLESS", "0") == "1"
 
 
-def compute_webp_slices(height: int, slice_height: int, overlap: int) -> list[tuple[int, int]]:
-    if height <= 16383:
+def _webp_slice_threshold() -> int:
+    """
+    Height threshold for writing final WebP outputs as *_slices/ + *_slices.json.
+
+    Default matches WebP's max dimension (16383). You can lower this (e.g. 8192/4096)
+    to avoid mobile devices failing to decode/render very tall images.
+    """
+    raw = os.getenv("WEBP_SLICE_THRESHOLD", str(WEBP_MAX_DIM)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = WEBP_MAX_DIM
+    if value <= 0:
+        value = WEBP_MAX_DIM
+    return min(value, WEBP_MAX_DIM)
+
+
+def _webp_slice_height() -> int:
+    """Target height for each slice file (clamped to WEBP_SLICE_THRESHOLD / WEBP_MAX_DIM)."""
+    raw = os.getenv("WEBP_SLICE_HEIGHT", "16000").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 16000
+    if value <= 0:
+        value = 16000
+    return min(value, WEBP_MAX_DIM)
+
+
+def compute_webp_slices(
+    height: int, slice_height: int, overlap: int, *, threshold: int = WEBP_MAX_DIM
+) -> list[tuple[int, int]]:
+    if height <= threshold:
         return [(0, height)]
     if slice_height <= overlap:
         raise ValueError("slice_height must be greater than overlap")
@@ -55,6 +89,7 @@ def _save_webp_slices(
     image: Union[Image.Image, np.ndarray],
     out_path: Path,
     *,
+    threshold: int = WEBP_MAX_DIM,
     slice_height: int = 16000,
     overlap: int = 32,
 ) -> str:
@@ -66,7 +101,7 @@ def _save_webp_slices(
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         pil = Image.fromarray(rgb)
 
-    slices = compute_webp_slices(height, slice_height, overlap)
+    slices = compute_webp_slices(height, slice_height, overlap, threshold=threshold)
     slices_dir = out_path.parent / f"{out_path.stem}_slices"
     if slices_dir.exists():
         shutil.rmtree(slices_dir)
@@ -119,10 +154,24 @@ def save_image(
             width, height = image.size
         else:
             height, width = image.shape[:2]
-        if height > 16383:
-            if purpose == "final" and width <= 16383:
+
+        # Optional slicing for final WebP outputs. This is also required for heights > WEBP_MAX_DIM.
+        if purpose == "final" and width <= WEBP_MAX_DIM:
+            slice_threshold = _webp_slice_threshold()
+            if height > slice_threshold:
                 try:
-                    return _save_webp_slices(image, out_path, overlap=_webp_slice_overlap())
+                    overlap = _webp_slice_overlap()
+                    slice_height = min(_webp_slice_height(), slice_threshold)
+                    # Worst case the last slice can be up to (slice_height + overlap) tall.
+                    if slice_height + overlap > slice_threshold:
+                        slice_height = max(overlap + 1, slice_threshold - overlap)
+                    return _save_webp_slices(
+                        image,
+                        out_path,
+                        threshold=slice_threshold,
+                        slice_height=slice_height,
+                        overlap=overlap,
+                    )
                 except Exception:
                     out_path = out_path.with_suffix(".png")
                     if isinstance(image, Image.Image):
@@ -130,9 +179,11 @@ def save_image(
                     else:
                         cv2.imwrite(str(out_path), image)
                     return str(out_path)
+
+        if height > WEBP_MAX_DIM:
             fmt = "png"
             out_path = out_path.with_suffix(".png")
-        elif width > 16383:
+        elif width > WEBP_MAX_DIM:
             fmt = "png"
             out_path = out_path.with_suffix(".png")
     if fmt == "webp":
