@@ -29,6 +29,29 @@ Branch/worktree: codex/perf-m1-ocr-translator
   - `core/modules/translator.py`: aggregate `requests_primary/requests_fallback/requests` using translator `last_metrics` (instead of hardcoding).
 - Validation: `pytest -q` (347 tests) passes in this worktree.
 
+## M2 (Planned / In Progress)
+
+### 2026-02-08
+- Created M2 execution plan: `docs/perf_audit/2026-02-08/07_m2_plan.md`.
+- Implemented OCR tiling knobs (env-driven, defaults unchanged):
+  - `core/vision/tiling.py`: `OCR_TILE_*` + `OCR_EDGE_*` knobs; rebuild singleton on config signature change.
+  - Fixed `TilingManager.overlap_pixels` to use clamped `overlap_ratio` (stability + avoids pathological overlap when tuning).
+- Implemented PaddleOCR A/B knobs and extra metrics:
+  - `core/vision/ocr/paddle_engine.py`: small-image scaled pass mode (`OCR_SMALL_IMAGE_SCALE_MODE=always|auto|off`) and edge-tile mode (`OCR_EDGE_TILE_MODE=off|on|auto`) + `*_TOUCH_PX`.
+  - Recorded edge tile metrics (`last_edge_tile_count`, `last_edge_tile_avg_ms`) in engine and forwarded to `core/modules/ocr.py:last_metrics`.
+- Implemented Translator prompt/context observability (env-driven, defaults unchanged):
+  - `core/ai_translator.py`: accumulate `prompt_chars_total/content_chars_total/text_chars_total/ctx_chars_total` per attempt (retries included); include in `last_metrics`.
+  - `core/modules/translator.py`: optional `AI_TRANSLATE_CONTEXT_CHAR_CAP` (default 0 disabled) and aggregated prompt metrics.
+- Added tests:
+  - `tests/test_tiling_env_config.py`
+  - `tests/test_ai_translator.py` (prompt metrics + retry counting)
+  - `tests/test_paddle_engine_perf_flags.py` (small-image scale auto heuristic)
+- Validation: `pytest -q` passes (351 tests).
+- Next: re-sample baseline with upscaler excluded, then run A/B on:
+  - `OCR_TILE_HEIGHT` / `OCR_TILE_OVERLAP_RATIO`
+  - `OCR_SMALL_IMAGE_SCALE_MODE=auto`
+  - `AI_TRANSLATE_CONTEXT_CHAR_CAP` / `AI_TRANSLATE_BATCH_CHAR_BUDGET`
+
 ## Questions / Risks (to validate)
 - PaddleOCR concurrency: previous implementation used a global lock to avoid race conditions. Any increase of OCR parallelism must be opt-in and validated under load (crash-free and stable outputs).
 - Gemini/PPIO batching: large single prompts can increase tail latency and failure rate; chunking can reduce risk but may change outputs. We will keep chunking controls opt-in and add fallback to preserve quality.
