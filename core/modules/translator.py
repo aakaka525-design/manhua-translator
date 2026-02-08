@@ -703,8 +703,20 @@ class TranslatorModule(BaseModule):
 
         # Metrics tracking
         total_translate_ms = 0.0
+        ai_calls_primary_total = 0
+        ai_calls_fallback_total = 0
         sfx_count = 0
         post_rec_texts = {}
+
+        def _accumulate_ai_calls(translator) -> None:
+            nonlocal ai_calls_primary_total, ai_calls_fallback_total
+            metrics = getattr(translator, "last_metrics", None) or {}
+            primary = metrics.get("api_calls")
+            fallback = metrics.get("api_calls_fallback")
+            if isinstance(primary, int) and primary >= 0:
+                ai_calls_primary_total += primary
+            if isinstance(fallback, int) and fallback >= 0:
+                ai_calls_fallback_total += fallback
 
         if os.getenv("POST_REC") == "1" and context.image_path:
             try:
@@ -941,6 +953,7 @@ class TranslatorModule(BaseModule):
                                 output_format="json",
                                 contexts=crosspage_contexts,
                             )
+                            _accumulate_ai_calls(ai_translator)
                             total_translate_ms += (time.perf_counter() - start) * 1000
                             for idx, translation in zip(crosspage_indices, crosspage_translations):
                                 translations[idx] = translation
@@ -952,6 +965,7 @@ class TranslatorModule(BaseModule):
                                 normal_texts,
                                 contexts=normal_contexts,
                             )
+                            _accumulate_ai_calls(ai_translator)
                             total_translate_ms += (time.perf_counter() - start) * 1000
                             for idx, translation in zip(normal_indices, normal_translations):
                                 translations[idx] = translation
@@ -1029,6 +1043,7 @@ class TranslatorModule(BaseModule):
                                     )
                                 try:
                                     translation = await ai_translator.translate(fallback_input)
+                                    _accumulate_ai_calls(ai_translator)
                                 except Exception:
                                     pass
                                 if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
@@ -1101,6 +1116,7 @@ class TranslatorModule(BaseModule):
                                 translated_extra = await ai_translator.translate_batch(
                                     [crosspage_extra]
                                 )
+                                _accumulate_ai_calls(ai_translator)
                                 candidate = (
                                     (translated_extra[0] if translated_extra else "") or ""
                                 ).strip()
@@ -1225,7 +1241,9 @@ class TranslatorModule(BaseModule):
 
         # Store metrics
         self.last_metrics = {
-            "requests": 1,  # 只有一次批量请求
+            "requests": ai_calls_primary_total + ai_calls_fallback_total,
+            "requests_primary": ai_calls_primary_total,
+            "requests_fallback": ai_calls_fallback_total,
             "total_ms": round(total_translate_ms, 2),
             "avg_ms": round(total_translate_ms / len(texts_to_translate), 2) if texts_to_translate else 0,
             "sfx_skipped": sfx_count,

@@ -188,6 +188,7 @@ class AITranslator:
         self._allow_gemini_model_fallback = allow_gemini_model_fallback
         self._fallback_translator: Optional["AITranslator"] = None
         self._gemini_model_fallback_translators: dict[str, "AITranslator"] = {}
+        self.last_metrics: Optional[dict] = None
         
         logger.info(f"初始化翻译器: model={self.model}, is_gemini={self.is_gemini}")
         
@@ -540,9 +541,18 @@ class AITranslator:
         valid_pairs = [(i, t) for i, t in enumerate(cleaned_texts) if t.strip()]
         
         if not valid_pairs:
+            self.last_metrics = {
+                "api_calls": 0,
+                "api_calls_fallback": 0,
+                "slices": 0,
+                "items_total": len(texts),
+                "items_translated": 0,
+                "duration_ms": 0,
+            }
             return ["" for _ in texts]
 
         log_mode, log_limit, log_ctx = _get_log_config()
+        batch_start = time.perf_counter()
         
         target_name = self._get_lang_name(self.target_lang)
         def _format_entry(index: int, text: str, ctx: str) -> str:
@@ -558,12 +568,15 @@ class AITranslator:
                 "禁止添加任何注释、说明或括号备注。"
             )
         max_retries = 2
+        api_calls_primary = 0
+        api_calls_fallback = 0
 
         async def _translate_pairs(
             pairs: list[tuple[int, str]],
             slice_idx: int | None = None,
             slice_total: int | None = None,
         ) -> list[tuple[int, str]]:
+            nonlocal api_calls_primary, api_calls_fallback
             numbered_texts = "\n".join(
                 _format_entry(i + 1, t, cleaned_contexts[orig_idx])
                 for i, (orig_idx, t) in enumerate(pairs)
@@ -619,6 +632,7 @@ class AITranslator:
                         item_count=len(pairs),
                         total_chars=len(numbered_texts),
                     )
+                    api_calls_primary += 1
                     result = await self._call_api_with_timeout(
                         prompt, max_tokens=max_tokens
                     )
@@ -714,6 +728,12 @@ class AITranslator:
                                     output_format=output_format,
                                     contexts=fallback_contexts,
                                 )
+                                fallback_metrics = getattr(fallback_translator, "last_metrics", None) or {}
+                                fallback_calls = fallback_metrics.get("api_calls")
+                                if isinstance(fallback_calls, int) and fallback_calls >= 0:
+                                    api_calls_fallback += fallback_calls
+                                else:
+                                    api_calls_fallback += 1
                                 if len(fallback_results) == len(pairs):
                                     return [
                                         (
@@ -768,12 +788,45 @@ class AITranslator:
                 return False
             return all((trans or "").startswith("[翻译失败]") for _idx, trans in result_pairs)
 
-        async def _translate_in_chunks(
+        def _split_pairs(
             pairs: list[tuple[int, str]],
-            size: int,
+            *,
+            max_items: int,
+            max_chars: int,
+        ) -> list[list[tuple[int, str]]]:
+            if not pairs:
+                return []
+            if max_items <= 0:
+                max_items = len(pairs)
+            if max_chars <= 0:
+                return [pairs[i : i + max_items] for i in range(0, len(pairs), max_items)]
+
+            slices: list[list[tuple[int, str]]] = []
+            cur: list[tuple[int, str]] = []
+            cur_chars = 0
+            for orig_idx, text in pairs:
+                # Estimate chars in numbered_texts for this entry (exclude static prompt boilerplate).
+                ctx = cleaned_contexts[orig_idx]
+                entry = _format_entry(len(cur) + 1, text, ctx)
+                entry_len = len(entry) + 1  # + newline
+
+                # Close current slice if adding this entry would exceed budget (or max items).
+                if cur and (len(cur) >= max_items or (cur_chars + entry_len) > max_chars):
+                    slices.append(cur)
+                    cur = []
+                    cur_chars = 0
+
+                cur.append((orig_idx, text))
+                cur_chars += entry_len
+
+            if cur:
+                slices.append(cur)
+            return slices
+
+        async def _translate_slices(
+            slices: list[list[tuple[int, str]]],
             max_concurrency: int,
         ) -> list[tuple[int, str]]:
-            slices = [pairs[i : i + size] for i in range(0, len(pairs), size)]
             sem = asyncio.Semaphore(max_concurrency)
 
             async def _run_slice(idx: int, slice_pairs: list[tuple[int, str]]):
@@ -791,13 +844,24 @@ class AITranslator:
         # Prefer single-batch by default for better latency/cost.
         chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 200)
         concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 2)
+        char_budget = _read_env_int("AI_TRANSLATE_BATCH_CHAR_BUDGET", 0)
         fallback_chunk_size = _read_env_int(
             "AI_TRANSLATE_BATCH_FALLBACK_CHUNK_SIZE",
             min(12, chunk_size),
         )
 
-        if len(valid_pairs) <= chunk_size:
-            single_results = await _translate_pairs(valid_pairs)
+        # Build slices based on both item count and char budget (if enabled).
+        if len(valid_pairs) <= chunk_size and char_budget <= 0:
+            slices = [valid_pairs]
+        else:
+            slices = _split_pairs(
+                valid_pairs,
+                max_items=chunk_size,
+                max_chars=char_budget,
+            )
+
+        if len(slices) == 1:
+            single_results = await _translate_pairs(slices[0])
             should_fallback = (
                 len(valid_pairs) > 1
                 and fallback_chunk_size < len(valid_pairs)
@@ -809,15 +873,55 @@ class AITranslator:
                     fallback_chunk_size,
                     concurrency,
                 )
-                chunked_results = await _translate_in_chunks(
+                fallback_slices = _split_pairs(
                     valid_pairs,
-                    fallback_chunk_size,
-                    concurrency,
+                    max_items=fallback_chunk_size,
+                    max_chars=char_budget,
                 )
+                chunked_results = await _translate_slices(fallback_slices, concurrency)
+                duration_ms = (time.perf_counter() - batch_start) * 1000
+                self.last_metrics = {
+                    "api_calls": api_calls_primary,
+                    "api_calls_fallback": api_calls_fallback,
+                    "slices": len(fallback_slices),
+                    "items_total": len(texts),
+                    "items_translated": len(valid_pairs),
+                    "chunk_size": chunk_size,
+                    "char_budget": char_budget,
+                    "concurrency": concurrency,
+                    "fallback_chunk_size": fallback_chunk_size,
+                    "duration_ms": round(duration_ms, 2),
+                }
                 return _merge_results(chunked_results)
+            duration_ms = (time.perf_counter() - batch_start) * 1000
+            self.last_metrics = {
+                "api_calls": api_calls_primary,
+                "api_calls_fallback": api_calls_fallback,
+                "slices": len(slices),
+                "items_total": len(texts),
+                "items_translated": len(valid_pairs),
+                "chunk_size": chunk_size,
+                "char_budget": char_budget,
+                "concurrency": concurrency,
+                "fallback_chunk_size": fallback_chunk_size,
+                "duration_ms": round(duration_ms, 2),
+            }
             return _merge_results(single_results)
 
-        chunked_results = await _translate_in_chunks(valid_pairs, chunk_size, concurrency)
+        chunked_results = await _translate_slices(slices, concurrency)
+        duration_ms = (time.perf_counter() - batch_start) * 1000
+        self.last_metrics = {
+            "api_calls": api_calls_primary,
+            "api_calls_fallback": api_calls_fallback,
+            "slices": len(slices),
+            "items_total": len(texts),
+            "items_translated": len(valid_pairs),
+            "chunk_size": chunk_size,
+            "char_budget": char_budget,
+            "concurrency": concurrency,
+            "fallback_chunk_size": fallback_chunk_size,
+            "duration_ms": round(duration_ms, 2),
+        }
         return _merge_results(chunked_results)
 
 
