@@ -59,6 +59,9 @@ Translator:
 - `AI_TRANSLATE_ZH_FALLBACK_BATCH=0|1` (default 0)
   - 0: current per-item retranslate
   - 1: opt-in batch retranslate for zh fallback (reduce remote calls / tail latency)
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS` (code default: 12000)
+  - config-only recommendation for Gemini + fallback chain: `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+  - rationale: avoid timeout -> fallback stacking that amplifies remote-call tail latency (p95/p99)
 
 OCR tiling (already env-driven in M2; defaults unchanged):
 - `OCR_TILE_HEIGHT` (baseline: 1024)
@@ -75,4 +78,3 @@ Record:
 - key stage durations
 - `TranslatorModule.last_metrics` summary (including fallback timers once implemented)
 - any quality anomalies and the investigation result
-

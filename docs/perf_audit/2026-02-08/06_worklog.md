@@ -192,3 +192,35 @@ Change:
 
 Open questions:
 - Should we add similar retry logic for `output_format=json` when JSON extraction returns fewer than expected items (partial/malformed)? Current fix targets the dominant numbered-output truncation case.
+
+### W3 A/B: `AI_TRANSLATE_PRIMARY_TIMEOUT_MS` 12000 vs 15000 (Gemini)
+Context:
+- Workload: W3 `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/9.jpg` (720x19152)
+- Fixed knobs: `UPSCALE_ENABLE=0`, `OCR_RESULT_CACHE_ENABLE=0`, `OCR_TILE_OVERLAP_RATIO=0.25`, `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- Purpose: validate whether 12s is too tight for `gemini-3-flash-preview` and causes avoidable timeout -> fallback stacking.
+
+Evidence (pipeline metrics + AI log counters):
+
+| Label | AI_TRANSLATE_PRIMARY_TIMEOUT_MS | total_ms | ocr_ms | translator_ms | requests_primary | requests_fallback | zh_retranslate_items | zh_retranslate_ms | ai_timeouts | ai_fallback_provider | missing_retry | no_cjk_with_ascii | reports |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| T12 | 12000 | 169307 | 31931 | 120126 | 7 | 9 | 4 | 43779.62 | 6 | 6 | 7 | 9 | `/tmp/quality_reports_m3_20260208_153742/wireless-onahole__chapter-68__9__1ca08ace-9c27-407a-ab6a-b4bf3da9b09c.json` |
+| T15 | 15000 | 132304 | 31960 | 83841 | 8 | 5 | 1 | 4032.74 | 2 | 2 | 6 | 4 | `/tmp/quality_reports_m3_20260208_154433_t15/wireless-onahole__chapter-68__9__fdeab5ef-320b-47ed-ad3c-f542ab076c5f.json` |
+
+Notes:
+- `ai_timeouts` / `ai_fallback_provider` / `missing_retry` are counted from `MANHUA_LOG_DIR/ai/20260208/ai_translator.log`.
+  - T12: `MANHUA_LOG_DIR=/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.O1X8MByczB`
+  - T15: `MANHUA_LOG_DIR=/var/folders/7x/xmj28_bn6w7_8pcmtl3vqdc40000gn/T/tmp.U375CSsvgC`
+- OCR quality guard: both runs `regions_detected=84` (PASS) and merged region count stable (58 in quality report).
+- Failure marker guard: both runs `"[翻译失败]"=0` in quality report (PASS).
+- Mixed-language heuristic: `no_cjk_with_ascii` drops from 9 -> 4 when timeout is raised (quality improvement).
+
+Root cause hypothesis (supported by prior stats + this A/B):
+- `gemini-3-flash-preview` batch latencies often sit near 10-12s p95/p99; with a 12s guard, small overhead (event loop scheduling, retry backoff, provider variability) frequently crosses the threshold and triggers `asyncio.wait_for` timeout.
+- Each timeout causes a fallback call (gemini-2.5-flash or provider fallback), and those fallbacks can be slower, compounding tail latency and increasing remote calls.
+
+Recommendation (config-only; keep code default unchanged):
+- For deployments using Gemini with fallback chain enabled, set `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000` in docker env/.env to reduce avoidable timeout->fallback stacking and improve p95/p99 stability.
+
+Open questions:
+- Is 15000ms the best tradeoff across W2 (chapter, concurrency)? Need additional sampling on W2 to confirm stability under concurrency.
+- Should we consider 18000ms for extreme tail cases, or keep 15000ms as a safe default recommendation?

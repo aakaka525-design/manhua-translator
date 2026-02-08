@@ -66,6 +66,23 @@
 - 预计收益（耗时下降区间）: translator p95 降低 10%~30%（取决于 fallback 条目数与远端 RTT）。
 - 验收指标: W3 translator 阶段耗时下降 >=30% 且抽样译文语义不回退。
 
+### 4c. Gemini primary timeout 12s -> 15s（config-only，减少 timeout->fallback 堆叠）
+- 问题: `core/ai_translator.py` 在 fallback chain 存在时启用 `asyncio.wait_for` 超时护栏（默认 `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=12000`）。对 `gemini-3-flash-preview` 来说 12s 过紧，会频繁触发超时并进入 fallback，放大远端调用次数与尾延迟。
+- 涉及文件: `core/ai_translator.py`
+- 改造动作（可执行步骤）:
+  1. 部署侧在 docker env/.env 添加 `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`（保持代码默认不改）。
+  2. 仅在 Gemini + fallback chain 场景启用；单 provider 无 fallback 时该护栏不生效（保持旧行为）。
+  3. 在 W2/W3 采样记录 `primary timeout` 与 `fallback provider` 次数，作为验收指标的一部分。
+- 风险与兼容性: 阈值更高意味着单次最坏等待变长，但通常会减少 fallback 堆叠，降低 p95/p99。需要在 W2 并发场景复测确认整体吞吐/稳定性。
+- 预计收益（耗时下降区间）:
+  - W3（同一页 A/B 实测，`OCR_TILE_OVERLAP_RATIO=0.25` + `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`）:
+    - `translator` 120.1s -> 83.8s（约 -30%）
+    - `requests_fallback` 9 -> 5；`zh_retranslate_ms` 43.8s -> 4.0s
+    - `primary timeout` 6 -> 2（AI 日志计数）
+- 验收指标:
+  - W3: `translator` p95 下降，且 `primary timeout`/`fallback provider` 次数显著下降。
+  - 质量守门: OCR regions 不下降、`[翻译失败]` 不上升、mixed-language heuristic 不回退。
+
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
 - 涉及文件: `core/ai_translator.py`, `core/modules/translator.py`, `core/modules/ocr.py`
