@@ -754,3 +754,26 @@ Interpretation:
 Open questions / follow-ups:
 - Config-only mitigation has not yet driven `pages_has_failure_marker` to 0 at 6 concurrent chapters.
 - Next candidate (low-risk, quality-preserving): add a bounded per-item "failure marker salvage" retry for zh fallback (only for outputs starting with `"[翻译失败]"`), so rare partial failures do not leak into final outputs under overload.
+
+## 2026-02-09 M3.3 Kickoff: deploy salvage fix and re-run cloud S6 (UPSCALE=0)
+
+Purpose:
+- Close the remaining S6 quality gap (`pages_has_failure_marker` from 3 -> 0) without regressing `pages_has_hangul=0`.
+
+Execution scope:
+- Worktree: `/Users/xa/Desktop/projiect/manhua/.worktrees/stress-quality-fixes`
+- Branch: `codex/stress-quality-fixes`
+- Pending local changes to ship:
+  - `core/modules/translator.py` (bounded zh fallback salvage)
+  - `tests/test_translator_failure_marker_salvage.py` (coverage for salvage path)
+
+Plan checkpoints:
+1. Commit and push the salvage fix.
+2. Update cloud server to latest branch and rebuild docker API (`UPSCALE_ENABLE=0`).
+3. Re-run S6 with the same workload/config baseline and collect evidence artifacts.
+4. Evaluate hard gates: `pages_has_hangul=0`, `pages_has_failure_marker=0`, no OOM/restart.
+
+Open questions / follow-ups:
+- If failure markers remain >0 after salvage, run one-variable A/B in order:
+  1) `AI_TRANSLATE_MAX_INFLIGHT_CALLS=1`
+  2) `AI_TRANSLATE_FASTFAIL=0`

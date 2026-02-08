@@ -1207,6 +1207,44 @@ class TranslatorModule(BaseModule):
                                 for idx, out in zip(fallback_indices, batch_translations):
                                     fixed_translations[idx] = out
 
+                            # If batched fallback still yields a few failure markers, do a bounded
+                            # per-item salvage retry. This is intended to recover rare overload
+                            # blips without relying on Google fallback (not always available in docker).
+                            salvage_enable = os.getenv("AI_TRANSLATE_ZH_FALLBACK_SALVAGE", "1") == "1"
+                            salvage_budget = int(os.getenv("AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS", "4") or "4")
+                            if salvage_enable and salvage_budget > 0:
+                                ctx_by_index = dict(zip(fallback_indices, fallback_contexts))
+                                salvaged = 0
+                                for idx in fallback_indices:
+                                    if salvaged >= salvage_budget:
+                                        break
+                                    out = (fixed_translations[idx] or "").strip()
+                                    if not out.startswith("[翻译失败]"):
+                                        continue
+
+                                    fallback_input = fallback_input_by_index.get(idx) or (texts_to_translate[idx] or "")
+                                    fallback_ctx = ctx_by_index.get(idx) or ""
+                                    try:
+                                        start = time.perf_counter()
+                                        try:
+                                            retry_outs = await ai_translator.translate_batch(
+                                                [fallback_input],
+                                                contexts=[fallback_ctx],
+                                            )
+                                        except TypeError:
+                                            retry_outs = await ai_translator.translate_batch([fallback_input])
+                                        retry_out = ((retry_outs[0] if retry_outs else "") or "").strip()
+                                        elapsed_ms = (time.perf_counter() - start) * 1000
+                                        zh_retranslate_items += 1
+                                        zh_retranslate_ms += elapsed_ms
+                                        total_translate_ms += elapsed_ms
+                                        _accumulate_ai_calls(ai_translator)
+                                        if retry_out and not retry_out.startswith("[翻译失败]"):
+                                            fixed_translations[idx] = retry_out
+                                    except Exception:
+                                        pass
+                                    salvaged += 1
+
                             # Final fallback to Google Translate for still-bad items.
                             gt_class = self._translator_class
                             if gt_class is None:
