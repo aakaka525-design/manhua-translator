@@ -1,0 +1,110 @@
+file_path,runtime_criticality,hotspot_type,evidence,impact_estimate,fix_cost,priority_score
+core/pipeline.py,高,async,"L83:async def process( | L112:await status_callback(""init"", TaskStatus.PROCESSING, context.task_id) | L120:context = await module.process(context)",L,S,94
+frontend/src/stores/translate.js,高,network,L9:const eventSource = ref(null) | L60:if (eventSource.value) return | L63:eventSource.value = new EventSource(url),L,S,94
+app/routes/translate.py,高,async,L65:async def _register_chapter_job(chapter_key: str) -> None: | L87:async def _unregister_chapter_job(chapter_key: str) -> None: | L92:async def broadcast_event(data: dict):,L,M,88
+core/ai_translator.py,高,network,L6:- Gemini (Google OpenAI 兼容 API) | L16:from openai import OpenAI | L30:# 启用 OpenAI SDK 详细日志（显示重试原因）,L,M,88
+core/modules/ocr.py,高,async,"L155:async def process(self, context: TaskContext) -> TaskContext: | L217:context.regions = await self.engine.detect_and_recognize( | L305:prev_bottom_regions = await self.engine.detect_and_recognize_band(",L,M,88
+core/modules/upscaler.py,高,IO,"L150:self.binary_path = Path(binary_path) if binary_path else None | L164:return Path(env_path) | L166:return Path(""tools/bin/realesrgan-ncnn-vulkan"")",L,M,88
+core/vision/ocr/paddle_engine.py,高,async,"L95:async def recognize( | L101:return await loop.run_in_executor( | L155:async def detect_and_recognize(self, image_path: str) -> list[RegionData]:",L,M,88
+core/vision/tiling.py,高,CPU,L2:Tiling Manager - Dynamic image slicing for long manga pages. | L5:- Overlapping tile creation | L20:class Tile:,L,M,88
+core/modules/translator.py,高,async,"L301:async def _detect_bubble_boxes(image_path: str) -> list[Box2D] | None: | L311:regions = await detector.detect(image_path) | L608:async def process(self, context: TaskContext) -> TaskContext:",L,L,82
+app/routes/manga.py,中,async,"L46:async def list_manga(settings=Depends(get_settings)): | L113:async def list_chapters(manga_id: str, settings=Depends(get_settings)): | L171:async def get_chapter_details(",M,S,59
+app/routes/parser.py,中,async,"L68:async def parse_list(payload: ParseListRequest) -> ParserListResponse: | L75:catalog_items, catalog_warnings = await _list_recognized_catalog( | L85:html = await anyio.to_thread.run_sync(fetch_html, payload.url, payload.mode)",M,S,59
+app/routes/system.py,中,IO,"L51:ocr_cache_dir = Path(os.getenv(""OCR_RESULT_CACHE_DIR"", ""temp/ocr_cache"")).expanduser() | L79:""data_dir"": str(Path(settings.data_dir).expanduser().resolve()), | L80:""output_dir"": str(Path(settings.output_dir).expanduser().resolve()),",M,S,59
+core/crosspage_carryover.py,中,IO,"L8:self.path = Path(path) | L35:with self.path.open(""a"", encoding=""utf-8"") as f: | L37:f.write(json.dumps(item, ensure_ascii=False) + ""\n"")",M,S,59
+core/crosspage_pairing.py,中,CPU,L11:xs = [r.box_2d.x1 for r in group if r.box_2d] | L12:ys = [r.box_2d.y1 for r in group if r.box_2d] | L13:xe = [r.box_2d.x2 for r in group if r.box_2d],M,S,59
+core/crosspage_processor.py,中,CPU,"L14:for bottom_group, top_group in pairs: | L16:[r.source_text for r in bottom_group + top_group if r.source_text] | L24:for region in group:",M,S,59
+core/image_io.py,中,IO,L87:index_path.write_text( | L88:json.dumps( | L113:out_path = _normalize_suffix(Path(path)),M,S,59
+core/logging_config.py,中,IO,"L17:Path(_env_log_dir).expanduser() | L19:else Path(__file__).parent.parent / ""logs"" | L30:fallback = Path(os.getenv(""MANHUA_LOG_DIR_FALLBACK"", ""/tmp/manhua-logs""))",M,S,59
+core/metrics.py,中,CPU,"L4:Records timing information for each stage and sub-operation. | L14:""""""Metrics for a single pipeline stage."""""" | L31:""""""Complete metrics for a pipeline run.""""""",M,S,59
+core/model_setup.py,中,async,L40:async def _maybe_await(value): | L42:return await value | L50:async def warmup(self):,M,S,59
+core/modules/base.py,中,CPU,L2:Base module interface for all pipeline stages. | L16:Abstract base class for all pipeline modules. | L28:name: Optional module name for logging/debugging,M,S,59
+core/modules/inpainter.py,中,IO,"L50:base_dir = Path(os.getenv(""MANHUA_TEMP_DIR"", output_dir)) | L60:fallback_base = Path(""/tmp/manhua-temp"") | L91:with Image.open(context.image_path) as img:",M,S,59
+core/modules/renderer.py,中,IO,L69:self.output_dir = Path(output_dir) | L130:final_path = Path(context.output_path) | L140:if context.inpainted_path and Path(context.inpainted_path).exists(),M,S,59
+core/parser/ai_refiner.py,中,network,"L103:return bool(os.getenv(""PPIO_API_KEY"") or os.getenv(""OPENAI_API_KEY"")) | L107:api_key = os.getenv(""PPIO_API_KEY"") or os.getenv(""OPENAI_API_KEY"") | L114:from openai import OpenAI",M,S,59
+core/quality_report.py,中,IO,"L10:base = Path(env_dir) if env_dir else Path(""output"") / ""quality_reports"" | L42:p = Path(image_path) | L56:rel_parts[-1] = Path(rel_parts[-1]).stem",M,S,59
+core/text_merge/line_merger.py,中,CPU,L41:xs = [r.box_2d.x1 for r in regions if r.box_2d] | L42:ys = [r.box_2d.y1 for r in regions if r.box_2d] | L43:xe = [r.box_2d.x2 for r in regions if r.box_2d],M,S,59
+core/translator.py,中,CPU,L2:Region Merging Utilities - Preprocessing for translation. | L4:Provides functions to merge adjacent OCR regions for better translation context. | L111:for ch in text:,M,S,59
+core/vision/__init__.py,中,CPU,"L1:""""""Vision processing module for manga text detection, OCR, and inpainting."""""" | L4:from .ocr import OCREngine, PaddleOCREngine, MockOCREngine | L12:""PaddleOCREngine"",",M,S,59
+core/vision/ocr/cache.py,中,CPU,"L1:""""""PaddleOCR instance cache and stderr suppression."""""" | L10:# Reduce PaddleOCR/PaddlePaddle log noise | L12:os.environ[""PADDLE_PDX_LOG_LEVEL""] = ""ERROR""",M,S,59
+core/vision/ocr/post_recognition.py,中,CPU,L16:boxes = [r.box_2d for r in regions if r.box_2d] | L19:x1 = min(b.x1 for b in boxes) | L20:y1 = min(b.y1 for b in boxes),M,S,59
+core/vision/ocr/preprocessing.py,中,CPU,"L1:""""""Image preprocessing utilities for OCR."""""" | L14:lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB) | L15:l, a, b = cv2.split(lab)",M,S,59
+core/vision/text_detector.py,中,async,"L26:async def detect(self, image_path: str) -> list[RegionData]: | L68:async def detect(self, image_path: str) -> list[RegionData]: | L72:return await loop.run_in_executor(None, self._detect_sync, image_path)",M,S,59
+core/watermark_detector.py,中,CPU,L40:self.keywords = {k.lower() for k in (keywords or default_keywords)} | L59:for r in regions: | L63:matched = any(k in text for k in self.keywords) or any(k in compact for k in self.keywords),M,S,59
+frontend/src/api/index.js,中,async,L38:const { data } = await api.get('/manga') | L44:const { data } = await api.get(`/manga/${mangaId}/chapters`) | L50:const { data } = await api.get(`/manga/${mangaId}/chapter/${chapterId}`),M,S,59
+frontend/src/views/ReaderView.vue,中,async,"L75:await mangaStore.fetchMangas() | L76:await mangaStore.openManga(mid) | L79:const data = await mangaApi.getChapter(mid, cid)",M,S,59
+scraper/base.py,中,async,"L122:async def search_manga(self, keyword: str) -> Sequence[Manga]: | L126:async def get_chapters(self, manga: Manga) -> Sequence[Chapter]: | L130:async def download_images(",M,S,59
+scraper/downloader.py,中,async,L84:async def download_all( | L94:async def producer(queue: asyncio.Queue[DownloadItem | object]) -> int: | L97:await queue.put(item),M,S,59
+scraper/engine.py,中,async,"L28:async def search(self, keyword: str): | L30:results = await self.scraper.search_manga(keyword) | L34:async def list_chapters(self, manga: Manga):",M,S,59
+scraper/fetch.py,中,network,"L5:import httpx | L26:with httpx.Client(timeout=15.0, follow_redirects=True) as client: | L28:except httpx.RequestError as exc:",M,S,59
+scraper/implementations/mangaforfree.py,中,async,"L39:async def search_manga(self, keyword: str): | L44:return await super().search_manga(keyword) | L46:async def list_catalog(  # type: ignore[override]",M,S,59
+scraper/implementations/toongod.py,中,async,"L38:async def search_manga(self, keyword: str): | L56:html = await self._http_fetch_html(url) | L59:page = await context.new_page()",M,S,59
+core/errors.py,中,CPU,"L1:""""""Core business exceptions for pipeline stages."""""" | L5:""""""Base exception with machine-readable code for stage failures.""""""",M,S,56
+core/ocr_consistency_eval.py,中,CPU,"L17:for i in range(1, la + 1): | L20:for j in range(1, lb + 1):",M,S,56
+core/ocr_postprocessor.py,中,CPU,"L32:for pattern, repl in self._KO_FIXES: | L37:for r in regions:",M,S,56
+core/parser/list_parser.py,中,CPU,L18:for anchor in anchors: | L24:for anchor in with_images + without_images:,M,S,56
+core/sfx_dict.py,中,CPU,L46:# Force-SFX list (use sparingly - only for clear onomatopoeia not in KO_SFX_MAP) | L98:for ch in text:,M,S,56
+core/style_config.py,中,IO,"L27:path = Path(__file__).resolve().parents[1] / ""config"" / ""style.yml"" | L30:data = yaml.safe_load(path.read_text()) or {}",M,S,56
+core/translation_splitter.py,中,IO,"L9:data = json.loads(raw) | L51:return json.loads(f'""{content}""')",M,S,56
+core/vision/ocr/__init__.py,中,CPU,"L6:from .paddle_engine import PaddleOCREngine, MockOCREngine | L10:""PaddleOCREngine"",",M,S,56
+frontend/src/components/ui/SlicedImage.vue,中,async,L62:const res = await fetch(src); | L66:const data = await res.json();,M,S,56
+frontend/src/composables/useReadingHistory.js,中,CPU,L8:* Tracks last read manga/chapter for quick resume | L34:// Remove existing entry for same manga/chapter,M,S,56
+frontend/src/stores/manga.js,中,async,L20:mangas.value = await mangaApi.list() | L39:const chapData = await mangaApi.getChapters(mangaId),M,S,56
+frontend/src/views/HomeView.vue,中,async,L19:await mangaStore.fetchMangas() | L25:await nextTick(),M,S,56
+scraper/rate_limit.py,中,async,L16:async def acquire(self) -> None: | L21:await asyncio.sleep(wait_sec),M,S,56
+core/parser/rule_parser.py,中,CPU,"L114:for script in soup.find_all(""script"", attrs={""type"": ""application/ld+json""}): | L123:for item in _normalize_json_ld(payload): | L131:for item in payload:",M,M,53
+core/renderer.py,中,CPU,"L2:Text Renderer - Stylized Chinese text rendering for manga. | L8:- Stroke/outline support for readability | L60:For manga, text often has anti-aliasing, so we use the mode",M,M,53
+core/vision/inpainter.py,中,async,"L53:async def inpaint( | L72:async def inpaint_regions( | L183:result_path = await self.inpaint(image_path, str(mask_path), output_path)",M,M,53
+core/vision/ocr/postprocessing.py,中,CPU,"L1:""""""Post-processing utilities for OCR regions."""""" | L33:""""""Build edge-relative box for top/bottom band matching."""""" | L91:for region in regions:",M,M,53
+frontend/src/stores/settings.js,中,network,"L19:{ id: 'gpt-4o', name: 'GPT-4o', desc: 'OpenAI 模型' } | L132:await fetch('/api/v1/settings/model', { | L189:const response = await fetch('/api/v1/settings/upscale', {",M,M,53
+frontend/src/views/ScraperView.vue,中,CPU,"L68:// Infinite Scroll for Catalog | L127:// Virtual Scroll for Chapters | L318:<!-- Review: Skeleton appended for ""load more"" state -->",M,M,53
+scraper/implementations/generic_playwright.py,中,async,"L53:async def search_manga(self, keyword: str): | L58:page = await context.new_page() | L59:await self._acquire_rate_slot()",M,M,53
+app/routes/settings.py,中,serialization,L11:from pydantic import BaseModel | L35:class ModelUpdateRequest(BaseModel): | L39:class LanguageUpdateRequest(BaseModel):,S,S,49
+core/models.py,中,serialization,"L16:from pydantic import BaseModel, ConfigDict, Field | L27:class FontStyleParams(BaseModel): | L38:class Box2D(BaseModel):",S,S,49
+app/routes/scraper.py,中,async,L233:async def _prefetch_cover_cache( | L269:context = await playwright.chromium.launch_persistent_context( | L276:browser = await playwright.chromium.launch(,M,L,47
+frontend/src/stores/scraper.js,中,network,"L59:const res = await fetch('/api/v1/scraper/search', { | L68:const res = await fetch('/api/v1/scraper/chapters', { | L77:const res = await fetch('/api/v1/scraper/catalog', {",M,L,47
+frontend/src/views/scraper/ScraperConfig.vue,中,alloc,"L11:function applyRatePreset(value) { | L188:@click=""applyRatePreset(preset.value)""",S,S,46
+core/crosspage_splitter.py,中,CPU,"L15:candidates = [i for i, ch in enumerate(text) if ch in PUNCTUATION]",S,S,43
+core/modules/__init__.py,中,CPU,"L1:""""""Processing modules for the translation pipeline.""""""",S,S,43
+core/parser/utils.py,中,CPU,L19:merged.extend(str(item) for item in existing if str(item)),S,S,43
+core/utils/__init__.py,中,CPU,"L1:""""""Shared utility helpers for core modules.""""""",S,S,43
+core/utils/stderr_suppressor.py,中,IO,"L33:devnull = os.open(os.devnull, os.O_WRONLY)",S,S,43
+core/vision/ocr/base.py,中,async,L12:async def recognize(,S,S,43
+frontend/src/components/ReloadPrompt.vue,中,CPU,L17:// Watchers for PWA events,S,S,43
+frontend/src/components/SettingsModal.vue,中,async,L22:await settingsStore.setUpscaleEnabled(!settingsStore.settings.upscaleEnabled),S,S,43
+frontend/src/composables/useAnimations.js,中,CPU,L4:// Staggered enter animation for lists,S,S,43
+frontend/src/views/MangaView.vue,中,async,L94:await translateApi.translateChapter({,S,S,43
+scraper/challenge.py,中,CPU,L16:return any(marker in content for marker in CLOUDFLARE_MARKERS),S,S,43
+app/routes/__init__.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+core/__init__.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+core/constants.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+core/debug_artifacts.py,中,IO,"L5:import cv2 | L48:img = Image.open(image_path).convert(\"RGB\") | L65:saved_path = save_image(img, str(out_path), purpose=\"intermediate\")",S,S,40
+core/parser/__init__.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+core/text_merge/__init__.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/App.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/layout/GlassNav.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/ComicBackground.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/ComicCard.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/ComicLoading.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/CompareSlider.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/ContextMenu.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/LazyImage.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/StatusBadge.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/components/ui/Toast.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/composables/useKeyboard.js,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/composables/useParallax.js,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/main.js,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/router/index.js,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/stores/toast.js,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/utils/slice_index.js,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/views/scraper/ChapterListItem.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/views/scraper/MangaListItem.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+frontend/src/views/scraper/SkeletonCard.vue,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+scraper/__init__.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+scraper/implementations/__init__.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+scraper/url_utils.py,中,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,40
+app/main.py,低,async,"L67:async def lifespan(app: FastAPI): | L86:app.state.model_warmup_task = asyncio.create_task(service.warmup()) | L102:async def attach_request_id(request: Request, call_next):",S,S,29
+app/utils/env_file.py,低,IO,"L8:path = Path(env_path or os.getenv(""ENV_FILE"", "".env"")) | L13:lines = path.read_text(encoding=""utf-8"").splitlines() | L31:path.write_text(""\n"".join(new_lines) + ""\n"", encoding=""utf-8"")",S,S,29
+app/services/page_status.py,低,alloc,"L9:candidates = list(output_dir.glob(f""{stem}.*"")) | L10:all_candidates = list(candidates)",S,S,26
+app/deps.py,低,network,L20:openai_api_key: Optional[str] = None,S,S,23
+app/__init__.py,低,serialization,No obvious hotspot keyword hit; utility/config oriented file.,S,S,20

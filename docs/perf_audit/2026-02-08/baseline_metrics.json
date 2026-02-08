@@ -1,0 +1,152 @@
+{
+  "generated_on": "2026-02-08",
+  "source": {
+    "quality_reports_dir": "output/quality_reports",
+    "report_count_used": 12,
+    "log_files_consulted": [
+      "logs/20260207_app.log",
+      "logs/20260208_app.log"
+    ]
+  },
+  "workloads": {
+    "W1": {
+      "name": "W1",
+      "definition": "single-page translation (small pages); sampled from chapter-71-raw reports",
+      "sample_count": 2,
+      "sample_reports": [
+        "wireless-onahole__chapter-71-raw__1__35f267ac-2631-4aef-aa92-bbece1c5995c.json",
+        "wireless-onahole__chapter-71-raw__2__52078f0b-1e95-475a-93a9-71b8a8d7012c.json"
+      ],
+      "sample_images": [
+        "data/raw/wireless-onahole/chapter-71-raw/1.jpg",
+        "data/raw/wireless-onahole/chapter-71-raw/2.jpg"
+      ],
+      "metrics": {
+        "total_ms_p50": 30683.97,
+        "total_ms_p95": 36336.27,
+        "stage_ms_p50": {
+          "ocr": 2615.44,
+          "translator": 10486.61,
+          "inpainter": 2573.91,
+          "renderer": 518.59,
+          "upscaler": 14488.52
+        },
+        "stage_ms_p95": {
+          "ocr": 4629.42,
+          "translator": 13339.1,
+          "inpainter": 2995.97,
+          "renderer": 709.02,
+          "upscaler": 18690.21
+        },
+        "regions_avg": 6,
+        "translation_requests_est_avg": 3.5,
+        "retry_count_est_avg": 0,
+        "low_ocr_conf_regions_avg": 0.5,
+        "cpu_peak_pct": null,
+        "memory_peak_mb": null
+      },
+      "notes": [
+        "CPU/Memory peak unavailable from current logs; add psutil sampling in next validation round.",
+        "Current baseline includes upscaler timing in total; OCR/translator analysis uses stage-level metrics."
+      ]
+    },
+    "W2": {
+      "name": "W2",
+      "definition": "chapter translation (fixed pages): wireless-onahole/chapter-68/*",
+      "sample_count": 9,
+      "sample_reports": [
+        "wireless-onahole__chapter-68__1__c2637522-6d20-4306-a62f-6f5b92ec7f6d.json",
+        "wireless-onahole__chapter-68__2__ff7c7065-7f75-4e7d-9fe4-b7400f337f45.json",
+        "wireless-onahole__chapter-68__3__3aa74e04-1815-4d21-b323-7a0a96a3a83f.json",
+        "wireless-onahole__chapter-68__4__897a04bd-b7e5-4c0d-b8a8-60b3058da1db.json",
+        "wireless-onahole__chapter-68__5__89b9c2c7-7196-4542-be89-225809b24158.json",
+        "wireless-onahole__chapter-68__6__ddc936c7-9d42-4f89-b501-e82fb6411391.json",
+        "wireless-onahole__chapter-68__7__2f74f7d1-ce5f-4c68-88a7-f97795365bcf.json",
+        "wireless-onahole__chapter-68__8__2672847e-57d0-4879-897f-d8a89baf1e8a.json",
+        "wireless-onahole__chapter-68__9__76f23736-d862-4a90-89b7-f2e502312848.json"
+      ],
+      "sample_images": [
+        "data/raw/wireless-onahole/chapter-68/1.jpg",
+        "data/raw/wireless-onahole/chapter-68/2.jpg",
+        "data/raw/wireless-onahole/chapter-68/3.jpg",
+        "data/raw/wireless-onahole/chapter-68/4.jpg",
+        "data/raw/wireless-onahole/chapter-68/5.jpg",
+        "data/raw/wireless-onahole/chapter-68/6.jpg",
+        "data/raw/wireless-onahole/chapter-68/7.jpg",
+        "data/raw/wireless-onahole/chapter-68/8.jpg",
+        "data/raw/wireless-onahole/chapter-68/9.jpg"
+      ],
+      "metrics": {
+        "total_ms_p50": 127212.17,
+        "total_ms_p95": 160055.35,
+        "stage_ms_p50": {
+          "ocr": 37313.03,
+          "translator": 33778.5,
+          "inpainter": 24891.18,
+          "renderer": 5612.79,
+          "upscaler": 17624.44
+        },
+        "stage_ms_p95": {
+          "ocr": 79023.65,
+          "translator": 69251.98,
+          "inpainter": 40991.05,
+          "renderer": 14806.11,
+          "upscaler": 20811.74
+        },
+        "regions_avg": 29.56,
+        "translation_requests_est_avg": 27.44,
+        "retry_count_est_avg": 0,
+        "low_ocr_conf_regions_avg": 1.89,
+        "cpu_peak_pct": null,
+        "memory_peak_mb": null
+      },
+      "notes": [
+        "CPU/Memory peak unavailable from current logs; add psutil sampling in next validation round.",
+        "Current baseline includes upscaler timing in total; OCR/translator analysis uses stage-level metrics."
+      ]
+    },
+    "W3": {
+      "name": "W3",
+      "definition": "high-text-density pages: top-3 by region count and translator time",
+      "sample_count": 3,
+      "sample_reports": [
+        "wireless-onahole__chapter-68__9__76f23736-d862-4a90-89b7-f2e502312848.json",
+        "wireless-onahole__chapter-68__7__2f74f7d1-ce5f-4c68-88a7-f97795365bcf.json",
+        "hole-inspection-is-a-task__chapter-1__1__2563a7c7-db60-4450-a6c8-de99adc76f08.json"
+      ],
+      "sample_images": [
+        "data/raw/wireless-onahole/chapter-68/9.jpg",
+        "data/raw/wireless-onahole/chapter-68/7.jpg",
+        "data/raw/hole-inspection-is-a-task/chapter-1/1.jpg"
+      ],
+      "metrics": {
+        "total_ms_p50": 140318.51,
+        "total_ms_p95": 150172.34,
+        "stage_ms_p50": {
+          "ocr": 54250.37,
+          "translator": 54962.78,
+          "inpainter": 12558.29,
+          "renderer": 1206.77,
+          "upscaler": 17624.44
+        },
+        "stage_ms_p95": {
+          "ocr": 55852.49,
+          "translator": 76396.59,
+          "inpainter": 13337.37,
+          "renderer": 3080.3,
+          "upscaler": 33246.69
+        },
+        "regions_avg": 43.67,
+        "translation_requests_est_avg": 40.33,
+        "retry_count_est_avg": 0,
+        "low_ocr_conf_regions_avg": 2,
+        "cpu_peak_pct": null,
+        "memory_peak_mb": null
+      },
+      "notes": [
+        "CPU/Memory peak unavailable from current logs; add psutil sampling in next validation round.",
+        "Current baseline includes upscaler timing in total; OCR/translator analysis uses stage-level metrics."
+      ]
+    }
+  }
+}
