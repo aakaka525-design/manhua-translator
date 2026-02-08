@@ -485,3 +485,72 @@ def test_translate_batch_uses_estimated_max_tokens(monkeypatch):
     result = asyncio.run(translator.translate_batch(["HELLO"]))
     assert result == ["测试"]
     assert captured["max_tokens"] < 4000
+
+
+def test_translate_batch_emits_prompt_metrics(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+    captured = {"calls": 0, "prompt": None}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        captured["calls"] += 1
+        captured["prompt"] = prompt
+        return "1. A\n2. B"
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    texts = ["one", "two"]
+    contexts = ["ctx1", "ctx2"]
+    result = asyncio.run(translator.translate_batch(texts, contexts=contexts))
+    assert result == ["A", "B"]
+
+    metrics = translator.last_metrics
+    assert metrics["api_calls"] == 1
+    assert metrics["prompt_chars_total"] == len(captured["prompt"])
+
+    numbered_texts = "\n".join(
+        [
+            "1. TEXT: one\n   CTX: ctx1",
+            "2. TEXT: two\n   CTX: ctx2",
+        ]
+    )
+    assert metrics["content_chars_total"] == len(numbered_texts)
+    assert metrics["text_chars_total"] == len("one") + len("two")
+    assert metrics["ctx_chars_total"] == len("ctx1") + len("ctx2")
+
+
+def test_translate_batch_prompt_metrics_count_retries(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="en", target_lang="zh")
+
+    # Avoid slowing test down due to retry backoff.
+    async def _fast_sleep(_seconds: float):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+
+    captured = {"calls": 0, "prompt_len": None}
+
+    async def fake_call_api(prompt: str, max_tokens: int = 2000) -> str:
+        captured["calls"] += 1
+        captured["prompt_len"] = len(prompt)
+        if captured["calls"] == 1:
+            raise Exception("boom")
+        return "1. OK"
+
+    monkeypatch.setattr(translator, "_call_api", fake_call_api)
+
+    result = asyncio.run(translator.translate_batch(["hello"], contexts=["ctx"]))
+    assert result == ["OK"]
+
+    metrics = translator.last_metrics
+    assert metrics["api_calls"] == 2
+    assert metrics["prompt_chars_total"] == captured["prompt_len"] * 2

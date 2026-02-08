@@ -707,9 +707,14 @@ class TranslatorModule(BaseModule):
         ai_calls_fallback_total = 0
         sfx_count = 0
         post_rec_texts = {}
+        prompt_chars_total = 0
+        content_chars_total = 0
+        text_chars_total = 0
+        ctx_chars_total = 0
 
         def _accumulate_ai_calls(translator) -> None:
             nonlocal ai_calls_primary_total, ai_calls_fallback_total
+            nonlocal prompt_chars_total, content_chars_total, text_chars_total, ctx_chars_total
             metrics = getattr(translator, "last_metrics", None) or {}
             primary = metrics.get("api_calls")
             fallback = metrics.get("api_calls_fallback")
@@ -717,6 +722,18 @@ class TranslatorModule(BaseModule):
                 ai_calls_primary_total += primary
             if isinstance(fallback, int) and fallback >= 0:
                 ai_calls_fallback_total += fallback
+            value = metrics.get("prompt_chars_total")
+            if isinstance(value, int) and value >= 0:
+                prompt_chars_total += value
+            value = metrics.get("content_chars_total")
+            if isinstance(value, int) and value >= 0:
+                content_chars_total += value
+            value = metrics.get("text_chars_total")
+            if isinstance(value, int) and value >= 0:
+                text_chars_total += value
+            value = metrics.get("ctx_chars_total")
+            if isinstance(value, int) and value >= 0:
+                ctx_chars_total += value
 
         if os.getenv("POST_REC") == "1" and context.image_path:
             try:
@@ -892,6 +909,24 @@ class TranslatorModule(BaseModule):
                 parts.append(group_text_map.get(next_idx, ""))
             context_text = " | ".join([p for p in parts if p])
             contexts_to_translate.append(context_text)
+
+        # Optional context cap to reduce prompt bloat (A/B only; default disabled).
+        raw_cap = (os.getenv("AI_TRANSLATE_CONTEXT_CHAR_CAP") or "").strip()
+        try:
+            ctx_cap = int(raw_cap) if raw_cap else 0
+        except ValueError:
+            ctx_cap = 0
+        if ctx_cap > 0:
+            capped = []
+            for ctx in contexts_to_translate:
+                if not ctx or len(ctx) <= ctx_cap:
+                    capped.append(ctx)
+                else:
+                    # Keep ASCII to avoid introducing unexpected tokens.
+                    keep = max(0, ctx_cap - 3)
+                    capped.append(ctx[:keep] + "...")
+            contexts_to_translate = capped
+
         if debug:
             for req_idx, (group_idx, text, group, ctx_text) in enumerate(
                 zip(group_indexes, texts_to_translate, groups_to_translate, contexts_to_translate)
@@ -1247,6 +1282,10 @@ class TranslatorModule(BaseModule):
             "total_ms": round(total_translate_ms, 2),
             "avg_ms": round(total_translate_ms / len(texts_to_translate), 2) if texts_to_translate else 0,
             "sfx_skipped": sfx_count,
+            "prompt_chars_total": prompt_chars_total,
+            "content_chars_total": content_chars_total,
+            "text_chars_total": text_chars_total,
+            "ctx_chars_total": ctx_chars_total,
         }
 
         try:

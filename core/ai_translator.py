@@ -547,6 +547,10 @@ class AITranslator:
                 "slices": 0,
                 "items_total": len(texts),
                 "items_translated": 0,
+                "prompt_chars_total": 0,
+                "content_chars_total": 0,
+                "text_chars_total": 0,
+                "ctx_chars_total": 0,
                 "duration_ms": 0,
             }
             return ["" for _ in texts]
@@ -570,6 +574,10 @@ class AITranslator:
         max_retries = 2
         api_calls_primary = 0
         api_calls_fallback = 0
+        prompt_chars_total = 0
+        content_chars_total = 0
+        text_chars_total = 0
+        ctx_chars_total = 0
 
         async def _translate_pairs(
             pairs: list[tuple[int, str]],
@@ -577,6 +585,7 @@ class AITranslator:
             slice_total: int | None = None,
         ) -> list[tuple[int, str]]:
             nonlocal api_calls_primary, api_calls_fallback
+            nonlocal prompt_chars_total, content_chars_total, text_chars_total, ctx_chars_total
             numbered_texts = "\n".join(
                 _format_entry(i + 1, t, cleaned_contexts[orig_idx])
                 for i, (orig_idx, t) in enumerate(pairs)
@@ -618,6 +627,10 @@ class AITranslator:
 {numbered_texts}
 
 {output_hint}"""
+            prompt_len = len(prompt)
+            content_len = len(numbered_texts)
+            slice_text_chars = sum(len(t) for _orig_idx, t in pairs)
+            slice_ctx_chars = sum(len(cleaned_contexts[orig_idx]) for orig_idx, _t in pairs)
 
             slice_note = ""
             if slice_idx is not None and slice_total:
@@ -632,6 +645,12 @@ class AITranslator:
                         item_count=len(pairs),
                         total_chars=len(numbered_texts),
                     )
+                    # Count prompt/content sizes per attempt (retries included) so we can
+                    # explain latency and provider behavior post-hoc.
+                    prompt_chars_total += prompt_len
+                    content_chars_total += content_len
+                    text_chars_total += slice_text_chars
+                    ctx_chars_total += slice_ctx_chars
                     api_calls_primary += 1
                     result = await self._call_api_with_timeout(
                         prompt, max_tokens=max_tokens
@@ -734,6 +753,23 @@ class AITranslator:
                                     api_calls_fallback += fallback_calls
                                 else:
                                     api_calls_fallback += 1
+                                for key in (
+                                    "prompt_chars_total",
+                                    "content_chars_total",
+                                    "text_chars_total",
+                                    "ctx_chars_total",
+                                ):
+                                    value = fallback_metrics.get(key)
+                                    if not isinstance(value, int) or value < 0:
+                                        continue
+                                    if key == "prompt_chars_total":
+                                        prompt_chars_total += value
+                                    elif key == "content_chars_total":
+                                        content_chars_total += value
+                                    elif key == "text_chars_total":
+                                        text_chars_total += value
+                                    elif key == "ctx_chars_total":
+                                        ctx_chars_total += value
                                 if len(fallback_results) == len(pairs):
                                     return [
                                         (
@@ -886,6 +922,10 @@ class AITranslator:
                     "slices": len(fallback_slices),
                     "items_total": len(texts),
                     "items_translated": len(valid_pairs),
+                    "prompt_chars_total": prompt_chars_total,
+                    "content_chars_total": content_chars_total,
+                    "text_chars_total": text_chars_total,
+                    "ctx_chars_total": ctx_chars_total,
                     "chunk_size": chunk_size,
                     "char_budget": char_budget,
                     "concurrency": concurrency,
@@ -900,6 +940,10 @@ class AITranslator:
                 "slices": len(slices),
                 "items_total": len(texts),
                 "items_translated": len(valid_pairs),
+                "prompt_chars_total": prompt_chars_total,
+                "content_chars_total": content_chars_total,
+                "text_chars_total": text_chars_total,
+                "ctx_chars_total": ctx_chars_total,
                 "chunk_size": chunk_size,
                 "char_budget": char_budget,
                 "concurrency": concurrency,
@@ -916,6 +960,10 @@ class AITranslator:
             "slices": len(slices),
             "items_total": len(texts),
             "items_translated": len(valid_pairs),
+            "prompt_chars_total": prompt_chars_total,
+            "content_chars_total": content_chars_total,
+            "text_chars_total": text_chars_total,
+            "ctx_chars_total": ctx_chars_total,
             "chunk_size": chunk_size,
             "char_budget": char_budget,
             "concurrency": concurrency,
