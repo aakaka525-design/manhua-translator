@@ -28,6 +28,9 @@
 - 风险与兼容性: 过高并发可能降低识别稳定性；默认从 2 并发起步。
 - 预计收益（耗时下降区间）: OCR 阶段 20%~40%。
 - 验收指标: W3 `ocr` p50 从 54s 下降到 <=43s。
+  - 已验证安全旋钮（W3 720x19152 单页，regions=84）:
+    - `OCR_TILE_HEIGHT=1024 OCR_TILE_OVERLAP_RATIO=0.25` 将 OCR 从 ~44.8s 降到 ~31.9s（tile_count 36 -> 25）。
+    - `OCR_TILE_HEIGHT=1536 OCR_TILE_OVERLAP_RATIO=0.25` 更快但 regions +2，需确认是否引入噪声/重复。
 
 ### 3. Translator 单批次优先导致尾延迟放大
 - 问题: `core/ai_translator.py` 默认“单大批次优先，失败再切块”，在高文本页出现长尾。

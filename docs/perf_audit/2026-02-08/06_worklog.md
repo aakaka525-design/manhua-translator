@@ -94,6 +94,20 @@ Branch/worktree: codex/perf-m1-ocr-translator
 - Added test to lock behavior: `tests/test_translator_fallback_batch.py` (ensures `translate()` is not called in batch mode).
 - Next validation: run W1/W2/W3 and spot-check translation quality (batch retranslate can change outputs).
 
+### 2026-02-08 (M3 Task 4 - OCR Tiling A/B)
+- OCR-only benchmark (W3; `OCR_RESULT_CACHE_ENABLE=0`; model init excluded; single run per config):
+  - Image: `/Users/xa/Desktop/projiect/manhua/data/raw/wireless-onahole/chapter-68/9.jpg` (720x19152)
+
+| OCR_TILE_HEIGHT | OCR_TILE_OVERLAP_RATIO | duration_ms | regions | tile_count | tile_avg_ms |
+| --- | --- | --- | --- | --- | --- |
+| 1024 | 0.50 | 44793 | 84 | 36 | 1239 |
+| 1024 | 0.25 | 31903 | 84 | 25 | 1270 |
+| 1536 | 0.25 | 30421 | 86 | 17 | 1780 |
+
+- Conclusion:
+  - `1024/0.25` is a clear win with stable regions (84) and fewer tiles; recommended safe knob for long images.
+  - `1536/0.25` is slightly faster but changes regions (+2); keep experimental until we confirm no duplicate/noise regression.
+
 ## Questions / Risks (to validate)
 - PaddleOCR concurrency: previous implementation used a global lock to avoid race conditions. Any increase of OCR parallelism must be opt-in and validated under load (crash-free and stable outputs).
 - Gemini/PPIO batching: large single prompts can increase tail latency and failure rate; chunking can reduce risk but may change outputs. We will keep chunking controls opt-in and add fallback to preserve quality.
