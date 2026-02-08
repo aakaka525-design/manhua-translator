@@ -741,10 +741,31 @@ class AITranslator:
                     slice_results: list[tuple[int, str]] = []
                     import re as _re
                     _hangul_check = _re.compile(r'[\uac00-\ud7a3]')
+                    _cjk_check = _re.compile(r"[\u4e00-\u9fff]")
+                    target_is_zh = str(self.target_lang or "").lower().startswith("zh")
                     for (orig_idx, orig_text), trans in zip(pairs, translations):
                         cleaned = _clean_ai_annotations(trans)
                         # Empty translation means AI skipped this number
                         if not cleaned.strip():
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
+                        # For zh targets, never let Hangul leak into output. If the provider
+                        # returns Hangul (often alongside meta/analysis text), mark it as failed
+                        # so upstream fallback can retry or keep original art/text.
+                        elif target_is_zh and _hangul_check.search(cleaned):
+                            logger.warning(
+                                "AI returned Hangul for zh target, marking as failed"
+                            )
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
+                        # For zh targets, if the source contains Hangul but the output has no CJK,
+                        # treat it as invalid (e.g. analysis/formatting noise) and mark as failed.
+                        elif (
+                            target_is_zh
+                            and _hangul_check.search(orig_text or "")
+                            and not _cjk_check.search(cleaned)
+                        ):
+                            logger.warning(
+                                "AI returned non-CJK for Hangul source under zh target, marking as failed"
+                            )
                             slice_results.append((orig_idx, _FAILURE_MARKER))
                         # Detect Korean text returned unchanged (AI failed to translate names)
                         elif _hangul_check.search(cleaned) and cleaned.strip() == orig_text.strip():

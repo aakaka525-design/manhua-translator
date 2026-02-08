@@ -591,6 +591,25 @@ def test_translate_batch_retries_when_numbered_output_missing_items(monkeypatch)
     assert translator.last_metrics["api_calls"] == 2
 
 
+def test_translate_batch_marks_hangul_leak_as_failure_for_zh(monkeypatch):
+    monkeypatch.setenv("PPIO_API_KEY", "dummy")
+    monkeypatch.setattr("core.ai_translator.AITranslator._init_ppio", lambda self: None)
+
+    from core.ai_translator import AITranslator
+
+    translator = AITranslator(model="glm-4-flash-250414", source_lang="korean", target_lang="zh-CN")
+
+    async def fake_call_api_with_timeout(prompt: str, max_tokens: int = 2000) -> str:
+        # Some providers occasionally return meta/analysis text that still includes Hangul.
+        # For zh targets, we must not propagate Hangul into target_text.
+        return '1. *Refining Item 1:* "3일안에무조건 환불"'
+
+    monkeypatch.setattr(translator, "_call_api_with_timeout", fake_call_api_with_timeout)
+
+    result = asyncio.run(translator.translate_batch(["3일안에무조건 환불 가능.그런거있잖아"]))
+    assert result == ["[翻译失败]"]
+
+
 def test_translate_batch_falls_back_when_primary_returns_none(monkeypatch):
     """
     Regression: provider call can yield None (e.g. Gemini response.text=None).
