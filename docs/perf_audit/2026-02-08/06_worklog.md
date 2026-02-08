@@ -292,3 +292,44 @@ Repro / extraction commands:
       )
   PY
   ```
+
+## 2026-02-08 Stability: multi-chapter crash mitigation (task store + SSE backpressure)
+
+Problem statement:
+- On Docker deployments, running multiple chapter translations can crash the API process (likely memory pressure / OOM). This is amplified when:
+  - Chapter jobs run concurrently (chapter_slots/page_concurrency)
+  - Each finished page keeps full `TaskContext.regions` in memory
+  - SSE clients are slow/disconnected and progress events pile up
+
+Root-cause evidence (code-level):
+- `app/routes/translate.py` keeps `_tasks: Dict[UUID, TaskContext]` forever; chapter processing stores *all* page contexts up front and those contexts are later populated with full `regions` payload.
+- `broadcast_event()` previously used `await queue.put(...)` on per-client `asyncio.Queue()` with no `maxsize`. If a client is slow, this can either:
+  - grow memory unbounded (unbounded queue), or
+  - apply backpressure and block progress callbacks if queue is bounded later.
+
+Mitigation implemented (branch `codex/stability-multi-chapter`):
+- Bounded task store:
+  - `_tasks` switched to `OrderedDict` with pruning on insert (LRU-style).
+  - On store, task is stripped (`regions=[]`, `crosspage_debug=None`) to avoid retaining large payloads.
+  - Knobs (deploy-side):
+    - `TRANSLATE_TASK_MAX_STORED` (default 2000)
+    - `TRANSLATE_TASK_TTL_SECONDS` (default 21600)
+    - `TRANSLATE_TASK_STRIP_REGIONS` (default 1)
+- SSE backpressure safety:
+  - Listener queues are created with `SSE_QUEUE_MAXSIZE` (default 200).
+  - `broadcast_event()` uses `put_nowait()` and drops the oldest event on `QueueFull` to keep latest.
+  - Iterates over `list(_listeners)` to avoid "set changed size during iteration" hazards.
+
+Quality impact:
+- No change to OCR/Translator logic or outputs.
+- `/translate/task/{task_id}` still serves status/output path; it never exposed regions, so stripping is safe.
+- SSE progress streams may skip intermediate events for slow clients, but should continue to deliver newest progress and completion.
+
+Verification:
+- Added tests:
+  - `tests/test_translate_task_store_limits.py` (eviction + strip)
+  - `tests/test_translate_sse_backpressure.py` (no deadlock on full queue; keep latest event)
+- Full suite: `pytest -q` PASS.
+
+Open question:
+- Need to confirm server crash mode (OOMKilled vs. unhandled exception) by inspecting Docker container state and kernel OOM logs.

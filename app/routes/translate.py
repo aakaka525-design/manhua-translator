@@ -4,6 +4,8 @@ Translation API Routes.
 Provides endpoints for image translation operations.
 """
 
+from collections import OrderedDict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Set, Optional
 from uuid import UUID
@@ -31,7 +33,9 @@ router = APIRouter(prefix="/translate", tags=["translation"])
 logger = logging.getLogger(__name__)
 
 # In-memory task storage
-_tasks: Dict[UUID, TaskContext] = {}
+# Use an OrderedDict so we can enforce a bounded LRU-style store.
+_tasks: "OrderedDict[UUID, TaskContext]" = OrderedDict()
+_tasks_lock = asyncio.Lock()
 _task_meta: Dict[UUID, dict] = {}
 _chapter_jobs_inflight: Set[str] = set()
 _chapter_jobs_lock = asyncio.Lock()
@@ -60,6 +64,57 @@ def _read_env_int(name: str, default: int, *, min_value: int = 1, max_value: int
     except ValueError:
         return default
     return max(min_value, min(max_value, value))
+
+
+def _is_truthy_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _strip_task_for_store(task: TaskContext) -> TaskContext:
+    # We keep enough fields to serve /task and to attach metadata to SSE events.
+    # Regions (and nested debug fields) can be very large and are not used by /task.
+    stripped = task.model_copy(deep=False)
+    stripped.regions = []
+    stripped.crosspage_debug = None
+    return stripped
+
+
+def _prune_tasks_locked(now: datetime, *, max_tasks: int, ttl_seconds: int) -> None:
+    if ttl_seconds > 0:
+        cutoff = now - timedelta(seconds=ttl_seconds)
+        while _tasks:
+            _task_id, oldest = next(iter(_tasks.items()))
+            if oldest.updated_at >= cutoff:
+                break
+            _tasks.popitem(last=False)
+
+    while len(_tasks) > max_tasks:
+        _tasks.popitem(last=False)
+
+
+async def _store_task(task: TaskContext) -> None:
+    max_tasks = _read_env_int(
+        "TRANSLATE_TASK_MAX_STORED",
+        2000,
+        min_value=1,
+        max_value=200000,
+    )
+    ttl_seconds = _read_env_int(
+        "TRANSLATE_TASK_TTL_SECONDS",
+        6 * 3600,
+        min_value=60,
+        max_value=7 * 24 * 3600,
+    )
+    strip_regions = _is_truthy_env("TRANSLATE_TASK_STRIP_REGIONS", True)
+
+    task_to_store = _strip_task_for_store(task) if strip_regions else task
+    async with _tasks_lock:
+        _tasks[task.task_id] = task_to_store
+        _tasks.move_to_end(task.task_id)
+        _prune_tasks_locked(datetime.now(), max_tasks=max_tasks, ttl_seconds=ttl_seconds)
 
 
 async def _register_chapter_job(chapter_key: str) -> None:
@@ -95,8 +150,24 @@ async def broadcast_event(data: dict):
         return
 
     event_str = f"data: {json.dumps(data)}\n\n"
-    for queue in _listeners:
-        await queue.put(event_str)
+    # Never let slow SSE clients apply backpressure to the whole pipeline.
+    for queue in list(_listeners):
+        try:
+            queue.put_nowait(event_str)
+        except asyncio.QueueFull:
+            # Drop the oldest event and keep the latest.
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                queue.put_nowait(event_str)
+            except asyncio.QueueFull:
+                # Still full (unlikely). Drop this event.
+                pass
+        except Exception:
+            # If a client queue is broken, drop it.
+            _listeners.discard(queue)
 
 
 async def pipeline_status_callback(stage: str, status: TaskStatus, task_id: UUID):
@@ -137,7 +208,8 @@ def _pipeline_failure_status_code(result) -> int:
 @router.get("/events")
 async def sse_events():
     """Server-Sent Events endpoint for real-time status updates."""
-    queue = asyncio.Queue()
+    queue_max = _read_env_int("SSE_QUEUE_MAXSIZE", 200, min_value=10, max_value=10000)
+    queue = asyncio.Queue(maxsize=queue_max)
     _listeners.add(queue)
 
     async def event_generator():
@@ -179,7 +251,7 @@ async def translate_image(
     # Process through pipeline with callback
     result = await pipeline.process(context, status_callback=pipeline_status_callback)
 
-    _tasks[result.task.task_id] = result.task
+    await _store_task(result.task)
     if not result.success:
         raise HTTPException(
             status_code=_pipeline_failure_status_code(result),
@@ -287,7 +359,7 @@ async def translate_chapter_endpoint(
                 for ctx in contexts:
                     img_name = Path(ctx.image_path).name
                     ctx.output_path = str(output_base / img_name)
-                    _tasks[ctx.task_id] = ctx
+                    await _store_task(ctx)
                     _task_meta[ctx.task_id] = {
                         "manga_id": request.manga_id,
                         "chapter_id": request.chapter_id,
@@ -322,6 +394,7 @@ async def translate_chapter_endpoint(
                 failed_ocr_empty_count = 0
 
                 for img_path, result in zip(image_files, results):
+                    await _store_task(result.task)
                     translated_file = find_translated_file(output_base, img_path.stem)
                     has_output_file = bool(translated_file)
                     if has_output_file:
@@ -462,7 +535,7 @@ async def retranslate_page(
     # Process through pipeline with callback
     result = await pipeline.process(context, status_callback=pipeline_status_callback)
 
-    _tasks[result.task.task_id] = result.task
+    await _store_task(result.task)
     if not result.success:
         await broadcast_event(
             {
