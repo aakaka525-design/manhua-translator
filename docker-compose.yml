@@ -63,5 +63,8 @@ services:
         condition: service_healthy
     volumes:
       - ./.htpasswd:/etc/nginx/.htpasswd:ro
+      # Serve large static artifacts directly from Nginx (faster than proxying through FastAPI).
+      - ./data:/data:ro
+      - ./output:/output:ro
     ports:
       - "80:80"
