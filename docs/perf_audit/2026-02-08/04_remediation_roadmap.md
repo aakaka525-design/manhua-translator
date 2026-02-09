@@ -156,7 +156,15 @@
   - 当前状态: 已在 `output/quality_reports/_stress_20260209_010309_api_s6_salvage.summary.json` 达成。
   - M3.4 状态:
     - 质量闭环: 已达标（推荐 S6 运行配置 `AI_TRANSLATE_FASTFAIL=0` + salvage/sanitize 开启）
-    - 性能长尾: 未闭环（`translator_max` 仍高），下一步建议单变量继续收敛 `AI_TRANSLATE_MAX_INFLIGHT_CALLS`。
+    - 单变量验证结果（M3.4.1, `FASTFAIL=0`, `INFLIGHT=1`, same 97-page workload）:
+      - `pages_has_failure_marker=0`, `pages_has_hangul=0`（硬门槛通过）
+      - 但 tail 回退：`translator_p95=107545.84`（vs 49718.92），`translator_max=120896.29`（vs 104644.79）
+      - 结论：`INFLIGHT=1` 不采纳为当前部署推荐。
+      - Evidence: `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.summary.json`
+    - 性能长尾: 未闭环（保持 open）
+      - next action: 先固定 `FASTFAIL=0 + INFLIGHT=2` 运行窗口，累计 >=3 次同口径 S6 观察 provider 端波动，再决定是否引入下一变量。
+      - owner: perf track (`codex/stress-quality-fixes`)
+      - trigger: 3 次连续同口径 S6 都满足 `failure_marker=0` 与 `hangul=0`。
   - AI log 中 `503` 与 `primary timeout` 计数作为间接证据；若日志文件未落盘，则以 quality report + docker/kernel 证据为准。
 
 ### 5. 高频日志导致 I/O 与序列化放大

@@ -954,3 +954,87 @@ Interpretation:
 New follow-up marked:
 - Continue single-variable tuning for tail only (quality config fixed):
   - Next candidate: `AI_TRANSLATE_MAX_INFLIGHT_CALLS=1` with `FASTFAIL=0` on same S6 dataset.
+
+## 2026-02-09 M3.4.1 Task1: mark partial inflight=1 sample as invalid
+
+Sample:
+- Run id: `20260209_030659_api_s6_ff0_inflight1_m34`
+- Config intent: same S6 dataset, `AI_TRANSLATE_FASTFAIL=0`, single variable `AI_TRANSLATE_MAX_INFLIGHT_CALLS=1`
+
+Observed state:
+- Report count stalled at `33/97`
+- No generated artifacts:
+  - `output/quality_reports/_stress_20260209_030659_api_s6_ff0_inflight1_m34.summary.json`
+  - `output/quality_reports/_stress_20260209_030659_api_s6_ff0_inflight1_m34.failures.txt`
+  - `output/quality_reports/_stress_20260209_030659_api_s6_ff0_inflight1_m34.docker_state.txt`
+  - `/tmp/kernel_oom_20260209_030659_api_s6_ff0_inflight1_m34.txt`
+- Active runner process for this run id not found.
+
+Decision:
+- Mark this run as **invalid for final judgement** (partial sample only).
+- Keep as process evidence, but exclude from A/B conclusion.
+
+Next action:
+- Re-run same workload with identical fixed knobs (`FASTFAIL=0`, `INFLIGHT=1`) and require full `97/97` plus all artifact files before any tail-latency conclusion.
+
+## 2026-02-09 M3.4.1 Task2/3/4 complete: Cloud S6 single-variable rerun (`FASTFAIL=0`, `INFLIGHT=1`)
+
+Objective:
+- Close the pending M3.4.1 loop with a full same-workload rerun (`97/97`) and decide whether `AI_TRANSLATE_MAX_INFLIGHT_CALLS=1` should replace the current recommendation.
+
+Execution context:
+- Server: `185.218.204.62` (`/root/manhua-translator`)
+- Run id: `20260209_034840_api_s6_ff0_inflight1_m341`
+- Dataset: same S6 97-page set (chapters 12/16/18/57)
+- Fixed knobs:
+  - `UPSCALE_ENABLE=0`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+  - `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+  - `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+  - `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+  - `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+  - `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=1`
+  - `AI_TRANSLATE_FASTFAIL=0`
+  - Single variable: `AI_TRANSLATE_MAX_INFLIGHT_CALLS=1`
+
+Evidence files:
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.list`
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.summary.json`
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.failures.txt`
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.docker_state.txt`
+- `/tmp/kernel_oom_20260209_034840_api_s6_ff0_inflight1_m341.txt`
+
+Run result (group C):
+- `pages_total=97`
+- quality: `pages_has_failure_marker=0`, `pages_has_hangul=0`, `no_cjk_with_ascii=26`
+- timings: `translator_p50=44768.15`, `translator_p95=107545.84`, `translator_max=120896.29`
+- counters: `timeouts_primary=3`, `fallback_provider_calls=4`, `missing_number_retries=51`
+- process: `max_rss_max_mb=2444.47`
+- container/kernel: `OOMKilled=false`, `RestartCount=0`, kernel OOM lines `0`
+
+Three-group comparison (same 97-page workload):
+- A (`FASTFAIL=1`, `INFLIGHT=2`): `failure_marker=2`, `translator_p95=53227.14`, `translator_max=68523.86`
+- B (`FASTFAIL=0`, `INFLIGHT=2`): `failure_marker=0`, `translator_p95=49718.92`, `translator_max=104644.79`
+- C (`FASTFAIL=0`, `INFLIGHT=1`): `failure_marker=0`, `translator_p95=107545.84`, `translator_max=120896.29`
+
+Gate evaluation:
+- Hard gate (`failure_marker=0`, `hangul=0`, no OOM/restart): PASS on B and C.
+- Tail gate vs B baseline (target: p95 -10% or max -15%):
+  - `translator_p95`: `49718.92 -> 107545.84` (regressed)
+  - `translator_max`: `104644.79 -> 120896.29` (regressed)
+  - Verdict: NOT PASS.
+
+Decision:
+- Keep S6 deployment recommendation as group B (`AI_TRANSLATE_FASTFAIL=0`, `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`).
+- Do not adopt `INFLIGHT=1` for current production profile.
+
+Follow-up status:
+- `M3.4.1 inflight=1 full rerun`: CLOSED (completed with full artifacts and final decision).
+- `Translator long-tail closure`: OPEN
+  - next action: evaluate queueing/provider variance under `FASTFAIL=0, INFLIGHT=2` with a larger sample window (>=3 S6 rounds) before introducing another variable.
+  - owner: perf track (`codex/stress-quality-fixes`)
+  - trigger: when quality hard gate stays green for 3 consecutive same-workload runs.

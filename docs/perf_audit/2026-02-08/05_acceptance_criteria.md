@@ -434,3 +434,41 @@ Gate check:
 Conclusion:
 - For S6 quality-first operation, prefer `AI_TRANSLATE_FASTFAIL=0` (with current salvage/sanitize chain).
 - Tail optimization remains open; next single-variable candidate is lowering `AI_TRANSLATE_MAX_INFLIGHT_CALLS` to 1 and re-running the same S6 workload.
+
+### 6.14 Cloud Stress S6 single-variable check (`FASTFAIL=0`, `INFLIGHT=1`; same 97-page workload)
+Context:
+- Server: `185.218.204.62`
+- Run id: `20260209_034840_api_s6_ff0_inflight1_m341`
+- Fixed knobs: same as 6.13, only variable changed from `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2` to `1`.
+
+Evidence:
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.summary.json`
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.failures.txt`
+- `output/quality_reports/_stress_20260209_034840_api_s6_ff0_inflight1_m341.docker_state.txt`
+- `/tmp/kernel_oom_20260209_034840_api_s6_ff0_inflight1_m341.txt`
+
+Results:
+- `pages_total=97`
+- quality:
+  - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+  - `pages_has_failure_marker=0`, `regions_with_failure_marker=0` (PASS)
+  - `no_cjk_with_ascii=26`
+- timings:
+  - `translator_p50=44768.15`, `translator_p95=107545.84`, `translator_max=120896.29`
+  - `total_p50=48071.94`, `total_p95=109757.96`, `total_max=123373.71`
+- counters: `timeouts_primary=3`, `fallback_provider_calls=4`, `missing_number_retries=51`
+- process: `max_rss_max_mb=2444.47`
+- stability: `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=0
+
+Gate check (vs 6.13 B baseline `FASTFAIL=0`, `INFLIGHT=2`):
+- Hard gate: PASS
+- Tail gate (target: `translator_p95` down >=10% or `translator_max` down >=15%): NOT PASS
+  - `translator_p95`: `49718.92 -> 107545.84` (regressed)
+  - `translator_max`: `104644.79 -> 120896.29` (regressed)
+
+Conclusion:
+- `INFLIGHT=1` is **not** selected as deployment recommendation for current S6 profile.
+- Current quality-first recommended config remains:
+  - `AI_TRANSLATE_FASTFAIL=0`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+  - salvage/sanitize chain enabled.
