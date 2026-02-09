@@ -1212,3 +1212,14 @@ Open item (explicit):
   - next action: run one L1 (24 pages) only when explicitly approved; keep single-variable policy.
   - owner: perf track (`codex/stress-quality-fixes`)
   - trigger: user approval for L1 or release-gate requirement.
+
+## 2026-02-09 M3.6 sync checkpoint (cloud)
+
+- Local commit pushed: `a859d3e` (`docs(perf): add M3.6 L0 three-run evidence and gate verdict`)
+- Cloud sync command:
+  - `git fetch origin && git checkout codex/stress-quality-fixes && git pull --no-rebase origin codex/stress-quality-fixes`
+- Cloud pull result:
+  - server branch had local divergence; pull created merge commit
+  - cloud HEAD after sync: `3a3b9a8`
+- Status:
+  - cloud runtime now includes latest M3.6 docs evidence and gate judgement.
