@@ -623,3 +623,17 @@ Auxiliary counters:
 Status decision:
 - `translator long-tail closure`: **CLOSED**
 - M3.6.1 closes with L1 evidence only; no L2 execution in this round.
+
+## 6.19 Merge normalization checkpoint (M3.7)
+
+Status normalization:
+- Historical `OPEN` records for `translator long-tail closure` in earlier sections are superseded by section `6.18`.
+- Effective status on integrated branch: `translator long-tail closure = CLOSED`.
+
+Remaining non-gate follow-up:
+- semantic oddity spot-check item remains `open` for observation only.
+- owner: `perf/translation quality`
+- trigger: next approved L0/L1 regression cycle.
+
+Execution policy:
+- Keep L2 (97-page) as trigger-only, not default.

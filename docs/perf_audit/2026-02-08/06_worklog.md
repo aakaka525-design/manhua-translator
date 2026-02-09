@@ -1448,3 +1448,23 @@ Decision:
 - cloud branch had divergence (`ahead 21, behind 2`), pull used merge strategy `ort`.
 - cloud final HEAD: `1b1bf6e`
 - note: cloud runtime now includes latest L1 second recheck closure docs; no API/protocol change in this round.
+
+## 2026-02-09 M3.7 merge normalization (integrate-all-worktrees)
+
+Purpose:
+- Normalize historical OPEN markers after branch integration so readers do not treat superseded checkpoints as active blockers.
+
+Superseded OPEN markers:
+- `Translator long-tail closure: OPEN` entries in earlier M3.6/M3.6.1 checkpoints are superseded by:
+  - `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)`
+  - status there is `translator long-tail closure: CLOSED`.
+
+Current active open items (post-merge):
+- Item: semantic oddity spot-check follow-up (non-gate)
+  - status: `open`
+  - owner: `perf/translation quality`
+  - next action: verify 1 sampled odd mapping on next approved L0/L1 run and classify as OCR noise vs translation drift.
+  - trigger: next scheduled small-sample regression run (no L2 required).
+
+Policy reminder:
+- Keep trigger-based strategy: no mandatory L2 (97 pages); escalate only on explicit trigger.

@@ -415,3 +415,17 @@ Roadmap state:
   - `AI_TRANSLATE_FASTFAIL=0`
   - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
 - no L2 escalation required for this closure checkpoint.
+
+## M3.7 integrated-branch status normalization
+
+Integrated result:
+- Core perf/stability/error-handling branches merged into `codex/integrate-all-worktrees`.
+- `translator long-tail closure` remains `CLOSED` (supersedes earlier OPEN checkpoints in this document).
+
+Open roadmap items (post-merge):
+- semantic oddity observation follow-up (non-gate), owner `perf/translation quality`, trigger `next approved L0/L1 run`.
+
+No change to deployment recommendation:
+- `AI_TRANSLATE_FASTFAIL=0`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- keep trigger-based escalation to L2 only when required.
