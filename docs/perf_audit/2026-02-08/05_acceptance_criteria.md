@@ -434,6 +434,7 @@ Gate check:
 Conclusion:
 - For S6 quality-first operation, prefer `AI_TRANSLATE_FASTFAIL=0` (with current salvage/sanitize chain).
 - Tail optimization remains open; next single-variable candidate is lowering `AI_TRANSLATE_MAX_INFLIGHT_CALLS` to 1 and re-running the same S6 workload.
+- Historical checkpoint only, superseded by section `6.18` where `translator long-tail closure` is `CLOSED`.
 
 ### 6.14 Cloud Stress S6 single-variable check (`FASTFAIL=0`, `INFLIGHT=1`; same 97-page workload)
 Context:
