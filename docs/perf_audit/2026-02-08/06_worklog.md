@@ -1038,3 +1038,16 @@ Follow-up status:
   - next action: evaluate queueing/provider variance under `FASTFAIL=0, INFLIGHT=2` with a larger sample window (>=3 S6 rounds) before introducing another variable.
   - owner: perf track (`codex/stress-quality-fixes`)
   - trigger: when quality hard gate stays green for 3 consecutive same-workload runs.
+
+## 2026-02-09 M3.4.1 Task5: sync/pull checkpoint (cloud HEAD recorded)
+
+Local branch push:
+- local commit pushed: `ec21dfb` (`codex/stress-quality-fixes`)
+
+Cloud sync (`185.218.204.62:/root/manhua-translator`):
+- command: `git fetch origin && git checkout codex/stress-quality-fixes && git pull --no-rebase origin codex/stress-quality-fixes`
+- note: cloud branch had local commits and diverged from origin; pull created a merge commit.
+- cloud HEAD after pull: `1aeb437`
+
+Status:
+- Cloud runtime is now synced to a revision that includes M3.4.1 docs closure changes.
