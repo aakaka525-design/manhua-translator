@@ -195,7 +195,7 @@ async function translateChapter(chapter, event) {
 </script>
 
 <template>
-  <div class="min-h-screen relative pb-10">
+  <div class="min-h-screen relative pb-24 sm:pb-10">
     <ComicBackground />
     <GlassNav :title="mangaStore.currentManga?.name || 'Loading...'">
       <template #actions>
@@ -210,7 +210,7 @@ async function translateChapter(chapter, event) {
         </button>
         <button
           data-test="delete-manga-btn"
-          class="flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold transition sm:px-3"
+          class="hidden items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold transition sm:flex sm:px-3"
           :class="deleteMangaDisabled ? 'cursor-not-allowed border-state-error/30 text-state-error/50' : 'border-state-error/60 text-state-error hover:bg-state-error/20'"
           :disabled="deleteMangaDisabled"
           title="删除漫画"
@@ -287,7 +287,7 @@ async function translateChapter(chapter, event) {
               v-if="!chapter.isComplete"
               @click="translateChapter(chapter, $event)"
               :disabled="chapter.isTranslating"
-              class="flex h-8 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition sm:px-3"
+              class="flex h-10 min-w-[7rem] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition sm:h-8 sm:min-w-0 sm:flex-none sm:px-3 sm:py-1.5"
               :class="chapter.isTranslating 
                 ? 'bg-bg-secondary text-text-secondary opacity-50 cursor-not-allowed' 
                 : 'bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white'"
@@ -295,13 +295,13 @@ async function translateChapter(chapter, event) {
               :aria-label="chapter.isTranslating ? '翻译中' : '翻译章节'"
             >
               <i class="fas" :class="chapter.isTranslating ? 'fa-spinner animate-spin' : 'fa-language'"></i>
-              <span class="hidden sm:inline">{{ chapter.isTranslating ? '翻译中' : '翻译' }}</span>
+              <span>{{ chapter.isTranslating ? '翻译中' : '翻译' }}</span>
             </button>
             <button
               :data-test="`delete-chapter-btn-${chapter.id}`"
               @click="requestDeleteChapter(chapter, $event)"
               :disabled="chapter.isTranslating || deletingManga || deletingChapterId === chapter.id"
-              class="flex h-8 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold transition sm:px-3"
+              class="flex h-10 min-w-[7rem] flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition sm:h-8 sm:min-w-0 sm:flex-none sm:px-3 sm:py-1.5"
               :class="chapter.isTranslating || deletingManga || deletingChapterId === chapter.id
                 ? 'border-state-error/20 text-state-error/40 cursor-not-allowed'
                 : 'border-state-error/50 text-state-error hover:bg-state-error/20'"
@@ -309,7 +309,7 @@ async function translateChapter(chapter, event) {
               aria-label="删除章节"
             >
               <i class="fas" :class="deletingChapterId === chapter.id ? 'fa-spinner animate-spin' : 'fa-trash-alt'"></i>
-              <span class="hidden sm:inline">删除</span>
+              <span>删除</span>
             </button>
             
             <i class="fas fa-chevron-right text-text-secondary opacity-50 hidden sm:inline"></i>
@@ -317,6 +317,31 @@ async function translateChapter(chapter, event) {
         </div>
       </div>
     </main>
+    <div
+      data-test="mobile-manga-actions"
+      class="fixed bottom-0 left-0 right-0 z-40 border-t border-border-main bg-bg-primary/95 backdrop-blur sm:hidden"
+    >
+      <div class="mx-auto flex max-w-4xl gap-2 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+        <button
+          data-test="mobile-back-list-btn"
+          class="flex h-11 flex-1 items-center justify-center rounded-lg border border-border-subtle text-sm font-semibold text-text-main transition hover:bg-bg-secondary"
+          @click="goBack"
+        >
+          返回列表
+        </button>
+        <button
+          data-test="mobile-delete-manga-btn"
+          class="flex h-11 flex-1 items-center justify-center rounded-lg border text-sm font-semibold transition"
+          :class="deleteMangaDisabled
+            ? 'cursor-not-allowed border-state-error/30 text-state-error/50'
+            : 'border-state-error/60 text-state-error hover:bg-state-error/20'"
+          :disabled="deleteMangaDisabled"
+          @click="requestDeleteManga"
+        >
+          删除漫画
+        </button>
+      </div>
+    </div>
     <ConfirmDialog
       :open="confirmState.open"
       :title="confirmState.type === 'manga' ? '删除漫画' : '删除章节'"

@@ -170,12 +170,22 @@ describe("manga delete actions", () => {
     const { wrapper } = mountView();
     await flushPromises();
 
+    const mobileActionBar = wrapper.get('[data-test="mobile-manga-actions"]');
     const mangaDeleteBtn = wrapper.get('[data-test="delete-manga-btn"]');
     const chapterDeleteBtn = wrapper.get('[data-test="delete-chapter-btn-ch-1"]');
     const chapterActions = wrapper.get('[data-test="chapter-actions-ch-1"]');
+    const chapterTranslateBtn = wrapper.get('[aria-label="翻译章节"]');
+    const hiddenChapterLabels = chapterActions
+      .findAll("span")
+      .filter((el) => el.classes().includes("hidden"));
 
+    expect(mobileActionBar.text()).toContain("删除漫画");
+    expect(mobileActionBar.text()).toContain("返回列表");
     expect(mangaDeleteBtn.attributes("aria-label")).toBe("删除漫画");
     expect(chapterDeleteBtn.attributes("aria-label")).toBe("删除章节");
     expect(chapterActions.classes()).toContain("flex-wrap");
+    expect(chapterTranslateBtn.classes()).toContain("h-10");
+    expect(chapterDeleteBtn.classes()).toContain("h-10");
+    expect(hiddenChapterLabels).toHaveLength(0);
   });
 });

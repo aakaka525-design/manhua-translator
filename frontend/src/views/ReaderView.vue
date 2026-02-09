@@ -139,7 +139,7 @@ const contextMenuItems = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-bg-primary text-text-main">
+  <div class="min-h-screen bg-bg-primary pb-28 text-text-main sm:pb-0">
     <!-- Toolbar -->
     <div class="fixed top-0 left-0 right-0 p-4 bg-gradient-to-b from-bg-primary/90 to-transparent z-50 flex justify-between items-start pointer-events-none">
       <button @click="router.go(-1)" class="pointer-events-auto w-10 h-10 rounded-full bg-surface/50 backdrop-blur flex items-center justify-center text-text-main hover:bg-surface border border-transparent hover:border-border-subtle transition">
@@ -147,14 +147,14 @@ const contextMenuItems = [
       </button>
       
       <button @click="toggleCompare" 
-        class="pointer-events-auto px-4 py-2 rounded-full backdrop-blur font-bold text-sm transition border border-transparent"
+        class="pointer-events-auto hidden rounded-full border border-transparent px-4 py-2 text-sm font-bold backdrop-blur transition sm:inline-flex"
         :class="compareMode ? 'bg-accent-2/80 text-white' : 'bg-surface/50 text-text-main border-border-subtle'">
         <i class="fas fa-columns mr-2"></i> 对比模式
       </button>
     </div>
 
     <!-- Reader Content -->
-    <div class="max-w-4xl mx-auto min-h-screen">
+    <div class="max-w-4xl mx-auto min-h-screen pb-24 sm:pb-0">
       <div v-if="loading" class="flex items-center justify-center h-screen">
         <ComicLoading label="章节加载中..." compact />
       </div>
@@ -169,7 +169,7 @@ const contextMenuItems = [
           />
 
           <StatusBadge
-            class="absolute top-2 right-12 z-20"
+            class="absolute top-2 right-2 z-20 sm:right-12"
             :status="page.status"
             :reason="page.status_reason"
             :warning-counts="page.warning_counts"
@@ -177,7 +177,7 @@ const contextMenuItems = [
           
           <!-- Quick Action Button -->
           <button 
-            class="absolute top-2 right-2 w-8 h-8 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition flex items-center justify-center hover:bg-accent-1"
+            class="absolute top-2 right-2 hidden h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition hover:bg-accent-1 group-hover:opacity-100 sm:flex"
             title="重新翻译"
             @click="handleRetranslate(page)">
             <i class="fas fa-sync-alt text-xs"></i>
@@ -186,7 +186,7 @@ const contextMenuItems = [
       </div>
       
       <!-- Navigation Footer -->
-      <div v-if="!loading" class="p-8 pb-20 text-center space-y-4">
+      <div v-if="!loading" class="space-y-4 p-8 pb-24 text-center sm:pb-20">
         <h3 class="text-text-secondary">章节结束</h3>
         
         <!-- Chapter Navigation -->
@@ -214,5 +214,47 @@ const contextMenuItems = [
     
     <!-- Context Menu -->
     <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
+    <div
+      data-test="mobile-reader-actions"
+      class="fixed bottom-0 left-0 right-0 z-40 border-t border-border-main bg-bg-primary/95 backdrop-blur sm:hidden"
+    >
+      <div class="mx-auto max-w-4xl space-y-2 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+        <button
+          data-test="mobile-compare-toggle"
+          class="flex h-11 w-full items-center justify-center rounded-lg border border-accent-2/40 bg-accent-2/10 text-sm font-semibold text-text-main transition"
+          :class="compareMode ? 'border-accent-2/70 bg-accent-2/20 text-white' : 'hover:bg-accent-2/15'"
+          @click="toggleCompare"
+        >
+          对比：{{ compareMode ? '开' : '关' }}
+        </button>
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            data-test="mobile-prev-chapter"
+            class="flex h-10 items-center justify-center rounded-lg border border-border-subtle text-xs font-semibold text-text-main transition hover:bg-bg-secondary"
+            :class="{ 'cursor-not-allowed opacity-50': !prevChapter }"
+            :disabled="!prevChapter"
+            @click="goToChapter(prevChapter)"
+          >
+            上一章
+          </button>
+          <button
+            data-test="mobile-back-chapter-list"
+            class="flex h-10 items-center justify-center rounded-lg border border-border-subtle text-xs font-semibold text-text-main transition hover:bg-bg-secondary"
+            @click="router.go(-1)"
+          >
+            返回章节
+          </button>
+          <button
+            data-test="mobile-next-chapter"
+            class="flex h-10 items-center justify-center rounded-lg border border-border-subtle text-xs font-semibold text-text-main transition hover:bg-bg-secondary"
+            :class="{ 'cursor-not-allowed opacity-50': !nextChapter }"
+            :disabled="!nextChapter"
+            @click="goToChapter(nextChapter)"
+          >
+            下一章
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
