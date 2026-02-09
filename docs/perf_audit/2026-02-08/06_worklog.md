@@ -1211,7 +1211,7 @@ Decision:
 
 Open item (explicit):
 - `translator long-tail closure`
-  - status: open
+  - status: historical checkpoint (superseded)
   - next action: run one L1 (24 pages) only when explicitly approved; keep single-variable policy.
   - owner: perf track (`codex/stress-quality-fixes`)
   - trigger: user approval for L1 or release-gate requirement.
