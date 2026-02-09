@@ -1468,3 +1468,38 @@ Current active open items (post-merge):
 
 Policy reminder:
 - Keep trigger-based strategy: no mandatory L2 (97 pages); escalate only on explicit trigger.
+
+## 2026-02-09 housekeeping: local worktree cleanup (main-only)
+
+Timestamp:
+- `2026-02-09 16:26:46 CST`
+
+Pre-clean baseline:
+- branch/head: `main@71b9bc6`
+- worktrees:
+  - `/Users/xa/Desktop/projiect/manhua 71b9bc6 [main]`
+  - `/Users/xa/Desktop/projiect/manhua/.worktrees/error-handling-hardening 967fbbb [codex/error-handling-hardening]`
+  - `/Users/xa/Desktop/projiect/manhua/.worktrees/perf-m1-ocr-translator fbfa8e1 [codex/perf-m1-ocr-translator]`
+  - `/Users/xa/Desktop/projiect/manhua/.worktrees/stability-multi-chapter 946d79b [codex/stability-multi-chapter]`
+  - `/Users/xa/Desktop/projiect/manhua/.worktrees/stress-quality-fixes b0d04d4 [codex/stress-quality-fixes]`
+- stash top:
+  - `stash@{0}: On main: pre-merge-main-local-wip`
+  - `stash@{1}: On main: wip: move perf audit + translate concurrency changes to worktree`
+
+Cleanup actions:
+- removed `/Users/xa/Desktop/projiect/manhua/.worktrees/error-handling-hardening`
+- removed `/Users/xa/Desktop/projiect/manhua/.worktrees/perf-m1-ocr-translator`
+- removed `/Users/xa/Desktop/projiect/manhua/.worktrees/stability-multi-chapter`
+- removed `/Users/xa/Desktop/projiect/manhua/.worktrees/stress-quality-fixes`
+- ran `git worktree prune`
+
+Post-clean verification:
+- `git worktree list` => only `/Users/xa/Desktop/projiect/manhua 71b9bc6 [main]`
+- `git status --short` => clean
+- stash preserved (no pop):
+  - `stash@{0}: On main: pre-merge-main-local-wip`
+  - `stash@{1}: On main: wip: move perf audit + translate concurrency changes to worktree`
+
+Exception handling:
+- no `--force` removal used
+- no code/API changes in this housekeeping step
