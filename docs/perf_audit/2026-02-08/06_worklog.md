@@ -1503,3 +1503,34 @@ Post-clean verification:
 Exception handling:
 - no `--force` removal used
 - no code/API changes in this housekeeping step
+
+## 2026-02-09 housekeeping: merged local branch cleanup
+
+Scope:
+- local branch hygiene only (no remote branch deletion, no stash pop).
+
+Actions:
+- deleted merged local branches:
+  - `codex/architecture-issues`
+  - `codex/error-handling-hardening`
+  - `codex/integrate-all-worktrees`
+  - `codex/perf-m1-ocr-translator`
+  - `codex/stability-multi-chapter`
+  - `codex/stress-quality-fixes`
+  - `crosspage-split`
+  - `font-size-estimator-v2`
+  - `security/nginx-basic-auth`
+- ran `git fetch -p`
+
+Post-check:
+- `git branch --merged main` => only `main`
+- remaining non-merged local branches:
+  - `ai-translator-gemini-fix`
+  - `watermark-rules-config`
+- stash unchanged:
+  - `stash@{0}: pre-merge-main-local-wip`
+  - `stash@{1}: wip: move perf audit + translate concurrency changes to worktree`
+
+Notes:
+- no business code changes in this step
+- no L2/batch image test executed
