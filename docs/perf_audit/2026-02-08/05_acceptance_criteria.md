@@ -588,3 +588,38 @@ Gate result:
 Decision:
 - No L2 (97 pages) in this round.
 - Next action is single-path and explicit: one additional L1 recheck under unchanged knobs, only with user approval.
+
+## 6.18 M3.6.1 L1 second recheck checkpoint (24 pages, no L2)
+
+Run id:
+- `20260209_062352_api_l1_24_m361_r2`
+
+Evidence:
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.list`
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.summary.json`
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.failures.txt`
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.docker_state.txt`
+- `/tmp/kernel_oom_20260209_062352_api_l1_24_m361_r2.txt`
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.spotcheck.txt`
+
+Checkpoint result:
+- hard gates:
+  - `pages_has_failure_marker=0` -> PASS
+  - `pages_has_hangul=0` -> PASS
+  - `OOMKilled=false` -> PASS
+  - `RestartCount=0` -> PASS
+  - `kernel_oom_lines=0` -> PASS
+- tail gates:
+  - `translator_p95=31177.07 <= 57176.76` -> PASS
+  - `translator_max=35950.73 <= 130805.99` -> PASS
+
+Auxiliary counters:
+- `timeouts_primary=0`
+- `fallback_provider_calls=0`
+- `missing_number_retries=7`
+- `no_cjk_with_ascii=9`
+- `prompt_like_regions=0`
+
+Status decision:
+- `translator long-tail closure`: **CLOSED**
+- M3.6.1 closes with L1 evidence only; no L2 execution in this round.

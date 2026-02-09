@@ -1350,3 +1350,93 @@ Next action (single path, no L2 auto-upgrade):
   - `git commit -m "merge: sync codex/stress-quality-fixes from origin"`
 - cloud final HEAD: `7963ff2`
 - note: cloud runtime now includes this branch tip; no API/protocol change in this round.
+
+## 2026-02-09 M3.6.1 L1 second recheck kickoff (24 pages, no L2)
+
+Approval status:
+- User explicitly approved one additional L1 recheck after prior L1 hard-gate failure.
+- This round remains L1-only; no L2 (97 pages) escalation.
+
+Runtime checkpoint:
+- Local branch/head: `codex/stress-quality-fixes` @ `f55c380`
+- Cloud branch/head: `codex/stress-quality-fixes` @ `7963ff2`
+- Container: `manhua-translator-api-1` healthy
+
+Fixed knobs (unchanged):
+- `UPSCALE_ENABLE=0`
+- `AI_TRANSLATE_FASTFAIL=0`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+- `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+- `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+
+Target gate (same as previous L1):
+- Hard: `failure_marker=0`, `hangul=0`, `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=0
+- Tail: `translator_p95<=57176.76`, `translator_max<=130805.99`
+
+## 2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)
+
+Run id:
+- `20260209_062352_api_l1_24_m361_r2`
+
+Execution scope:
+- L1 only (24 pages), no L2 escalation.
+- Fixed knobs unchanged from kickoff:
+  - `UPSCALE_ENABLE=0`
+  - `AI_TRANSLATE_FASTFAIL=0`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+  - `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+  - `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+  - `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+
+Evidence files:
+- sample: `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.sample.txt`
+- list: `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.list`
+- summary: `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.summary.json`
+- failures: `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.failures.txt`
+- docker state: `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.docker_state.txt`
+- kernel oom: `/tmp/kernel_oom_20260209_062352_api_l1_24_m361_r2.txt`
+- spot-check: `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.spotcheck.txt`
+
+Summary metrics (from `.summary.json`):
+- `pages_total=24`
+- quality:
+  - `pages_has_failure_marker=0`
+  - `regions_with_failure_marker=0`
+  - `pages_has_hangul=0`
+  - `regions_with_hangul=0`
+  - `no_cjk_with_ascii=9`
+  - `prompt_like_regions=0`
+- translator:
+  - `translator_p50=9268.99`
+  - `translator_p95=31177.07`
+  - `translator_max=35950.73`
+  - `timeouts_primary=0`
+  - `fallback_provider_calls=0`
+  - `missing_number_retries=7`
+- process/stability:
+  - `max_rss_max_mb=1187.48`
+  - docker state: `OOMKilled=false`
+  - docker inspect: `RestartCount=0`
+  - kernel oom lines: `0`
+
+Gate evaluation:
+- Hard gate: PASS (`failure_marker=0`, `hangul=0`, `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=0)
+- Tail gate: PASS (`translator_p95<=57176.76`, `translator_max<=130805.99`)
+
+Spot-check notes:
+- 10 translation samples + 3 inpaint samples recorded in `...spotcheck.txt`.
+- `prompt_like_regions=0`; no prompt-artifact style output observed in this run.
+- One sampled line remains semantically odd (`기장u앱 -> 等待就免费`), tracked as quality observation only (not a hard-gate failure in current policy).
+
+Decision:
+- `translator long-tail closure`: **CLOSED**.
+- This round does not run L2 (97 pages).

@@ -391,3 +391,27 @@ Roadmap state:
 - next action (only one): run one more L1 (24 pages, same knobs), no L2 escalation unless explicitly requested.
 - owner: perf track (`codex/stress-quality-fixes`)
 - trigger: explicit approval or release gate demand.
+
+## M3.6.1 final status update (L1 second recheck, 24 pages)
+
+Item: translator long-tail closure (quality-first, no L2)
+
+Final evidence run:
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.summary.json`
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.failures.txt`
+- `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.docker_state.txt`
+- `/tmp/kernel_oom_20260209_062352_api_l1_24_m361_r2.txt`
+
+Observed:
+- `pages_has_failure_marker=0`
+- `pages_has_hangul=0`
+- `translator_p95=31177.07`
+- `translator_max=35950.73`
+- stability: `OOMKilled=false`, `RestartCount=0`, kernel OOM lines `0`
+
+Roadmap state:
+- `translator long-tail closure`: **CLOSED**
+- deploy recommendation remains unchanged:
+  - `AI_TRANSLATE_FASTFAIL=0`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- no L2 escalation required for this closure checkpoint.
