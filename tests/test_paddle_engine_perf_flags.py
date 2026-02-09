@@ -58,3 +58,19 @@ def test_detect_and_recognize_can_disable_edge_tiles(monkeypatch):
     regions = engine._detect_and_recognize_sync("dummy.jpg")
     assert regions == []
     assert calls["chunks"] == 1
+
+
+def test_small_image_scale_auto_heuristics(monkeypatch):
+    monkeypatch.setenv("OCR_SMALL_IMAGE_SCALE_MODE", "auto")
+
+    from core.models import RegionData
+    from core.vision.ocr.paddle_engine import PaddleOCREngine
+
+    many_high_conf = [RegionData(confidence=0.9) for _ in range(10)]
+    assert PaddleOCREngine._should_run_small_image_scale(many_high_conf) is False
+
+    many_low_conf = [RegionData(confidence=0.2) for _ in range(10)]
+    assert PaddleOCREngine._should_run_small_image_scale(many_low_conf) is True
+
+    few_regions = [RegionData(confidence=0.9) for _ in range(2)]
+    assert PaddleOCREngine._should_run_small_image_scale(few_regions) is True

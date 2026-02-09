@@ -42,7 +42,7 @@ def test_translator_sfx_english_mapping():
 
 
 def test_translator_sfx_unknown_korean_preserved():
-    """Unknown Korean SFX should be preserved, not romanized (to avoid breaking names)."""
+    """Unknown Korean SFX should keep original art (do not render Hangul for zh targets)."""
     result = _run_translate(
         [
             RegionData(
@@ -54,8 +54,8 @@ def test_translator_sfx_unknown_korean_preserved():
             )
         ]
     )
-    # Now returns original Korean instead of romanization
-    assert result.regions[0].target_text == "텅"
+    # Keep original (do not inpaint or render replacement text).
+    assert (result.regions[0].target_text or "") == ""
 
 
 def test_translator_sfx_cjk_and_jp_ko_rules():

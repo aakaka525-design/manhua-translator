@@ -27,6 +27,8 @@ logger = setup_module_logger(
     level=get_log_level("AI_TRANSLATOR_LOG_LEVEL", logging.INFO),
 )
 
+_FAILURE_MARKER = "[翻译失败]"
+
 # 启用 OpenAI SDK 详细日志（显示重试原因）
 if os.getenv("DEBUG_OPENAI") == "1":
     logging.getLogger("openai").setLevel(logging.DEBUG)
@@ -99,6 +101,32 @@ def _read_env_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+_GLOBAL_API_SEMAPHORE: asyncio.Semaphore | None = None
+_GLOBAL_API_SEMAPHORE_LIMIT: int | None = None
+
+
+def _get_global_api_semaphore() -> asyncio.Semaphore | None:
+    """
+    Optional cross-task backpressure for AI calls.
+
+    This is intentionally disabled by default to preserve existing behavior.
+    When enabled, it caps concurrent primary+fallback requests across the process,
+    which helps reduce provider overload (503/timeout) under multi-chapter load.
+    """
+    global _GLOBAL_API_SEMAPHORE, _GLOBAL_API_SEMAPHORE_LIMIT
+
+    limit = _read_env_int("AI_TRANSLATE_MAX_INFLIGHT_CALLS", 0)
+    if limit <= 0:
+        _GLOBAL_API_SEMAPHORE = None
+        _GLOBAL_API_SEMAPHORE_LIMIT = None
+        return None
+
+    if _GLOBAL_API_SEMAPHORE is None or _GLOBAL_API_SEMAPHORE_LIMIT != limit:
+        _GLOBAL_API_SEMAPHORE = asyncio.Semaphore(limit)
+        _GLOBAL_API_SEMAPHORE_LIMIT = limit
+    return _GLOBAL_API_SEMAPHORE
 
 
 def _get_log_config():
@@ -188,6 +216,7 @@ class AITranslator:
         self._allow_gemini_model_fallback = allow_gemini_model_fallback
         self._fallback_translator: Optional["AITranslator"] = None
         self._gemini_model_fallback_translators: dict[str, "AITranslator"] = {}
+        self.last_metrics: Optional[dict] = None
         
         logger.info(f"初始化翻译器: model={self.model}, is_gemini={self.is_gemini}")
         
@@ -284,6 +313,7 @@ class AITranslator:
             or "overloaded" in msg
             or "timeout" in msg
             or "timed out" in msg
+            or "empty response" in msg
         )
 
     def _get_fallback_translator(self) -> Optional["AITranslator"]:
@@ -340,16 +370,24 @@ class AITranslator:
         """
         timeout_ms = _read_env_int("AI_TRANSLATE_PRIMARY_TIMEOUT_MS", 12000)
         has_fallback = bool(self._fallback_translator_chain())
-        if timeout_ms <= 0 or not has_fallback:
-            return await self._call_api(prompt, max_tokens=max_tokens)
 
-        try:
-            return await asyncio.wait_for(
-                self._call_api(prompt, max_tokens=max_tokens),
-                timeout=timeout_ms / 1000.0,
-            )
-        except asyncio.TimeoutError as exc:
-            raise RuntimeError(f"primary timeout after {timeout_ms}ms") from exc
+        async def _do_call() -> str:
+            if timeout_ms <= 0 or not has_fallback:
+                return await self._call_api(prompt, max_tokens=max_tokens)
+            try:
+                return await asyncio.wait_for(
+                    self._call_api(prompt, max_tokens=max_tokens),
+                    timeout=timeout_ms / 1000.0,
+                )
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError(f"primary timeout after {timeout_ms}ms") from exc
+
+        sem = _get_global_api_semaphore()
+        if sem is None:
+            return await _do_call()
+
+        async with sem:
+            return await _do_call()
     
     async def translate(self, text: str) -> str:
         """翻译单个文本。"""
@@ -369,7 +407,7 @@ class AITranslator:
             result_list = await self.translate_batch([text])
             result = ((result_list[0] if result_list else "") or "").strip()
             if not result:
-                result = f"[翻译失败] {text}"
+                result = _FAILURE_MARKER
             duration_ms = (time.perf_counter() - start) * 1000
             logger.info(f"translate: ok model={self.model} ms={duration_ms:.0f} out_len={len(result)}")
             log_output = _format_log_text(result, log_mode, log_limit)
@@ -379,10 +417,10 @@ class AITranslator:
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             logger.error(f"translate: error model={self.model} ms={duration_ms:.0f} err={type(e).__name__}: {e}")
-            log_output = _format_log_text(f"[翻译失败] {text}", log_mode, log_limit)
+            log_output = _format_log_text(_FAILURE_MARKER, log_mode, log_limit)
             if log_output is not None:
                 logger.info(f'translate: out="{_sanitize_log_text(log_output)}"')
-            return f"[翻译失败] {text}"
+            return _FAILURE_MARKER
     
     async def _call_api(self, prompt: str, max_tokens: int = 500) -> str:
         """统一的 API 调用方法。"""
@@ -400,7 +438,13 @@ class AITranslator:
                             temperature=0.3,  # Lower temp for faster, more consistent output
                         )
                     )
-                    return response.text
+                    text = getattr(response, "text", None)
+                    if text is None:
+                        raise RuntimeError("empty response")
+                    text = str(text).strip()
+                    if not text:
+                        raise RuntimeError("empty response")
+                    return text
                 except Exception as e:
                     logger.error(f"Gemini API error: {type(e).__name__}: {e}")
                     raise
@@ -416,7 +460,13 @@ class AITranslator:
                         max_tokens=max_tokens,
                         stream=False,
                     )
-                    return response.choices[0].message.content.strip()
+                    content = response.choices[0].message.content
+                    if content is None:
+                        raise RuntimeError("empty response")
+                    content = str(content).strip()
+                    if not content:
+                        raise RuntimeError("empty response")
+                    return content
                 except Exception as e:
                     # 记录详细错误信息
                     error_msg = f"{type(e).__name__}: {e}"
@@ -491,6 +541,7 @@ class AITranslator:
             return objects
 
         def _parse_numbered_lines(text: str, expected_count: int | None = None):
+            text = text or ""
             lines = text.split("\n")
             translations = []
             numbered: dict[int, str] = {}
@@ -540,9 +591,25 @@ class AITranslator:
         valid_pairs = [(i, t) for i, t in enumerate(cleaned_texts) if t.strip()]
         
         if not valid_pairs:
+            self.last_metrics = {
+                "api_calls": 0,
+                "api_calls_fallback": 0,
+                "timeouts_primary": 0,
+                "fallback_provider_calls": 0,
+                "missing_number_retries": 0,
+                "slices": 0,
+                "items_total": len(texts),
+                "items_translated": 0,
+                "prompt_chars_total": 0,
+                "content_chars_total": 0,
+                "text_chars_total": 0,
+                "ctx_chars_total": 0,
+                "duration_ms": 0,
+            }
             return ["" for _ in texts]
 
         log_mode, log_limit, log_ctx = _get_log_config()
+        batch_start = time.perf_counter()
         
         target_name = self._get_lang_name(self.target_lang)
         def _format_entry(index: int, text: str, ctx: str) -> str:
@@ -558,12 +625,32 @@ class AITranslator:
                 "禁止添加任何注释、说明或括号备注。"
             )
         max_retries = 2
+        api_calls_primary = 0
+        api_calls_fallback = 0
+        timeouts_primary = 0
+        fallback_provider_calls = 0
+        missing_number_retries = 0
+        prompt_chars_total = 0
+        content_chars_total = 0
+        text_chars_total = 0
+        ctx_chars_total = 0
+        # When the model returns numbered output but misses some indices (often due to truncation),
+        # retry the same batch once with stricter formatting instructions and a larger max_tokens
+        # headroom. This is usually faster/more stable than letting downstream mark them failed and
+        # triggering per-item fallbacks.
+        class _MissingNumberedItems(Exception):
+            def __init__(self, missing: int):
+                super().__init__(f"missing numbered items: {missing}")
+                self.missing = missing
 
         async def _translate_pairs(
             pairs: list[tuple[int, str]],
             slice_idx: int | None = None,
             slice_total: int | None = None,
         ) -> list[tuple[int, str]]:
+            nonlocal api_calls_primary, api_calls_fallback
+            nonlocal timeouts_primary, fallback_provider_calls, missing_number_retries
+            nonlocal prompt_chars_total, content_chars_total, text_chars_total, ctx_chars_total
             numbered_texts = "\n".join(
                 _format_entry(i + 1, t, cleaned_contexts[orig_idx])
                 for i, (orig_idx, t) in enumerate(pairs)
@@ -605,6 +692,10 @@ class AITranslator:
 {numbered_texts}
 
 {output_hint}"""
+            prompt_len = len(prompt)
+            content_len = len(numbered_texts)
+            slice_text_chars = sum(len(t) for _orig_idx, t in pairs)
+            slice_ctx_chars = sum(len(cleaned_contexts[orig_idx]) for orig_idx, _t in pairs)
 
             slice_note = ""
             if slice_idx is not None and slice_total:
@@ -612,16 +703,49 @@ class AITranslator:
             logger.info(
                 f"batch: model={self.model} count={len(pairs)} total_len={len(numbered_texts)}{slice_note}"
             )
+            force_strict_output = False
             for attempt in range(max_retries + 1):
                 try:
                     start = time.perf_counter()
-                    max_tokens = _estimate_batch_max_tokens(
+                    base_max_tokens = _estimate_batch_max_tokens(
                         item_count=len(pairs),
                         total_chars=len(numbered_texts),
                     )
+                    max_tokens = base_max_tokens
+                    prompt_to_use = prompt
+                    if force_strict_output:
+                        hard_cap = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS", 4000)
+                        min_tokens = _read_env_int("AI_TRANSLATE_BATCH_MAX_TOKENS_MIN", 320)
+                        bonus = _read_env_int(
+                            "AI_TRANSLATE_BATCH_MAX_TOKENS_MISSING_NUMBER_BONUS",
+                            800,
+                        )
+                        max_tokens = max(min_tokens, min(hard_cap, base_max_tokens + bonus))
+                        prompt_to_use = (
+                            prompt
+                            + "\n\n# 输出格式严格要求\n"
+                            + f"你必须输出 1..{len(pairs)} 共 {len(pairs)} 行，每行以 `n.` 开头，禁止漏号。"
+                        )
+                    prompt_len = len(prompt_to_use)
+                    # Count prompt/content sizes per attempt (retries included) so we can
+                    # explain latency and provider behavior post-hoc.
+                    prompt_chars_total += prompt_len
+                    content_chars_total += content_len
+                    text_chars_total += slice_text_chars
+                    ctx_chars_total += slice_ctx_chars
+                    api_calls_primary += 1
                     result = await self._call_api_with_timeout(
-                        prompt, max_tokens=max_tokens
+                        prompt_to_use, max_tokens=max_tokens
                     )
+                    # Defensive: some providers can return empty/None text without raising.
+                    # Treat this as transient overload so fallback chain can take over.
+                    if result is None:
+                        raise RuntimeError("empty response")
+                    if not isinstance(result, str):
+                        raise RuntimeError(f"empty response (type={type(result).__name__})")
+                    result = result.strip()
+                    if not result:
+                        raise RuntimeError("empty response")
                     duration_ms = (time.perf_counter() - start) * 1000
 
                     # 解析结果
@@ -639,6 +763,13 @@ class AITranslator:
                             result, expected_count=len(pairs)
                         )
 
+                    # Retry if numbered output misses indices; otherwise downstream will mark them
+                    # as failures and trigger per-item fallback, which is slower and less stable.
+                    if has_numbered:
+                        missing = sum(1 for t in translations if not (t or "").strip())
+                        if missing:
+                            raise _MissingNumberedItems(missing)
+
                     if not has_numbered:
                         # Fallback: split single-line output by common separators
                         if len(translations) == 1 and len(pairs) > 1:
@@ -651,21 +782,42 @@ class AITranslator:
                     slice_results: list[tuple[int, str]] = []
                     import re as _re
                     _hangul_check = _re.compile(r'[\uac00-\ud7a3]')
+                    _cjk_check = _re.compile(r"[\u4e00-\u9fff]")
+                    target_is_zh = str(self.target_lang or "").lower().startswith("zh")
                     for (orig_idx, orig_text), trans in zip(pairs, translations):
                         cleaned = _clean_ai_annotations(trans)
                         # Empty translation means AI skipped this number
                         if not cleaned.strip():
-                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
+                        # For zh targets, never let Hangul leak into output. If the provider
+                        # returns Hangul (often alongside meta/analysis text), mark it as failed
+                        # so upstream fallback can retry or keep original art/text.
+                        elif target_is_zh and _hangul_check.search(cleaned):
+                            logger.warning(
+                                "AI returned Hangul for zh target, marking as failed"
+                            )
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
+                        # For zh targets, if the source contains Hangul but the output has no CJK,
+                        # treat it as invalid (e.g. analysis/formatting noise) and mark as failed.
+                        elif (
+                            target_is_zh
+                            and _hangul_check.search(orig_text or "")
+                            and not _cjk_check.search(cleaned)
+                        ):
+                            logger.warning(
+                                "AI returned non-CJK for Hangul source under zh target, marking as failed"
+                            )
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
                         # Detect Korean text returned unchanged (AI failed to translate names)
                         elif _hangul_check.search(cleaned) and cleaned.strip() == orig_text.strip():
                             logger.warning(f"AI returned Korean unchanged: {orig_text}")
-                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
                         else:
                             slice_results.append((orig_idx, cleaned))
                     if len(translations) < len(pairs):
                         for i in range(len(translations), len(pairs)):
                             orig_idx, orig_text = pairs[i]
-                            slice_results.append((orig_idx, f"[翻译失败] {orig_text}"))
+                            slice_results.append((orig_idx, _FAILURE_MARKER))
 
                     logger.info(
                         f"batch: ok model={self.model} ms={duration_ms:.0f} out_count={len(slice_results)}{slice_note}"
@@ -695,8 +847,26 @@ class AITranslator:
                     return slice_results
 
                 except Exception as e:
-                    if self._is_overload_error(e):
+                    if isinstance(e, _MissingNumberedItems) and attempt < max_retries:
+                        missing_number_retries += 1
+                        logger.warning(
+                            "batch: retry %d/%d due to missing numbered items=%d%s",
+                            attempt + 1,
+                            max_retries,
+                            e.missing,
+                            slice_note,
+                        )
+                        force_strict_output = True
+                        continue
+                    # Treat persistent missing-number errors as retryable/fallback-worthy:
+                    # they are often caused by provider truncation or formatting drift and
+                    # can be recovered by a different model/provider in the fallback chain.
+                    if "primary timeout after" in str(e).lower():
+                        timeouts_primary += 1
+
+                    if self._is_overload_error(e) or isinstance(e, _MissingNumberedItems):
                         for fallback_translator in self._fallback_translator_chain():
+                            fallback_provider_calls += 1
                             fallback_provider = getattr(fallback_translator, "provider", "unknown")
                             fallback_model = getattr(fallback_translator, "model", "unknown")
                             logger.warning(
@@ -714,14 +884,63 @@ class AITranslator:
                                     output_format=output_format,
                                     contexts=fallback_contexts,
                                 )
+                                fallback_metrics = getattr(fallback_translator, "last_metrics", None) or {}
+                                fallback_calls = fallback_metrics.get("api_calls")
+                                if isinstance(fallback_calls, int) and fallback_calls >= 0:
+                                    api_calls_fallback += fallback_calls
+                                else:
+                                    api_calls_fallback += 1
+                                for key in (
+                                    "timeouts_primary",
+                                    "fallback_provider_calls",
+                                    "missing_number_retries",
+                                ):
+                                    value = fallback_metrics.get(key)
+                                    if not isinstance(value, int) or value < 0:
+                                        continue
+                                    if key == "timeouts_primary":
+                                        timeouts_primary += value
+                                    elif key == "fallback_provider_calls":
+                                        fallback_provider_calls += value
+                                    elif key == "missing_number_retries":
+                                        missing_number_retries += value
+                                for key in (
+                                    "prompt_chars_total",
+                                    "content_chars_total",
+                                    "text_chars_total",
+                                    "ctx_chars_total",
+                                ):
+                                    value = fallback_metrics.get(key)
+                                    if not isinstance(value, int) or value < 0:
+                                        continue
+                                    if key == "prompt_chars_total":
+                                        prompt_chars_total += value
+                                    elif key == "content_chars_total":
+                                        content_chars_total += value
+                                    elif key == "text_chars_total":
+                                        text_chars_total += value
+                                    elif key == "ctx_chars_total":
+                                        ctx_chars_total += value
                                 if len(fallback_results) == len(pairs):
-                                    return [
-                                        (
-                                            orig_idx,
-                                            (_clean_ai_annotations(trans).strip() or f"[翻译失败] {orig_text}")
+                                    cleaned_results: list[tuple[int, str]] = []
+                                    all_failed = True
+                                    for (orig_idx, _orig_text), trans in zip(pairs, fallback_results):
+                                        cleaned = _clean_ai_annotations(trans).strip() or _FAILURE_MARKER
+                                        if not cleaned.startswith(_FAILURE_MARKER):
+                                            all_failed = False
+                                        cleaned_results.append((orig_idx, cleaned))
+
+                                    # If a fallback returns only failure markers (common under overload),
+                                    # continue down the fallback chain instead of short-circuiting.
+                                    if all_failed:
+                                        logger.warning(
+                                            "batch: fallback returned all failures provider=%s model=%s%s",
+                                            fallback_provider,
+                                            fallback_model,
+                                            slice_note,
                                         )
-                                        for (orig_idx, orig_text), trans in zip(pairs, fallback_results)
-                                    ]
+                                        continue
+                                    return cleaned_results
                             except Exception as fallback_exc:
                                 logger.error(
                                     "batch: fallback failed provider=%s model=%s err=%s%s",
@@ -748,12 +967,12 @@ class AITranslator:
                             f"batch: error model={self.model} err={e} count={len(pairs)} len={len(numbered_texts)}{slice_note}"
                         )
                         return [
-                            (orig_idx, f"[翻译失败] {orig_text}")
+                            (orig_idx, _FAILURE_MARKER)
                             for orig_idx, orig_text in pairs
                         ]
 
             return [
-                (orig_idx, f"[翻译失败] {orig_text}")
+                (orig_idx, _FAILURE_MARKER)
                 for orig_idx, orig_text in pairs
             ]
 
@@ -768,12 +987,45 @@ class AITranslator:
                 return False
             return all((trans or "").startswith("[翻译失败]") for _idx, trans in result_pairs)
 
-        async def _translate_in_chunks(
+        def _split_pairs(
             pairs: list[tuple[int, str]],
-            size: int,
+            *,
+            max_items: int,
+            max_chars: int,
+        ) -> list[list[tuple[int, str]]]:
+            if not pairs:
+                return []
+            if max_items <= 0:
+                max_items = len(pairs)
+            if max_chars <= 0:
+                return [pairs[i : i + max_items] for i in range(0, len(pairs), max_items)]
+
+            slices: list[list[tuple[int, str]]] = []
+            cur: list[tuple[int, str]] = []
+            cur_chars = 0
+            for orig_idx, text in pairs:
+                # Estimate chars in numbered_texts for this entry (exclude static prompt boilerplate).
+                ctx = cleaned_contexts[orig_idx]
+                entry = _format_entry(len(cur) + 1, text, ctx)
+                entry_len = len(entry) + 1  # + newline
+
+                # Close current slice if adding this entry would exceed budget (or max items).
+                if cur and (len(cur) >= max_items or (cur_chars + entry_len) > max_chars):
+                    slices.append(cur)
+                    cur = []
+                    cur_chars = 0
+
+                cur.append((orig_idx, text))
+                cur_chars += entry_len
+
+            if cur:
+                slices.append(cur)
+            return slices
+
+        async def _translate_slices(
+            slices: list[list[tuple[int, str]]],
             max_concurrency: int,
         ) -> list[tuple[int, str]]:
-            slices = [pairs[i : i + size] for i in range(0, len(pairs), size)]
             sem = asyncio.Semaphore(max_concurrency)
 
             async def _run_slice(idx: int, slice_pairs: list[tuple[int, str]]):
@@ -791,33 +1043,108 @@ class AITranslator:
         # Prefer single-batch by default for better latency/cost.
         chunk_size = _read_env_int("AI_TRANSLATE_BATCH_CHUNK_SIZE", 200)
         concurrency = _read_env_int("AI_TRANSLATE_BATCH_CONCURRENCY", 2)
+        char_budget = _read_env_int("AI_TRANSLATE_BATCH_CHAR_BUDGET", 0)
         fallback_chunk_size = _read_env_int(
             "AI_TRANSLATE_BATCH_FALLBACK_CHUNK_SIZE",
             min(12, chunk_size),
         )
 
-        if len(valid_pairs) <= chunk_size:
-            single_results = await _translate_pairs(valid_pairs)
-            should_fallback = (
-                len(valid_pairs) > 1
-                and fallback_chunk_size < len(valid_pairs)
-                and _all_failed(single_results)
+        # Build slices based on both item count and char budget (if enabled).
+        if len(valid_pairs) <= chunk_size and char_budget <= 0:
+            slices = [valid_pairs]
+        else:
+            slices = _split_pairs(
+                valid_pairs,
+                max_items=chunk_size,
+                max_chars=char_budget,
             )
+
+        if len(slices) == 1:
+            single_results = await _translate_pairs(slices[0])
+            should_fallback = len(valid_pairs) > 1 and _all_failed(single_results)
             if should_fallback:
+                # If the configured fallback chunk size is >= current batch size (common for
+                # small pages), shrink it so we actually reduce prompt/output size and can
+                # recover from format/truncation failures.
+                effective_chunk_size = fallback_chunk_size
+                if effective_chunk_size >= len(valid_pairs):
+                    effective_chunk_size = max(1, len(valid_pairs) // 2)
                 logger.warning(
-                    "batch: full batch failed, fallback chunk_size=%d concurrency=%d",
+                    "batch: full batch failed, fallback chunk_size=%d effective_chunk_size=%d concurrency=%d",
                     fallback_chunk_size,
+                    effective_chunk_size,
                     concurrency,
                 )
-                chunked_results = await _translate_in_chunks(
+                fallback_slices = _split_pairs(
                     valid_pairs,
-                    fallback_chunk_size,
-                    concurrency,
+                    max_items=effective_chunk_size,
+                    max_chars=char_budget,
                 )
+                chunked_results = await _translate_slices(fallback_slices, concurrency)
+                duration_ms = (time.perf_counter() - batch_start) * 1000
+                self.last_metrics = {
+                    "api_calls": api_calls_primary,
+                    "api_calls_fallback": api_calls_fallback,
+                    "timeouts_primary": timeouts_primary,
+                    "fallback_provider_calls": fallback_provider_calls,
+                    "missing_number_retries": missing_number_retries,
+                    "slices": len(fallback_slices),
+                    "items_total": len(texts),
+                    "items_translated": len(valid_pairs),
+                    "prompt_chars_total": prompt_chars_total,
+                    "content_chars_total": content_chars_total,
+                    "text_chars_total": text_chars_total,
+                    "ctx_chars_total": ctx_chars_total,
+                    "chunk_size": chunk_size,
+                    "char_budget": char_budget,
+                    "concurrency": concurrency,
+                    "fallback_chunk_size": fallback_chunk_size,
+                    "duration_ms": round(duration_ms, 2),
+                }
                 return _merge_results(chunked_results)
+            duration_ms = (time.perf_counter() - batch_start) * 1000
+            self.last_metrics = {
+                "api_calls": api_calls_primary,
+                "api_calls_fallback": api_calls_fallback,
+                "timeouts_primary": timeouts_primary,
+                "fallback_provider_calls": fallback_provider_calls,
+                "missing_number_retries": missing_number_retries,
+                "slices": len(slices),
+                "items_total": len(texts),
+                "items_translated": len(valid_pairs),
+                "prompt_chars_total": prompt_chars_total,
+                "content_chars_total": content_chars_total,
+                "text_chars_total": text_chars_total,
+                "ctx_chars_total": ctx_chars_total,
+                "chunk_size": chunk_size,
+                "char_budget": char_budget,
+                "concurrency": concurrency,
+                "fallback_chunk_size": fallback_chunk_size,
+                "duration_ms": round(duration_ms, 2),
+            }
             return _merge_results(single_results)
 
-        chunked_results = await _translate_in_chunks(valid_pairs, chunk_size, concurrency)
+        chunked_results = await _translate_slices(slices, concurrency)
+        duration_ms = (time.perf_counter() - batch_start) * 1000
+        self.last_metrics = {
+            "api_calls": api_calls_primary,
+            "api_calls_fallback": api_calls_fallback,
+            "timeouts_primary": timeouts_primary,
+            "fallback_provider_calls": fallback_provider_calls,
+            "missing_number_retries": missing_number_retries,
+            "slices": len(slices),
+            "items_total": len(texts),
+            "items_translated": len(valid_pairs),
+            "prompt_chars_total": prompt_chars_total,
+            "content_chars_total": content_chars_total,
+            "text_chars_total": text_chars_total,
+            "ctx_chars_total": ctx_chars_total,
+            "chunk_size": chunk_size,
+            "char_budget": char_budget,
+            "concurrency": concurrency,
+            "fallback_chunk_size": fallback_chunk_size,
+            "duration_ms": round(duration_ms, 2),
+        }
         return _merge_results(chunked_results)
 
 

@@ -4,10 +4,14 @@ Translation API Routes.
 Provides endpoints for image translation operations.
 """
 
+from collections import OrderedDict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Set, Optional
 from uuid import UUID
 import logging
+import os
+import inspect
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -29,8 +33,12 @@ router = APIRouter(prefix="/translate", tags=["translation"])
 logger = logging.getLogger(__name__)
 
 # In-memory task storage
-_tasks: Dict[UUID, TaskContext] = {}
+# Use an OrderedDict so we can enforce a bounded LRU-style store.
+_tasks: "OrderedDict[UUID, TaskContext]" = OrderedDict()
+_tasks_lock = asyncio.Lock()
 _task_meta: Dict[UUID, dict] = {}
+_chapter_jobs_inflight: Set[str] = set()
+_chapter_jobs_lock = asyncio.Lock()
 
 # SSE event listeners
 _listeners: Set[asyncio.Queue] = set()
@@ -47,14 +55,119 @@ _STAGE_ORDER = {
 }
 
 
+def _read_env_int(name: str, default: int, *, min_value: int = 1, max_value: int = 100) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(min_value, min(max_value, value))
+
+
+def _is_truthy_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _strip_task_for_store(task: TaskContext) -> TaskContext:
+    # We keep enough fields to serve /task and to attach metadata to SSE events.
+    # Regions (and nested debug fields) can be very large and are not used by /task.
+    stripped = task.model_copy(deep=False)
+    stripped.regions = []
+    stripped.crosspage_debug = None
+    return stripped
+
+
+def _prune_tasks_locked(now: datetime, *, max_tasks: int, ttl_seconds: int) -> None:
+    if ttl_seconds > 0:
+        cutoff = now - timedelta(seconds=ttl_seconds)
+        while _tasks:
+            _task_id, oldest = next(iter(_tasks.items()))
+            if oldest.updated_at >= cutoff:
+                break
+            _tasks.popitem(last=False)
+
+    while len(_tasks) > max_tasks:
+        _tasks.popitem(last=False)
+
+
+async def _store_task(task: TaskContext) -> None:
+    max_tasks = _read_env_int(
+        "TRANSLATE_TASK_MAX_STORED",
+        2000,
+        min_value=1,
+        max_value=200000,
+    )
+    ttl_seconds = _read_env_int(
+        "TRANSLATE_TASK_TTL_SECONDS",
+        6 * 3600,
+        min_value=60,
+        max_value=7 * 24 * 3600,
+    )
+    strip_regions = _is_truthy_env("TRANSLATE_TASK_STRIP_REGIONS", True)
+
+    task_to_store = _strip_task_for_store(task) if strip_regions else task
+    async with _tasks_lock:
+        _tasks[task.task_id] = task_to_store
+        _tasks.move_to_end(task.task_id)
+        _prune_tasks_locked(datetime.now(), max_tasks=max_tasks, ttl_seconds=ttl_seconds)
+
+
+async def _register_chapter_job(chapter_key: str) -> None:
+    max_pending = _read_env_int("TRANSLATE_CHAPTER_MAX_PENDING_JOBS", 4, min_value=1, max_value=1000)
+    async with _chapter_jobs_lock:
+        if chapter_key in _chapter_jobs_inflight:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "chapter_already_running",
+                    "message": f"Chapter already running: {chapter_key}",
+                },
+            )
+        if len(_chapter_jobs_inflight) >= max_pending:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "code": "chapter_queue_full",
+                    "message": f"Chapter queue full ({len(_chapter_jobs_inflight)}/{max_pending})",
+                },
+            )
+        _chapter_jobs_inflight.add(chapter_key)
+
+
+async def _unregister_chapter_job(chapter_key: str) -> None:
+    async with _chapter_jobs_lock:
+        _chapter_jobs_inflight.discard(chapter_key)
+
+
 async def broadcast_event(data: dict):
     """Broadcast an event to all connected SSE clients."""
     if not _listeners:
         return
 
     event_str = f"data: {json.dumps(data)}\n\n"
-    for queue in _listeners:
-        await queue.put(event_str)
+    # Never let slow SSE clients apply backpressure to the whole pipeline.
+    for queue in list(_listeners):
+        try:
+            queue.put_nowait(event_str)
+        except asyncio.QueueFull:
+            # Drop the oldest event and keep the latest.
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                queue.put_nowait(event_str)
+            except asyncio.QueueFull:
+                # Still full (unlikely). Drop this event.
+                pass
+        except Exception:
+            # If a client queue is broken, drop it.
+            _listeners.discard(queue)
 
 
 async def pipeline_status_callback(stage: str, status: TaskStatus, task_id: UUID):
@@ -86,14 +199,17 @@ def _build_pipeline_error_detail(result, fallback_message: str) -> dict:
 
 def _pipeline_failure_status_code(result) -> int:
     if getattr(result.task, "error_code", None) == "ocr_no_text":
-        return status.HTTP_422_UNPROCESSABLE_ENTITY
+        # Starlette/FastAPI use 422 for validation-style failures.
+        # Prefer the newer constant name to avoid deprecation warnings.
+        return status.HTTP_422_UNPROCESSABLE_CONTENT
     return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 @router.get("/events")
 async def sse_events():
     """Server-Sent Events endpoint for real-time status updates."""
-    queue = asyncio.Queue()
+    queue_max = _read_env_int("SSE_QUEUE_MAXSIZE", 200, min_value=10, max_value=10000)
+    queue = asyncio.Queue(maxsize=queue_max)
     _listeners.add(queue)
 
     async def event_generator():
@@ -135,7 +251,7 @@ async def translate_image(
     # Process through pipeline with callback
     result = await pipeline.process(context, status_callback=pipeline_status_callback)
 
-    _tasks[result.task.task_id] = result.task
+    await _store_task(result.task)
     if not result.success:
         raise HTTPException(
             status_code=_pipeline_failure_status_code(result),
@@ -188,117 +304,152 @@ async def translate_chapter_endpoint(
     if not image_files:
         raise HTTPException(status_code=404, detail="No images found in chapter")
 
+    chapter_key = f"{request.manga_id}/{request.chapter_id}"
+    await _register_chapter_job(chapter_key)
+
     # Background processing function
     async def process_chapter():
         contexts = []
         total_count = 0
         # 使用 request 中的语言，如果为 None 则从 settings 获取
         try:
-            source_lang = request.source_language or settings.source_language
-            target_lang = request.target_language or settings.target_language
+            chapter_slots = _read_env_int(
+                "TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS",
+                1,
+                min_value=1,
+                max_value=16,
+            )
+            page_concurrency = _read_env_int(
+                "TRANSLATE_CHAPTER_PAGE_CONCURRENCY",
+                2,
+                min_value=1,
+                max_value=16,
+            )
+            chapter_semaphore = getattr(translate_chapter_endpoint, "_chapter_semaphore", None)
+            chapter_semaphore_size = getattr(translate_chapter_endpoint, "_chapter_semaphore_size", None)
+            if chapter_semaphore is None or chapter_semaphore_size != chapter_slots:
+                chapter_semaphore = asyncio.Semaphore(chapter_slots)
+                setattr(translate_chapter_endpoint, "_chapter_semaphore", chapter_semaphore)
+                setattr(translate_chapter_endpoint, "_chapter_semaphore_size", chapter_slots)
 
-            contexts = [
-                TaskContext(
-                    image_path=str(img_path),
-                    source_language=source_lang,
-                    target_language=target_lang,
+            async with chapter_semaphore:
+                logger.info(
+                    "[%s] chapter worker acquired (chapter_slots=%s, page_concurrency=%s, inflight=%s)",
+                    chapter_key,
+                    chapter_slots,
+                    page_concurrency,
+                    len(_chapter_jobs_inflight),
                 )
-                for img_path in image_files
-            ]
+                source_lang = request.source_language or settings.source_language
+                target_lang = request.target_language or settings.target_language
 
-            # Override output paths to be inside the output dir
-            output_base = Path(settings.output_dir) / request.manga_id / request.chapter_id
-            output_base.mkdir(parents=True, exist_ok=True)
+                contexts = [
+                    TaskContext(
+                        image_path=str(img_path),
+                        source_language=source_lang,
+                        target_language=target_lang,
+                    )
+                    for img_path in image_files
+                ]
 
-            for ctx in contexts:
-                img_name = Path(ctx.image_path).name
-                ctx.output_path = str(output_base / img_name)
-                _tasks[ctx.task_id] = ctx
-                _task_meta[ctx.task_id] = {
-                    "manga_id": request.manga_id,
-                    "chapter_id": request.chapter_id,
-                    "image_name": img_name,
-                }
+                # Override output paths to be inside the output dir
+                output_base = Path(settings.output_dir) / request.manga_id / request.chapter_id
+                output_base.mkdir(parents=True, exist_ok=True)
 
-            total_count = len(contexts)
-            await broadcast_event(
-                {
-                    "type": "chapter_start",
-                    "manga_id": request.manga_id,
-                    "chapter_id": request.chapter_id,
-                    "total_pages": total_count,
-                }
-            )
+                for ctx in contexts:
+                    img_name = Path(ctx.image_path).name
+                    ctx.output_path = str(output_base / img_name)
+                    await _store_task(ctx)
+                    _task_meta[ctx.task_id] = {
+                        "manga_id": request.manga_id,
+                        "chapter_id": request.chapter_id,
+                        "image_name": img_name,
+                    }
 
-            results = await pipeline.process_batch(
-                contexts, status_callback=pipeline_status_callback
-            )
-
-            from app.services.page_status import find_translated_file
-
-            saved_count = 0
-            effective_success_count = 0
-            pipeline_success_count = 0
-            failed_translation_count = 0
-            failed_pipeline_count = 0
-            failed_ocr_empty_count = 0
-
-            for img_path, result in zip(image_files, results):
-                translated_file = find_translated_file(output_base, img_path.stem)
-                has_output_file = bool(translated_file)
-                if has_output_file:
-                    saved_count += 1
-
-                if result.success:
-                    pipeline_success_count += 1
-
-                regions_count = len(result.task.regions or [])
-                if regions_count == 0:
-                    failed_ocr_empty_count += 1
-
-                has_failure_marker = any(
-                    (region.target_text or "").strip().startswith("[翻译失败]")
-                    for region in (result.task.regions or [])
+                total_count = len(contexts)
+                await broadcast_event(
+                    {
+                        "type": "chapter_start",
+                        "manga_id": request.manga_id,
+                        "chapter_id": request.chapter_id,
+                        "total_pages": total_count,
+                        "inflight_chapters": len(_chapter_jobs_inflight),
+                    }
                 )
-                if has_failure_marker:
-                    failed_translation_count += 1
 
-                is_effective_success = (
-                    result.success
-                    and has_output_file
-                    and not has_failure_marker
-                    and regions_count > 0
+                process_batch = pipeline.process_batch
+                process_batch_params = inspect.signature(process_batch).parameters
+                batch_kwargs = {"status_callback": pipeline_status_callback}
+                if "max_concurrent" in process_batch_params:
+                    batch_kwargs["max_concurrent"] = page_concurrency
+                results = await process_batch(contexts, **batch_kwargs)
+
+                from app.services.page_status import find_translated_file
+
+                saved_count = 0
+                effective_success_count = 0
+                pipeline_success_count = 0
+                failed_translation_count = 0
+                failed_pipeline_count = 0
+                failed_ocr_empty_count = 0
+
+                for img_path, result in zip(image_files, results):
+                    await _store_task(result.task)
+                    translated_file = find_translated_file(output_base, img_path.stem)
+                    has_output_file = bool(translated_file)
+                    if has_output_file:
+                        saved_count += 1
+
+                    if result.success:
+                        pipeline_success_count += 1
+
+                    regions_count = len(result.task.regions or [])
+                    if regions_count == 0:
+                        failed_ocr_empty_count += 1
+
+                    has_failure_marker = any(
+                        (region.target_text or "").strip().startswith("[翻译失败]")
+                        for region in (result.task.regions or [])
+                    )
+                    if has_failure_marker:
+                        failed_translation_count += 1
+
+                    is_effective_success = (
+                        result.success
+                        and has_output_file
+                        and not has_failure_marker
+                        and regions_count > 0
+                    )
+                    if is_effective_success:
+                        effective_success_count += 1
+                    elif not result.success:
+                        failed_pipeline_count += 1
+
+                failed_count = total_count - effective_success_count
+                final_status = (
+                    "error"
+                    if effective_success_count == 0
+                    else "partial" if failed_count > 0 else "success"
                 )
-                if is_effective_success:
-                    effective_success_count += 1
-                elif not result.success:
-                    failed_pipeline_count += 1
 
-            failed_count = total_count - effective_success_count
-            final_status = (
-                "error"
-                if effective_success_count == 0
-                else "partial" if failed_count > 0 else "success"
-            )
-
-            await broadcast_event(
-                {
-                    "type": "chapter_complete",
-                    "manga_id": request.manga_id,
-                    "chapter_id": request.chapter_id,
-                    "status": final_status,
-                    # success_count for frontend should represent effective success
-                    # (pipeline success + output exists + no explicit failure marker).
-                    "success_count": effective_success_count,
-                    "pipeline_success_count": pipeline_success_count,
-                    "failed_pipeline_count": failed_pipeline_count,
-                    "failed_translation_count": failed_translation_count,
-                    "failed_ocr_empty_count": failed_ocr_empty_count,
-                    "failed_count": failed_count,
-                    "saved_count": saved_count,
-                    "total_count": total_count,
-                }
-            )
+                await broadcast_event(
+                    {
+                        "type": "chapter_complete",
+                        "manga_id": request.manga_id,
+                        "chapter_id": request.chapter_id,
+                        "status": final_status,
+                        # success_count for frontend should represent effective success
+                        # (pipeline success + output exists + no explicit failure marker).
+                        "success_count": effective_success_count,
+                        "pipeline_success_count": pipeline_success_count,
+                        "failed_pipeline_count": failed_pipeline_count,
+                        "failed_translation_count": failed_translation_count,
+                        "failed_ocr_empty_count": failed_ocr_empty_count,
+                        "failed_count": failed_count,
+                        "saved_count": saved_count,
+                        "total_count": total_count,
+                    }
+                )
         except Exception as exc:
             logger.exception(
                 "[%s/%s] chapter translation background task failed",
@@ -322,6 +473,7 @@ async def translate_chapter_endpoint(
         finally:
             for ctx in contexts:
                 _task_meta.pop(ctx.task_id, None)
+            await _unregister_chapter_job(chapter_key)
 
     background_tasks.add_task(process_chapter)
 
@@ -383,7 +535,7 @@ async def retranslate_page(
     # Process through pipeline with callback
     result = await pipeline.process(context, status_callback=pipeline_status_callback)
 
-    _tasks[result.task.task_id] = result.task
+    await _store_task(result.task)
     if not result.success:
         await broadcast_event(
             {

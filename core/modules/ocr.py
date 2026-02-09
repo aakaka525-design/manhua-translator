@@ -27,8 +27,35 @@ from PIL import Image
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 全局 OCR 锁 - 解决 PaddleOCR 并发时的竞争条件问题
-_ocr_lock = asyncio.Lock()
+# Global OCR gate.
+# PaddleOCR has historically shown race conditions under concurrency in some setups.
+# Keep default concurrency=1 (same as previous global lock), but allow opt-in parallelism
+# for advanced users to reduce chapter-level tail latency.
+_ocr_gate: asyncio.Semaphore | None = None
+_ocr_gate_size: int | None = None
+_ocr_gate_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_ocr_gate() -> tuple[asyncio.Semaphore, int]:
+    global _ocr_gate, _ocr_gate_size, _ocr_gate_loop
+    raw = (os.getenv("OCR_MAX_CONCURRENCY") or "").strip()
+    size = 1
+    if raw:
+        try:
+            size = int(raw)
+        except ValueError:
+            size = 1
+    # Clamp to keep memory usage predictable.
+    size = max(1, min(8, size))
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _ocr_gate is None or _ocr_gate_size != size or (_ocr_gate_loop is not loop):
+        _ocr_gate = asyncio.Semaphore(size)
+        _ocr_gate_size = size
+        _ocr_gate_loop = loop
+    return _ocr_gate, size
 
 
 class OCRModule(BaseModule):
@@ -171,11 +198,9 @@ class OCRModule(BaseModule):
             return context
 
         # 根据 context.source_language 动态切换 OCR 引擎
+        # NOTE: engine switching must be synchronized with OCR calls (gate-protected);
+        # see tests/test_ocr_module_engine_switch_lock.py.
         target_lang = context.source_language or "en"
-        if hasattr(self.engine, 'lang') and self.engine.lang != target_lang:
-            logger.info(f"[{context.task_id}] 切换 OCR 语言: {self.engine.lang} -> {target_lang}")
-            self.engine = PaddleOCREngine(lang=target_lang)
-            self.engine._init_ocr()
 
         logger.info(f"[{context.task_id}] OCR 开始: {context.image_path}")
         start_time = time.perf_counter()
@@ -210,13 +235,29 @@ class OCRModule(BaseModule):
                 cache_key,
                 len(context.regions),
             )
+            gate_wait_ms = 0.0
+            gate_size = _get_ocr_gate()[1]
         else:
-            # 使用全局锁确保 PaddleOCR 串行执行，避免并发竞争问题
-            async with _ocr_lock:
-                # 使用 detect_and_recognize 统一入口（支持长图切片）
+            gate, gate_size = _get_ocr_gate()
+            wait_start = time.perf_counter()
+            await gate.acquire()
+            gate_wait_ms = (time.perf_counter() - wait_start) * 1000
+            try:
+                if hasattr(self.engine, "lang") and self.engine.lang != target_lang:
+                    logger.info(
+                        "[%s] 切换 OCR 语言: %s -> %s",
+                        context.task_id,
+                        getattr(self.engine, "lang", None),
+                        target_lang,
+                    )
+                    self.engine = PaddleOCREngine(lang=target_lang)
+                    self.engine._init_ocr()
+                # Use detect_and_recognize unified entrypoint (supports long-image tiling).
                 context.regions = await self.engine.detect_and_recognize(
                     context.image_path,
                 )
+            finally:
+                gate.release()
             # Post-process OCR text (normalize + SFX detection + locale fixes)
             OCRPostProcessor().process_regions(context.regions, lang=target_lang)
             self._save_cached_regions(context.image_path, target_lang, context.regions)
@@ -301,10 +342,30 @@ class OCRModule(BaseModule):
                 "prev_bottom": [],
                 "next_top": [],
             }
+
+            async def _detect_and_recognize_band(page_path: Path, edge: str) -> list[RegionData]:
+                # Band OCR must be concurrency-safe too; otherwise it can overlap
+                # with another task's main OCR and crash PaddleOCR.
+                gate, _gate_size = _get_ocr_gate()
+                await gate.acquire()
+                try:
+                    if hasattr(self.engine, "lang") and self.engine.lang != target_lang:
+                        logger.info(
+                            "[%s] 切换 OCR 语言 (band): %s -> %s",
+                            context.task_id,
+                            getattr(self.engine, "lang", None),
+                            target_lang,
+                        )
+                        self.engine = PaddleOCREngine(lang=target_lang)
+                        self.engine._init_ocr()
+                    return await self.engine.detect_and_recognize_band(
+                        str(page_path), edge=edge, band_height=band_height
+                    )
+                finally:
+                    gate.release()
+
             if prev_path and top_candidates and hasattr(self.engine, "detect_and_recognize_band"):
-                prev_bottom_regions = await self.engine.detect_and_recognize_band(
-                    str(prev_path), edge="bottom", band_height=band_height
-                )
+                prev_bottom_regions = await _detect_and_recognize_band(prev_path, edge="bottom")
                 prev_bottom_regions = filter_noise_regions(
                     prev_bottom_regions, image_height=band_height, relaxed=False
                 )
@@ -330,9 +391,7 @@ class OCRModule(BaseModule):
 
             # Match current bottom -> next top (append context)
             if next_path and bottom_candidates and hasattr(self.engine, "detect_and_recognize_band"):
-                next_top_regions = await self.engine.detect_and_recognize_band(
-                    str(next_path), edge="top", band_height=band_height
-                )
+                next_top_regions = await _detect_and_recognize_band(next_path, edge="top")
                 next_top_regions = filter_noise_regions(
                     next_top_regions, image_height=band_height, relaxed=False
                 )
@@ -376,6 +435,9 @@ class OCRModule(BaseModule):
         
         # Collect metrics from engine if available
         self.last_metrics = {
+            "cache_hit": bool(cache_hit),
+            "gate_size": int(gate_size),
+            "gate_wait_ms": round(float(gate_wait_ms), 2),
             "regions_detected": len(context.regions) if context.regions else 0,
             "duration_ms": round(duration_ms, 2),
         }
@@ -387,6 +449,12 @@ class OCRModule(BaseModule):
             tile_avg_ms = getattr(self.engine, "last_tile_avg_ms", None)
             if tile_avg_ms is not None:
                 self.last_metrics["tile_avg_ms"] = round(tile_avg_ms, 2)
+        if hasattr(self.engine, "last_edge_tile_count"):
+            self.last_metrics["edge_tile_count"] = getattr(self.engine, "last_edge_tile_count", None)
+        if hasattr(self.engine, "last_edge_tile_avg_ms"):
+            edge_avg_ms = getattr(self.engine, "last_edge_tile_avg_ms", None)
+            if edge_avg_ms is not None:
+                self.last_metrics["edge_tile_avg_ms"] = round(edge_avg_ms, 2)
 
         logger.info(f"[{context.task_id}] OCR 完成: 识别 {len(context.regions)} 个区域, 耗时 {duration_ms:.0f}ms")
         
