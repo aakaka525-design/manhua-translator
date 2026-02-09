@@ -1108,3 +1108,10 @@ Status update:
 - `full 97-page S6 for every loop`: CLOSED
 - `tiered sampling policy`: ACTIVE
 - `translator long-tail closure`: OPEN (under new L0/L1 gating workflow)
+
+## 2026-02-09 M3.5 sync checkpoint (cloud)
+
+- Local docs policy commit pushed: `099b1b0`
+- Cloud sync command:
+  - `git fetch origin && git checkout codex/stress-quality-fixes && git pull --no-rebase origin codex/stress-quality-fixes`
+- Cloud HEAD after sync: `1b3328a` (merge commit on server branch)
