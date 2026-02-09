@@ -12,6 +12,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 from uuid import uuid4
+import os
 
 from ..models import Box2D, RegionData
 
@@ -55,7 +56,7 @@ class TilingManager:
         self.tile_height = tile_height
         self.overlap_ratio = min(0.5, max(0.15, overlap_ratio))  # 15-50%
         self.min_tile_height = min_tile_height
-        self.overlap_pixels = int(tile_height * overlap_ratio)
+        self.overlap_pixels = int(tile_height * self.overlap_ratio)
         self.edge_padding = max(0, edge_padding)
         self.edge_band_ratio = max(0.05, min(0.5, edge_band_ratio))
         self.edge_band_min_height = max(32, edge_band_min_height)
@@ -296,11 +297,66 @@ class TilingManager:
 
 # Singleton instance
 _tiling_manager: Optional[TilingManager] = None
+_tiling_manager_sig: tuple | None = None
+
+
+def _read_env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _read_env_float(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
 
 
 def get_tiling_manager() -> TilingManager:
     """Get or create the global tiling manager instance."""
-    global _tiling_manager
-    if _tiling_manager is None:
-        _tiling_manager = TilingManager()
+    global _tiling_manager, _tiling_manager_sig
+    # Keep defaults unchanged, but allow A/B tuning via env for performance experiments.
+    tile_height = _read_env_int("OCR_TILE_HEIGHT", 1024)
+    overlap_ratio = _read_env_float("OCR_TILE_OVERLAP_RATIO", 0.5)
+    min_tile_height = _read_env_int("OCR_TILE_MIN_HEIGHT", 256)
+    edge_padding = _read_env_int("OCR_EDGE_PADDING", 64)
+    edge_band_ratio = _read_env_float("OCR_EDGE_BAND_RATIO", 0.15)
+    edge_band_min_height = _read_env_int("OCR_EDGE_BAND_MIN_HEIGHT", 128)
+
+    # Normalize to avoid pathological values.
+    tile_height = max(256, min(4096, tile_height))
+    min_tile_height = max(64, min(tile_height, min_tile_height))
+    edge_padding = max(0, min(512, edge_padding))
+    # Clamp to the same ranges as TilingManager so the signature reflects
+    # the effective runtime behavior.
+    overlap_ratio = max(0.15, min(0.5, overlap_ratio))
+    edge_band_ratio = max(0.05, min(0.5, edge_band_ratio))
+    edge_band_min_height = max(32, min(2048, edge_band_min_height))
+
+    sig = (
+        tile_height,
+        round(overlap_ratio, 4),
+        min_tile_height,
+        edge_padding,
+        round(edge_band_ratio, 4),
+        edge_band_min_height,
+    )
+    if _tiling_manager is None or _tiling_manager_sig != sig:
+        _tiling_manager = TilingManager(
+            tile_height=tile_height,
+            overlap_ratio=overlap_ratio,
+            min_tile_height=min_tile_height,
+            edge_padding=edge_padding,
+            edge_band_ratio=edge_band_ratio,
+            edge_band_min_height=edge_band_min_height,
+        )
+        _tiling_manager_sig = sig
     return _tiling_manager

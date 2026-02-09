@@ -233,6 +233,50 @@ def _skip_zh_retranslate(src_text: str, translation: str) -> bool:
     return False
 
 
+_PROMPT_ARTIFACT_HINTS = (
+    "assistant",
+    "translate",
+    "output only",
+    "numbered",
+    "json",
+    "system prompt",
+)
+
+
+def _looks_like_prompt_artifact(text: str) -> bool:
+    """
+    Detect prompt/policy leakage in zh outputs.
+
+    Keep this conservative to avoid harming short labels and control markers.
+    """
+    out = (text or "").strip()
+    if not out:
+        return False
+    if out.startswith("[翻译失败]") or out == "[INPAINT_ONLY]":
+        return False
+    if _VERY_SHORT_ALNUM_RE.match(out):
+        return False
+    if len(out) < 24:
+        return False
+
+    lower = out.lower()
+    hint_hits = sum(1 for hint in _PROMPT_ARTIFACT_HINTS if hint in lower)
+    if hint_hits == 0:
+        return False
+
+    # Mixed CJK+English policy text tends to have visible English control phrases.
+    if ("assistant" in lower or "translate" in lower or "output only" in lower) and (
+        _english_ratio(out) >= 0.15
+    ):
+        return True
+
+    # Chinese-heavy prompt leakage often includes "不要..." constraints plus output keywords.
+    if "不要" in out and ("output" in lower or "translate" in lower):
+        return True
+
+    return hint_hits >= 2 and _english_ratio(out) >= 0.2
+
+
 def _has_hangul(text: str) -> bool:
     return bool(_HANGUL_RE.search(text or ""))
 
@@ -623,7 +667,16 @@ class TranslatorModule(BaseModule):
         self._refresh_lang_from_settings()
         if not context.regions:
             logger.debug(f"[{context.task_id}] 无区域需要翻译")
-            self.last_metrics = {"requests": 0, "total_ms": 0, "avg_ms": 0}
+            self.last_metrics = {
+                "requests": 0,
+                "requests_primary": 0,
+                "requests_fallback": 0,
+                "timeouts_primary": 0,
+                "fallback_provider_calls": 0,
+                "missing_number_retries": 0,
+                "total_ms": 0,
+                "avg_ms": 0,
+            }
             return context
 
         logger.info(f"[{context.task_id}] 开始翻译 {len(context.regions)} 个区域")
@@ -703,8 +756,57 @@ class TranslatorModule(BaseModule):
 
         # Metrics tracking
         total_translate_ms = 0.0
+        ai_calls_primary_total = 0
+        ai_calls_fallback_total = 0
         sfx_count = 0
         post_rec_texts = {}
+        prompt_chars_total = 0
+        content_chars_total = 0
+        text_chars_total = 0
+        ctx_chars_total = 0
+        # Fallback timing/counters (needed to make stage wall-time explainable).
+        zh_retranslate_items = 0
+        zh_retranslate_ms = 0.0
+        google_fallback_items = 0
+        google_fallback_ms = 0.0
+        crosspage_extra_items = 0
+        crosspage_extra_ms = 0.0
+        timeouts_primary = 0
+        fallback_provider_calls = 0
+        missing_number_retries = 0
+
+        def _accumulate_ai_calls(translator) -> None:
+            nonlocal ai_calls_primary_total, ai_calls_fallback_total
+            nonlocal prompt_chars_total, content_chars_total, text_chars_total, ctx_chars_total
+            nonlocal timeouts_primary, fallback_provider_calls, missing_number_retries
+            metrics = getattr(translator, "last_metrics", None) or {}
+            primary = metrics.get("api_calls")
+            fallback = metrics.get("api_calls_fallback")
+            if isinstance(primary, int) and primary >= 0:
+                ai_calls_primary_total += primary
+            if isinstance(fallback, int) and fallback >= 0:
+                ai_calls_fallback_total += fallback
+            value = metrics.get("prompt_chars_total")
+            if isinstance(value, int) and value >= 0:
+                prompt_chars_total += value
+            value = metrics.get("content_chars_total")
+            if isinstance(value, int) and value >= 0:
+                content_chars_total += value
+            value = metrics.get("text_chars_total")
+            if isinstance(value, int) and value >= 0:
+                text_chars_total += value
+            value = metrics.get("ctx_chars_total")
+            if isinstance(value, int) and value >= 0:
+                ctx_chars_total += value
+            value = metrics.get("timeouts_primary")
+            if isinstance(value, int) and value >= 0:
+                timeouts_primary += value
+            value = metrics.get("fallback_provider_calls")
+            if isinstance(value, int) and value >= 0:
+                fallback_provider_calls += value
+            value = metrics.get("missing_number_retries")
+            if isinstance(value, int) and value >= 0:
+                missing_number_retries += value
 
         if os.getenv("POST_REC") == "1" and context.image_path:
             try:
@@ -848,7 +950,13 @@ class TranslatorModule(BaseModule):
             if group_is_sfx:
                 for region in group:
                     sfx_src = region.normalized_text or region.source_text or ""
-                    region.target_text = translate_sfx(sfx_src)
+                    sfx_out = translate_sfx(sfx_src)
+                    # For zh targets, never render Hangul SFX that we can't translate reliably.
+                    # Keep original art/text by leaving target_text empty.
+                    if (self.target_lang or "").startswith("zh") and _has_hangul(sfx_out):
+                        region.target_text = ""
+                    else:
+                        region.target_text = sfx_out
                 sfx_count += len(group)
                 group_context_ok[idx] = False
                 continue
@@ -880,6 +988,24 @@ class TranslatorModule(BaseModule):
                 parts.append(group_text_map.get(next_idx, ""))
             context_text = " | ".join([p for p in parts if p])
             contexts_to_translate.append(context_text)
+
+        # Optional context cap to reduce prompt bloat (A/B only; default disabled).
+        raw_cap = (os.getenv("AI_TRANSLATE_CONTEXT_CHAR_CAP") or "").strip()
+        try:
+            ctx_cap = int(raw_cap) if raw_cap else 0
+        except ValueError:
+            ctx_cap = 0
+        if ctx_cap > 0:
+            capped = []
+            for ctx in contexts_to_translate:
+                if not ctx or len(ctx) <= ctx_cap:
+                    capped.append(ctx)
+                else:
+                    # Keep ASCII to avoid introducing unexpected tokens.
+                    keep = max(0, ctx_cap - 3)
+                    capped.append(ctx[:keep] + "...")
+            contexts_to_translate = capped
+
         if debug:
             for req_idx, (group_idx, text, group, ctx_text) in enumerate(
                 zip(group_indexes, texts_to_translate, groups_to_translate, contexts_to_translate)
@@ -933,7 +1059,21 @@ class TranslatorModule(BaseModule):
                             i for i, meta in enumerate(crosspage_meta) if not meta
                         ]
                         if crosspage_indices:
-                            crosspage_texts = [texts_to_translate[i] for i in crosspage_indices]
+                            # Provide explicit TOP/BOTTOM segments so the model does not
+                            # interpret JSON fields as {source,target}.
+                            crosspage_texts = []
+                            for i in crosspage_indices:
+                                meta = crosspage_meta[i]
+                                region = meta.get("region") if meta else None
+                                extra = (meta.get("extra") if meta else "") or ""
+                                if region:
+                                    top_src = (region.source_text or "").strip()
+                                    bottom_src = extra.strip()
+                                    crosspage_texts.append(
+                                        f"TOP: {top_src}\nBOTTOM: {bottom_src}"
+                                    )
+                                else:
+                                    crosspage_texts.append(texts_to_translate[i])
                             crosspage_contexts = [contexts_to_translate[i] for i in crosspage_indices]
                             start = time.perf_counter()
                             crosspage_translations = await _batch_translate(
@@ -941,6 +1081,7 @@ class TranslatorModule(BaseModule):
                                 output_format="json",
                                 contexts=crosspage_contexts,
                             )
+                            _accumulate_ai_calls(ai_translator)
                             total_translate_ms += (time.perf_counter() - start) * 1000
                             for idx, translation in zip(crosspage_indices, crosspage_translations):
                                 translations[idx] = translation
@@ -952,11 +1093,13 @@ class TranslatorModule(BaseModule):
                                 normal_texts,
                                 contexts=normal_contexts,
                             )
+                            _accumulate_ai_calls(ai_translator)
                             total_translate_ms += (time.perf_counter() - start) * 1000
                             for idx, translation in zip(normal_indices, normal_translations):
                                 translations[idx] = translation
                     else:
-                        translations = [f"[翻译失败] {t}" for t in texts_to_translate]
+                        # Avoid leaking source text (may contain Hangul) into target_text.
+                        translations = ["[翻译失败]"] * len(texts_to_translate)
                 else:
                     # Google Translate 逐个翻译
                     translations = []
@@ -990,68 +1133,202 @@ class TranslatorModule(BaseModule):
                 if self.use_ai and (self.target_lang or "").startswith("zh"):
                     ai_translator = self._get_ai_translator()
                     if ai_translator:
-                        fixed_translations = []
-                        for src_text, translation, meta in zip(
-                            texts_to_translate, translations, crosspage_meta
+                        use_batched_fallback = os.getenv("AI_TRANSLATE_ZH_FALLBACK_BATCH", "0") == "1"
+                        fixed_translations = list(translations)
+
+                        fallback_indices: list[int] = []
+                        fallback_inputs: list[str] = []
+                        fallback_contexts: list[str] = []
+                        fallback_input_by_index: dict[int, str] = {}
+
+                        for i, (src_text, translation, meta) in enumerate(
+                            zip(texts_to_translate, translations, crosspage_meta)
                         ):
                             if meta:
-                                fixed_translations.append(translation)
                                 continue
+                            # For zh targets, any Hangul leakage is considered invalid even if the
+                            # output contains some CJK (e.g. analysis-like text such as '"빨라고" -> "舔"').
                             needs_fallback = (
                                 (not _has_cjk(translation))
+                                or _has_hangul(translation)
                                 or (_english_ratio(translation) >= 0.35)
                             )
-                            if needs_fallback:
-                                if _skip_zh_retranslate(src_text, translation):
-                                    if debug:
-                                        logger.info(
-                                            "[%s] skip retranslate src=%s out=%s",
-                                            context.task_id,
-                                            _snippet(src_text),
-                                            _snippet(translation),
-                                        )
-                                    fixed_translations.append(translation)
-                                    continue
-                                fallback_input = src_text or ""
-                                fallback_source = "src"
-                                if translation and not translation.strip().startswith("[翻译失败]"):
-                                    if translation.strip() != (src_text or "").strip():
-                                        fallback_input = translation
-                                        fallback_source = "corrected"
+                            if not needs_fallback:
+                                continue
+                            if _skip_zh_retranslate(src_text, translation):
+                                # If we purposely skip zh fallback for short ASCII tokens, never keep
+                                # hallucinated/foreign-language output. Prefer erase-only behavior.
+                                src_clean = (src_text or "").strip()
+                                if _VERY_SHORT_ALNUM_RE.match(src_clean) and _has_hangul(translation or ""):
+                                    fixed_translations[i] = "[INPAINT_ONLY]"
                                 if debug:
                                     logger.info(
-                                        "[%s] retranslate fallback source=%s src=%s raw=%s input=%s",
+                                        "[%s] skip retranslate src=%s out=%s",
                                         context.task_id,
-                                        fallback_source,
                                         _snippet(src_text),
                                         _snippet(translation),
-                                        _snippet(fallback_input),
                                     )
-                                try:
-                                    translation = await ai_translator.translate(fallback_input)
-                                except Exception:
-                                    pass
-                                if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
-                                    gt_class = self._translator_class
-                                    if gt_class is None:
-                                        try:
-                                            from deep_translator import GoogleTranslator
-                                            gt_class = GoogleTranslator
-                                        except ImportError:
-                                            gt_class = None
-                                    if gt_class is not None:
-                                        loop = asyncio.get_event_loop()
-                                        google_source = _normalize_google_lang(
-                                            self.source_lang, for_target=False
+                                continue
+
+                            fallback_input = src_text or ""
+                            fallback_source = "src"
+                            if translation and not translation.strip().startswith("[翻译失败]"):
+                                if translation.strip() != (src_text or "").strip():
+                                    # If the model output still contains Hangul for a zh target,
+                                    # treat it as corrupted and retry from original source text
+                                    # instead of feeding the corrupted output back into the model.
+                                    if not _has_hangul(translation):
+                                        fallback_input = translation
+                                        fallback_source = "corrected"
+                            fallback_input_by_index[i] = fallback_input
+
+                            if debug:
+                                logger.info(
+                                    "[%s] retranslate fallback source=%s src=%s raw=%s input=%s",
+                                    context.task_id,
+                                    fallback_source,
+                                    _snippet(src_text),
+                                    _snippet(translation),
+                                    _snippet(fallback_input),
+                                )
+
+                            if use_batched_fallback:
+                                fallback_indices.append(i)
+                                fallback_inputs.append(fallback_input)
+                                fallback_contexts.append(contexts_to_translate[i] if i < len(contexts_to_translate) else "")
+                                continue
+
+                            # Per-item retranslate (default; timed for explainability).
+                            try:
+                                start = time.perf_counter()
+                                translation = await ai_translator.translate(fallback_input)
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                zh_retranslate_items += 1
+                                zh_retranslate_ms += elapsed_ms
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
+                            except Exception:
+                                pass
+
+                            if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
+                                gt_class = self._translator_class
+                                if gt_class is None:
+                                    try:
+                                        from deep_translator import GoogleTranslator
+                                        gt_class = GoogleTranslator
+                                    except ImportError:
+                                        gt_class = None
+                                if gt_class is not None:
+                                    loop = asyncio.get_event_loop()
+                                    google_source = _normalize_google_lang(self.source_lang, for_target=False)
+                                    google_target = _normalize_google_lang(self.target_lang, for_target=True)
+                                    try:
+                                        translator = gt_class(source=google_source, target=google_target)
+                                    except Exception as init_exc:
+                                        logger.warning(
+                                            "[%s] Google fallback init failed: source=%s target=%s err=%s",
+                                            context.task_id,
+                                            google_source,
+                                            google_target,
+                                            init_exc,
                                         )
-                                        google_target = _normalize_google_lang(
-                                            self.target_lang, for_target=True
-                                        )
+                                    else:
                                         try:
-                                            translator = gt_class(
-                                                source=google_source,
-                                                target=google_target,
+                                            start = time.perf_counter()
+                                            translation = await loop.run_in_executor(
+                                                None, translator.translate, fallback_input
                                             )
+                                            elapsed_ms = (time.perf_counter() - start) * 1000
+                                            google_fallback_items += 1
+                                            google_fallback_ms += elapsed_ms
+                                            total_translate_ms += elapsed_ms
+                                        except Exception as gt_exc:
+                                            logger.warning(
+                                                "[%s] Google fallback translate failed: err=%s",
+                                                context.task_id,
+                                                gt_exc,
+                                            )
+                            fixed_translations[i] = translation
+
+                        if use_batched_fallback and fallback_indices:
+                            batch_translations = None
+                            try:
+                                start = time.perf_counter()
+                                try:
+                                    batch_translations = await ai_translator.translate_batch(
+                                        fallback_inputs,
+                                        contexts=fallback_contexts,
+                                    )
+                                except TypeError:
+                                    batch_translations = await ai_translator.translate_batch(fallback_inputs)
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                zh_retranslate_items += len(fallback_inputs)
+                                zh_retranslate_ms += elapsed_ms
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
+                            except Exception:
+                                batch_translations = None
+
+                            if batch_translations:
+                                for idx, out in zip(fallback_indices, batch_translations):
+                                    fixed_translations[idx] = out
+
+                            # If batched fallback still yields a few failure markers, do a bounded
+                            # per-item salvage retry. This is intended to recover rare overload
+                            # blips without relying on Google fallback (not always available in docker).
+                            salvage_enable = os.getenv("AI_TRANSLATE_ZH_FALLBACK_SALVAGE", "1") == "1"
+                            salvage_budget = int(os.getenv("AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS", "4") or "4")
+                            if salvage_enable and salvage_budget > 0:
+                                ctx_by_index = dict(zip(fallback_indices, fallback_contexts))
+                                salvaged = 0
+                                for idx in fallback_indices:
+                                    if salvaged >= salvage_budget:
+                                        break
+                                    out = (fixed_translations[idx] or "").strip()
+                                    if not out.startswith("[翻译失败]"):
+                                        continue
+
+                                    fallback_input = fallback_input_by_index.get(idx) or (texts_to_translate[idx] or "")
+                                    fallback_ctx = ctx_by_index.get(idx) or ""
+                                    try:
+                                        start = time.perf_counter()
+                                        try:
+                                            retry_outs = await ai_translator.translate_batch(
+                                                [fallback_input],
+                                                contexts=[fallback_ctx],
+                                            )
+                                        except TypeError:
+                                            retry_outs = await ai_translator.translate_batch([fallback_input])
+                                        retry_out = ((retry_outs[0] if retry_outs else "") or "").strip()
+                                        elapsed_ms = (time.perf_counter() - start) * 1000
+                                        zh_retranslate_items += 1
+                                        zh_retranslate_ms += elapsed_ms
+                                        total_translate_ms += elapsed_ms
+                                        _accumulate_ai_calls(ai_translator)
+                                        if retry_out and not retry_out.startswith("[翻译失败]"):
+                                            fixed_translations[idx] = retry_out
+                                    except Exception:
+                                        pass
+                                    salvaged += 1
+
+                            # Final fallback to Google Translate for still-bad items.
+                            gt_class = self._translator_class
+                            if gt_class is None:
+                                try:
+                                    from deep_translator import GoogleTranslator
+                                    gt_class = GoogleTranslator
+                                except ImportError:
+                                    gt_class = None
+                            if gt_class is not None:
+                                loop = asyncio.get_event_loop()
+                                google_source = _normalize_google_lang(self.source_lang, for_target=False)
+                                google_target = _normalize_google_lang(self.target_lang, for_target=True)
+                                for idx in fallback_indices:
+                                    translation = fixed_translations[idx]
+                                    if (not _has_cjk(translation)) or (_english_ratio(translation) >= 0.35):
+                                        fallback_input = fallback_input_by_index.get(idx) or (texts_to_translate[idx] or "")
+                                        try:
+                                            translator = gt_class(source=google_source, target=google_target)
                                         except Exception as init_exc:
                                             logger.warning(
                                                 "[%s] Google fallback init failed: source=%s target=%s err=%s",
@@ -1060,28 +1337,86 @@ class TranslatorModule(BaseModule):
                                                 google_target,
                                                 init_exc,
                                             )
-                                        else:
-                                            try:
-                                                translation = await loop.run_in_executor(
-                                                    None, translator.translate, fallback_input
-                                                )
-                                            except Exception as gt_exc:
-                                                logger.warning(
-                                                    "[%s] Google fallback translate failed: err=%s",
-                                                    context.task_id,
-                                                    gt_exc,
-                                                )
-                            fixed_translations.append(translation)
+                                            break
+                                        try:
+                                            start = time.perf_counter()
+                                            translation = await loop.run_in_executor(
+                                                None, translator.translate, fallback_input
+                                            )
+                                            elapsed_ms = (time.perf_counter() - start) * 1000
+                                            google_fallback_items += 1
+                                            google_fallback_ms += elapsed_ms
+                                            total_translate_ms += elapsed_ms
+                                            fixed_translations[idx] = translation
+                                        except Exception as gt_exc:
+                                            logger.warning(
+                                                "[%s] Google fallback translate failed: err=%s",
+                                                context.task_id,
+                                                gt_exc,
+                                            )
+
+                        # Prompt/policy leakage sanitizer: one bounded pass for suspicious
+                        # prompt-like outputs that can slip through normal fallback checks.
+                        sanitize_enable = (
+                            os.getenv("AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT", "1") == "1"
+                        )
+                        sanitize_budget = int(
+                            os.getenv("AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS", "2") or "2"
+                        )
+                        if sanitize_enable and sanitize_budget > 0:
+                            sanitized = 0
+                            for i, (src_text, out, meta) in enumerate(
+                                zip(texts_to_translate, fixed_translations, crosspage_meta)
+                            ):
+                                if sanitized >= sanitize_budget:
+                                    break
+                                if meta:
+                                    continue
+                                if not _looks_like_prompt_artifact(out):
+                                    continue
+
+                                retry_ctx = (
+                                    contexts_to_translate[i]
+                                    if i < len(contexts_to_translate)
+                                    else ""
+                                )
+                                try:
+                                    start = time.perf_counter()
+                                    try:
+                                        retry_outputs = await ai_translator.translate_batch(
+                                            [src_text], contexts=[retry_ctx]
+                                        )
+                                    except TypeError:
+                                        retry_outputs = await ai_translator.translate_batch(
+                                            [src_text]
+                                        )
+                                    elapsed_ms = (time.perf_counter() - start) * 1000
+                                    zh_retranslate_items += 1
+                                    zh_retranslate_ms += elapsed_ms
+                                    total_translate_ms += elapsed_ms
+                                    _accumulate_ai_calls(ai_translator)
+                                except Exception:
+                                    retry_outputs = None
+
+                                candidate = (
+                                    ((retry_outputs[0] if retry_outputs else "") or "").strip()
+                                )
+                                if candidate and not _looks_like_prompt_artifact(candidate):
+                                    fixed_translations[i] = candidate
+                                sanitized += 1
+
                         translations = fixed_translations
                 
                 # 4. 将翻译结果分配到原始区域
                 from ..translation_splitter import parse_top_bottom
-                for group, translation, group_idx, meta, skip_ids in zip(
-                    groups_to_translate,
-                    translations,
-                    group_indexes,
-                    crosspage_meta,
-                    skip_region_ids_list,
+                for assign_idx, (group, translation, group_idx, meta, skip_ids) in enumerate(
+                    zip(
+                        groups_to_translate,
+                        translations,
+                        group_indexes,
+                        crosspage_meta,
+                        skip_region_ids_list,
+                    )
                 ):
                     crosspage_region = meta["region"] if meta else None
                     crosspage_extra = meta["extra"] if meta else ""
@@ -1096,11 +1431,60 @@ class TranslatorModule(BaseModule):
                         parsed_bottom = bottom_text
                         fallback_used = False
                         fallback_mode = None
+                        # Quality guard: never leave Hangul in zh outputs for crosspage top text.
+                        # When this happens (seen in stress runs), do a one-shot AI re-translate
+                        # for the whole crosspage payload (json output) to recover.
+                        if (self.target_lang or "").startswith("zh") and _has_hangul(top_text):
+                            if ai_translator and assign_idx < len(texts_to_translate):
+                                retry_ctx = (
+                                    contexts_to_translate[assign_idx]
+                                    if assign_idx < len(contexts_to_translate)
+                                    else ""
+                                )
+                                retry_top = (crosspage_region.source_text or "").strip()
+                                retry_bottom = (crosspage_extra or "").strip()
+                                retry_text = f"TOP: {retry_top}\nBOTTOM: {retry_bottom}"
+                                start = time.perf_counter()
+                                retry_out = None
+                                try:
+                                    retry_out = await ai_translator.translate_batch(
+                                        [retry_text],
+                                        output_format="json",
+                                        contexts=[retry_ctx],
+                                    )
+                                except TypeError:
+                                    retry_out = await ai_translator.translate_batch(
+                                        [retry_text],
+                                        output_format="json",
+                                    )
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
+                                candidate = ((retry_out[0] if retry_out else "") or "").strip()
+                                if candidate:
+                                    try:
+                                        new_top, new_bottom = parse_top_bottom(candidate)
+                                    except Exception:
+                                        new_top, new_bottom = candidate, ""
+                                    if new_top and not _has_hangul(new_top):
+                                        top_text = new_top
+                                        if new_bottom and not _has_hangul(new_bottom):
+                                            bottom_text = new_bottom
+                                        fallback_used = True
+                                        fallback_mode = "retranslate_top"
+                                    else:
+                                        fallback_mode = "retranslate_failed_lang_top"
+                            else:
+                                fallback_mode = "retranslate_skipped_no_ai"
                         if not bottom_text and crosspage_extra:
                             if ai_translator:
-                                translated_extra = await ai_translator.translate_batch(
-                                    [crosspage_extra]
-                                )
+                                start = time.perf_counter()
+                                translated_extra = await ai_translator.translate_batch([crosspage_extra])
+                                elapsed_ms = (time.perf_counter() - start) * 1000
+                                crosspage_extra_items += 1
+                                crosspage_extra_ms += elapsed_ms
+                                total_translate_ms += elapsed_ms
+                                _accumulate_ai_calls(ai_translator)
                                 candidate = (
                                     (translated_extra[0] if translated_extra else "") or ""
                                 ).strip()
@@ -1211,7 +1595,8 @@ class TranslatorModule(BaseModule):
                 logger.error(f"[{context.task_id}] 翻译失败: {e}")
                 for group in groups_to_translate:
                     for region in group:
-                        region.target_text = f"[翻译失败] {region.source_text}"
+                        # Keep a stable marker (no source text) so reports don't contain Hangul.
+                        region.target_text = "[翻译失败]"
 
         # 获取模型名称用于日志
         model_name = "unknown"
@@ -1225,10 +1610,25 @@ class TranslatorModule(BaseModule):
 
         # Store metrics
         self.last_metrics = {
-            "requests": 1,  # 只有一次批量请求
+            "requests": ai_calls_primary_total + ai_calls_fallback_total,
+            "requests_primary": ai_calls_primary_total,
+            "requests_fallback": ai_calls_fallback_total,
+            "timeouts_primary": timeouts_primary,
+            "fallback_provider_calls": fallback_provider_calls,
+            "missing_number_retries": missing_number_retries,
             "total_ms": round(total_translate_ms, 2),
             "avg_ms": round(total_translate_ms / len(texts_to_translate), 2) if texts_to_translate else 0,
             "sfx_skipped": sfx_count,
+            "prompt_chars_total": prompt_chars_total,
+            "content_chars_total": content_chars_total,
+            "text_chars_total": text_chars_total,
+            "ctx_chars_total": ctx_chars_total,
+            "zh_retranslate_items": zh_retranslate_items,
+            "zh_retranslate_ms": round(zh_retranslate_ms, 2),
+            "google_fallback_items": google_fallback_items,
+            "google_fallback_ms": round(google_fallback_ms, 2),
+            "crosspage_extra_items": crosspage_extra_items,
+            "crosspage_extra_ms": round(crosspage_extra_ms, 2),
         }
 
         try:

@@ -580,6 +580,10 @@ class TextRenderer:
             # Skip INPAINT_ONLY markers (regions inpainted but no text rendered)
             if text == "[INPAINT_ONLY]":
                 continue
+            
+            # Skip translation failure markers; keep original text/art intact.
+            if text.startswith("[翻译失败]"):
+                continue
 
             # Estimate style from original
             text_color = self.style_estimator.estimate_text_color(
