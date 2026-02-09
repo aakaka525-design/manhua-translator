@@ -1340,3 +1340,13 @@ Next action (single path, no L2 auto-upgrade):
 - `open + next action`: run one additional L1 (24 pages, same fixed knobs), only after explicit user approval.
 - owner: `perf track / codex-stress-quality-fixes`
 - trigger: user approval for L1 recheck or release gate requirement.
+
+### M3.6.1 cloud sync checkpoint (post docs push)
+- local pushed commit: `5145972`
+- cloud pull command:
+  - `git fetch origin && git checkout codex/stress-quality-fixes && git pull --no-rebase origin codex/stress-quality-fixes`
+- cloud branch had divergence (`ahead 20, behind 1`), pull entered merge state.
+- non-interactive merge completion:
+  - `git commit -m "merge: sync codex/stress-quality-fixes from origin"`
+- cloud final HEAD: `7963ff2`
+- note: cloud runtime now includes this branch tip; no API/protocol change in this round.
