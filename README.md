@@ -40,6 +40,19 @@ http://<host>/
 ./scripts/start_docker.sh
 ```
 
+Linux 服务器（root）默认会在启动后自动安装/启用 `fail2ban`（基于 Nginx 访问日志自动封禁撞库/探测 IP）。
+如需关闭自动安全加固：
+
+```bash
+./scripts/start_docker.sh --no-security
+```
+
+仅执行安全加固（不重启容器）：
+
+```bash
+./scripts/start_docker.sh --security-only
+```
+
 如需指定镜像版本（例如某次提交）：
 
 ```bash
@@ -56,6 +69,7 @@ IMAGE_TAG=sha-<commit> ./scripts/start_docker.sh
 
 注意事项：
 - 模型与输出通过 bind mount 持久化：`./models`、`./data`、`./output`、`./logs`。
+- `web` 会把访问日志写到 `./logs/nginx/`，供 fail2ban 自动封禁使用。
 - CPU-only 默认参数在 `docker-compose.yml` 中已设置（禁用 OneDNN/PIR）。
 - web 容器会反向代理 `/api`、`/data`、`/output` 到 API 服务。
 - Apple Silicon / ARM 主机：PaddlePaddle 可能在 arm64 崩溃，请使用 amd64：

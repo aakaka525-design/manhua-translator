@@ -1,0 +1,11 @@
+[manhua-nginx-probe]
+enabled = true
+filter = manhua-nginx-probe
+port = http,https
+backend = auto
+logpath = __LOG_PATH__
+maxretry = 8
+findtime = 600
+bantime = 86400
+banaction = iptables-multiport
+ignoreip = 127.0.0.1/8 ::1

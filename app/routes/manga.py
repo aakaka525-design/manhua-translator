@@ -32,6 +32,21 @@ class MangaInfo(BaseModel):
     chapter_count: int
 
 
+def _with_mtime_query(url: str, file_path: Path) -> str:
+    try:
+        version = file_path.stat().st_mtime_ns
+    except OSError:
+        return url
+    return f"{url}?v={version}"
+
+
+def _to_public_data_url(file_path: Path, data_dir: Path) -> str:
+    rel_path = file_path.relative_to(data_dir).as_posix()
+    if data_dir.name == "raw":
+        rel_path = f"raw/{rel_path}"
+    return f"/data/{rel_path}"
+
+
 def _resolve_manga_path(data_dir: Path, manga_id: str) -> Path:
     direct_path = data_dir / manga_id
     if direct_path.exists():
@@ -77,7 +92,7 @@ async def list_manga(settings=Depends(get_settings)):
             candidates.extend(cache_dir.glob(f"*__{safe_id}{ext}"))
         if candidates:
             chosen = max(candidates, key=lambda p: p.stat().st_mtime)
-            cover_url = f"/data/{chosen.relative_to(data_dir).as_posix()}"
+            cover_url = _to_public_data_url(chosen, data_dir)
         image_extensions = {".jpg", ".jpeg", ".png", ".webp"}
         for s in sorted(subdirs, key=lambda p: p.name):
             images = [
@@ -90,8 +105,7 @@ async def list_manga(settings=Depends(get_settings)):
             images.sort(key=lambda p: p.name)
             is_manga = True
             if cover_url is None:
-                cover_path = images[0].relative_to(data_dir).as_posix()
-                cover_url = f"/data/{cover_path}"
+                cover_url = _to_public_data_url(images[0], data_dir)
             break
 
         if is_manga:
@@ -218,7 +232,10 @@ async def get_chapter_details(
         pages.append(
             {
                 "name": p.name,
-                "original_url": f"/data/{manga_id}/{chapter_id}/{p.name}",
+                "original_url": _with_mtime_query(
+                    _to_public_data_url(p, data_dir),
+                    p,
+                ),
                 "translated_url": (
                     f"/output/{manga_id}/{chapter_id}/{translated_file.name}"
                     if translated_file and translated_file.exists()
