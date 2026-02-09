@@ -631,9 +631,10 @@ Status normalization:
 - Effective status on integrated branch: `translator long-tail closure = CLOSED`.
 
 Remaining non-gate follow-up:
-- semantic oddity spot-check item remains `open` for observation only.
+- semantic oddity spot-check item is `deferred (maintenance observation)`.
 - owner: `perf/translation quality`
 - trigger: next approved L0/L1 regression cycle.
+- this item is not a release-blocking condition in current phase; execute only on trigger.
 
 Execution policy:
 - Keep L2 (97-page) as trigger-only, not default.

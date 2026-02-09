@@ -422,8 +422,9 @@ Integrated result:
 - Core perf/stability/error-handling branches merged into `codex/integrate-all-worktrees`.
 - `translator long-tail closure` remains `CLOSED` (supersedes earlier OPEN checkpoints in this document).
 
-Open roadmap items (post-merge):
-- semantic oddity observation follow-up (non-gate), owner `perf/translation quality`, trigger `next approved L0/L1 run`.
+Deferred observation items (non-gate, post-merge):
+- semantic oddity observation follow-up, owner `perf/translation quality`, trigger `next approved L0/L1 run`.
+- this item does not block current delivery and does not trigger extra testing by default.
 
 No change to deployment recommendation:
 - `AI_TRANSLATE_FASTFAIL=0`

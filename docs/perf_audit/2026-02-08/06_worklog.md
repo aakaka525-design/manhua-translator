@@ -1459,15 +1459,26 @@ Superseded OPEN markers:
   - `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)`
   - status there is `translator long-tail closure: CLOSED`.
 
-Current active open items (post-merge):
+Current deferred non-gate items (post-merge):
 - Item: semantic oddity spot-check follow-up (non-gate)
-  - status: `open`
+  - status: `deferred (non-gate)`
   - owner: `perf/translation quality`
-  - next action: verify 1 sampled odd mapping on next approved L0/L1 run and classify as OCR noise vs translation drift.
-  - trigger: next scheduled small-sample regression run (no L2 required).
+  - next action: execute only when trigger conditions are met; verify 1 sampled odd mapping and classify as OCR noise vs translation drift.
+  - trigger:
+    - next approved small-sample L0/L1 regression run
+    - or explicit release-gate request
 
 Policy reminder:
 - Keep trigger-based strategy: no mandatory L2 (97 pages); escalate only on explicit trigger.
+
+## 2026-02-09 M3.8 close note (deferred doc-only closure)
+
+Decision:
+- close remaining non-gate oddity item as `deferred (maintenance observation)`.
+- no new L0/L1/L2 execution in this round.
+- this deferred item does not block mainline delivery and does not change:
+  - `translator long-tail closure = CLOSED`
+  - trigger-based performance verification policy.
 
 ## 2026-02-09 housekeeping: local worktree cleanup (main-only)
 
