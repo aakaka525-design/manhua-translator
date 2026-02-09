@@ -25,6 +25,7 @@ logger = setup_module_logger(
     __name__,
     "ai/ai_translator.log",
     level=get_log_level("AI_TRANSLATOR_LOG_LEVEL", logging.INFO),
+    console_env="AI_TRANSLATOR_LOG_TO_STDOUT",
 )
 
 _FAILURE_MARKER = "[翻译失败]"

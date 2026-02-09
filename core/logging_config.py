@@ -98,6 +98,7 @@ def setup_module_logger(
     name: str,
     log_file: str,
     level: int = logging.INFO,
+    console_env: Optional[str] = None,
 ) -> logging.Logger:
     """
     为指定模块创建独立日志文件（不影响全局 handler）。
@@ -145,6 +146,27 @@ def setup_module_logger(
     except OSError:
         # If we still cannot write, keep logger without file handler
         pass
+
+    # Optional: mirror module logs to container stdout for easier docker logs debugging.
+    def _is_truthy(value: str) -> bool:
+        return value.strip().lower() not in {"", "0", "false", "off", "no"}
+
+    enable_console = _is_truthy(os.getenv("MODULE_LOG_TO_STDOUT", "0"))
+    if console_env:
+        enable_console = enable_console or _is_truthy(os.getenv(console_env, "0"))
+
+    if enable_console:
+        has_stdout_handler = any(
+            isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, logging.FileHandler)
+            and getattr(handler, "stream", None) is sys.stdout
+            for handler in logger.handlers
+        )
+        if not has_stdout_handler:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(level)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
     return logger
 
 

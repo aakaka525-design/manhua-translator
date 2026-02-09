@@ -27,6 +27,7 @@ logger = setup_module_logger(
     __name__,
     "translator/translator.log",
     level=get_log_level("TRANSLATOR_LOG_LEVEL", logging.INFO),
+    console_env="TRANSLATOR_LOG_TO_STDOUT",
 )
 
 
