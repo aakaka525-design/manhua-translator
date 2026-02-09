@@ -423,15 +423,16 @@ Roadmap state:
 Current-status note:
 - Historical `OPEN/open` markers in this roadmap are phase snapshots and not active blockers.
 - Effective state is determined by the latest normalization checkpoint and follow-up note.
-- Current effective state: `translator long-tail closure = CLOSED`; oddity follow-up is `deferred (maintenance observation)`.
+- Current effective state: `translator long-tail closure = CLOSED`; oddity follow-up is `CLOSED (observed, non-systemic)`.
 
 Integrated result:
 - Core perf/stability/error-handling branches merged into `codex/integrate-all-worktrees`.
 - `translator long-tail closure` remains `CLOSED` (supersedes earlier OPEN checkpoints in this document).
 
 Deferred observation items (non-gate, post-merge):
-- semantic oddity observation follow-up, owner `perf/translation quality`, trigger `next approved L0/L1 run`.
-- this item does not block current delivery and does not trigger extra testing by default.
+- semantic oddity observation follow-up: historical `deferred` state is superseded by M3.10 closure.
+- final status: `CLOSED (observed, non-systemic)`.
+- reopen trigger only: future approved small-sample run shows repeated oddity pattern across multiple pages.
 
 No change to deployment recommendation:
 - `AI_TRANSLATE_FASTFAIL=0`

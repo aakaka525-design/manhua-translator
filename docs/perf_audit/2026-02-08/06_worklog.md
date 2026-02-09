@@ -1462,7 +1462,7 @@ Purpose:
 Current-status note:
 - Historical `OPEN/open` markers in this file are checkpoint snapshots only.
 - Effective status must be read from the latest checkpoint sections (`M3.6.1 second recheck`, `M3.8 close note`).
-- Current effective state: `translator long-tail closure = CLOSED`; semantic oddity item is `deferred (non-gate)`.
+- Current effective state: `translator long-tail closure = CLOSED`; semantic oddity item is `CLOSED (observed, non-systemic)` (supersedes M3.7/M3.8 deferred notes).
 
 Superseded OPEN markers:
 - `Translator long-tail closure: OPEN` entries in earlier M3.6/M3.6.1 checkpoints are superseded by:
@@ -1477,6 +1477,7 @@ Current deferred non-gate items (post-merge):
   - trigger:
     - next approved small-sample L0/L1 regression run
     - or explicit release-gate request
+  - Historical checkpoint only, superseded by `2026-02-10 M3.10 semantic oddity closure note`.
 
 Policy reminder:
 - Keep trigger-based strategy: no mandatory L2 (97 pages); escalate only on explicit trigger.
@@ -1489,6 +1490,35 @@ Decision:
 - this deferred item does not block mainline delivery and does not change:
   - `translator long-tail closure = CLOSED`
   - trigger-based performance verification policy.
+- Historical checkpoint only, superseded by `2026-02-10 M3.10 semantic oddity closure note`.
+
+## 2026-02-10 M3.10 semantic oddity closure note (docs-only, no new image run)
+
+Scope:
+- no L0/L1/L2 execution in this round.
+- closure decision is based on existing M3.6.1 second recheck evidence only.
+
+Evidence locked for review:
+- run section: `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)`
+- files referenced in that section:
+  - `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.summary.json`
+  - `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.failures.txt`
+  - `output/quality_reports/_stress_20260209_062352_api_l1_24_m361_r2.spotcheck.txt`
+- key metrics already recorded:
+  - `pages_has_failure_marker=0`
+  - `pages_has_hangul=0`
+  - `prompt_like_regions=0`
+  - sampled odd mapping: `기장u앱 -> 等待就免费`
+
+Oddity review conclusion:
+- The odd mapping is classified as OCR-noise-correlated and non-systemic (source token includes mixed-script artifact `u` and non-lexical shape).
+- No prompt-artifact pattern was observed in the same run (`prompt_like_regions=0`).
+- No related hard-gate regressions were observed (`failure_marker=0`, `hangul=0`).
+
+Final status update (effective):
+- `semantic oddity spot-check follow-up`: **CLOSED (observed, non-systemic)**.
+- Historical `deferred` status from M3.7/M3.8 is superseded by this M3.10 checkpoint.
+- Future re-open trigger: only if next approved small-sample run shows repeat oddity pattern across multiple pages.
 
 ## 2026-02-09 housekeeping: local worktree cleanup (main-only)
 

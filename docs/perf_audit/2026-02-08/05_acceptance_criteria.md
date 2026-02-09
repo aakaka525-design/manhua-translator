@@ -631,17 +631,16 @@ Status decision:
 Current-status note:
 - Historical `OPEN/open` markers in this document are checkpoint snapshots only.
 - Effective status is determined by the latest checkpoint section, not earlier phase snapshots.
-- Current effective state: `translator long-tail closure = CLOSED`; semantic oddity follow-up is `deferred (maintenance observation)`.
+- Current effective state: `translator long-tail closure = CLOSED`; semantic oddity follow-up is `CLOSED (observed, non-systemic)`.
 
 Status normalization:
 - Historical `OPEN` records for `translator long-tail closure` in earlier sections are superseded by section `6.18`.
 - Effective status on integrated branch: `translator long-tail closure = CLOSED`.
 
 Remaining non-gate follow-up:
-- semantic oddity spot-check item is `deferred (maintenance observation)`.
-- owner: `perf/translation quality`
-- trigger: next approved L0/L1 regression cycle.
-- this item is not a release-blocking condition in current phase; execute only on trigger.
+- semantic oddity spot-check item: historical `deferred` state is superseded by M3.10 closure.
+- final status: `CLOSED (observed, non-systemic)`.
+- reopen trigger only: repeat oddity pattern across multiple pages in a future approved small-sample run.
 
 Execution policy:
 - Keep L2 (97-page) as trigger-only, not default.
