@@ -550,3 +550,41 @@ Current status:
 Next action policy:
 - Do not auto-upgrade to full S6.
 - L1 (24 pages) only when explicitly approved or release gate requires it.
+
+## 6.17 M3.6.1 L1 single-run resume checkpoint (24 pages)
+
+Run id:
+- `20260209_052602_api_l1_24_m361`
+
+Evidence:
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.sample.txt`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.missing.txt`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.list`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.summary.json`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.failures.txt`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.docker_state.txt`
+- `/tmp/kernel_oom_20260209_052602_api_l1_24_m361.txt`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.spotcheck.txt`
+
+Metrics:
+- `pages_total=24`
+- quality:
+  - `pages_has_failure_marker=1` (target `0`) -> FAIL
+  - `pages_has_hangul=0` -> PASS
+  - `no_cjk_with_ascii=7`, `prompt_like_regions=0`
+- translator:
+  - `translator_p50=9953.81`
+  - `translator_p95=42731.03`
+  - `translator_max=51420.60`
+- process/stability:
+  - `max_rss_max_mb=1202.99`
+  - `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=`0`
+
+Gate result:
+- Hard gate: NOT PASS (failure marker exists)
+- Tail gate: PASS (`p95<=57176.76`, `max<=130805.99`)
+- Final for this checkpoint: `translator long-tail closure` keeps `OPEN`.
+
+Decision:
+- No L2 (97 pages) in this round.
+- Next action is single-path and explicit: one additional L1 recheck under unchanged knobs, only with user approval.

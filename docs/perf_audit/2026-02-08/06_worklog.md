@@ -1223,3 +1223,120 @@ Open item (explicit):
   - cloud HEAD after sync: `3a3b9a8`
 - Status:
   - cloud runtime now includes latest M3.6 docs evidence and gate judgement.
+
+## 2026-02-09 M3.6.1 kickoff (L1 only, 24 pages)
+
+Scope lock:
+- This round runs one L1 only (24 pages).
+- No L2 97-page full run.
+- UPSCALE remains disabled (`UPSCALE_ENABLE=0`).
+
+Workspace/runtime checkpoint:
+- Local worktree: `/Users/xa/Desktop/projiect/manhua/.worktrees/stress-quality-fixes`
+- Local branch/head: `codex/stress-quality-fixes` @ `2e8c315`
+- Cloud repo: `/root/manhua-translator`
+- Cloud branch/head: `codex/stress-quality-fixes` @ `3de8e3f`
+
+Fixed runtime knobs (unchanged):
+- `UPSCALE_ENABLE=0`
+- `AI_TRANSLATE_FASTFAIL=0`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+- `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+- `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+
+Gate for this round:
+- Hard: `pages_has_failure_marker=0`, `pages_has_hangul=0`, `OOMKilled=false`, `RestartCount=0`, kernel OOM lines = 0
+- Tail: `translator_p95 <= 57176.76`, `translator_max <= 130805.99`
+
+Evidence filename contract (run_id scoped):
+- `output/quality_reports/_stress_<run_id>.sample.txt`
+- `output/quality_reports/_stress_<run_id>.list`
+- `output/quality_reports/_stress_<run_id>.summary.json`
+- `output/quality_reports/_stress_<run_id>.failures.txt`
+- `output/quality_reports/_stress_<run_id>.docker_state.txt`
+- `/tmp/kernel_oom_<run_id>.txt`
+
+Open question (tracked):
+- If this single L1 fails gates, keep long-tail item open and request explicit approval before any second L1 or L2.
+
+### M3.6.1 interruption freeze (run_id=20260209_052602_api_l1_24_m361)
+- Interruption point confirmed: `10/24` reports generated, `14` pages pending.
+- Decision: continue this same run and backfill only missing pages.
+- No rerun from scratch and no L2 full (97 pages) in this round.
+
+## 2026-02-09 M3.6.1 L1 resume closure (24 pages, no L2)
+
+Run target:
+- run_id: `20260209_052602_api_l1_24_m361`
+- policy: resume interrupted L1 only; no 97-page L2.
+
+Resume evidence:
+- sample: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.sample.txt` (24 lines)
+- missing after interruption: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.missing.txt` (14 lines)
+- report dir (final): `output/quality_reports_stress_20260209_052602_api_l1_24_m361` (24 json)
+
+Artifacts:
+- list: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.list`
+- summary: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.summary.json`
+- failures: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.failures.txt`
+- docker state: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.docker_state.txt`
+- kernel oom: `/tmp/kernel_oom_20260209_052602_api_l1_24_m361.txt`
+- spot-check: `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.spotcheck.txt`
+
+Fixed knobs (unchanged):
+- `UPSCALE_ENABLE=0`
+- `AI_TRANSLATE_FASTFAIL=0`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+- `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+- `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+
+Summary (from run-level evidence):
+- `pages_total=24`
+- quality:
+  - `pages_has_failure_marker=1`, `regions_with_failure_marker=1` (NOT PASS)
+  - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+  - `no_cjk_with_ascii=7`, `prompt_like_regions=0`
+- timings (ms):
+  - `translator_p50=9953.81`, `translator_p95=42731.03`, `translator_max=51420.60`
+  - `ocr_p50=2420.63`, `ocr_p95=2857.68`, `ocr_max=2869.73`
+  - `total_p50=13734.70`, `total_p95=45503.92`, `total_max=56074.86`
+- process:
+  - `max_rss_max_mb=1202.99`
+- counters:
+  - `timeouts_primary=0`
+  - `fallback_provider_calls=0`
+  - `missing_number_retries=10`
+- stability:
+  - docker: `OOMKilled=false`, `RestartCount=0`, `Health=healthy`
+  - kernel OOM lines: `0`
+
+Failure detail:
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.failures.txt`
+- single failed page:
+  - `hole-inspection-is-a-task__chapter-12-raw__5__b179a526-f3b4-4ac6-abd2-568f8a3d93b7.json`
+  - `fail_regions=1`, `translator_ms=42731.03`
+
+Spot-check notes (text-level):
+- 10 translation samples + 3 erase samples exported to `...spotcheck.txt`.
+- `prompt_like_regions=0` in this run.
+- semantic risk still observed in 2 sampled lines (non-failure but unnatural output), therefore quality closure cannot be declared solely from p95/max improvement.
+
+Gate evaluation (M3.6.1):
+- Hard gate: NOT PASS (`pages_has_failure_marker` must be 0, actual = 1)
+- Tail gate: PASS (`translator_p95` and `translator_max` both under L1 threshold)
+- Overall verdict: `translator long-tail closure` remains **OPEN**.
+
+Next action (single path, no L2 auto-upgrade):
+- `open + next action`: run one additional L1 (24 pages, same fixed knobs), only after explicit user approval.
+- owner: `perf track / codex-stress-quality-fixes`
+- trigger: user approval for L1 recheck or release gate requirement.

@@ -368,3 +368,26 @@
 - 风险与兼容性: CI 时间增加。
 - 预计收益（耗时下降区间）: 保证收益可持续，避免回退。
 - 验收指标: 回归任务稳定通过，超阈值自动阻断。
+
+## M3.6.1 status update (L1 24 pages, resumed run)
+
+Item: translator long-tail closure (quality-first, no L2)
+
+Evidence run:
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.summary.json`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.failures.txt`
+- `output/quality_reports/_stress_20260209_052602_api_l1_24_m361.docker_state.txt`
+- `/tmp/kernel_oom_20260209_052602_api_l1_24_m361.txt`
+
+Observed:
+- `pages_has_failure_marker=1` (not closed)
+- `pages_has_hangul=0`
+- `translator_p95=42731.03`, `translator_max=51420.60` (tail threshold passes)
+- stability unchanged: `OOMKilled=false`, `RestartCount=0`
+
+Roadmap state:
+- `translator long-tail closure`: **OPEN**
+- reason: hard quality gate still fails on one page despite tail metrics improving.
+- next action (only one): run one more L1 (24 pages, same knobs), no L2 escalation unless explicitly requested.
+- owner: perf track (`codex/stress-quality-fixes`)
+- trigger: explicit approval or release gate demand.
