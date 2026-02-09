@@ -233,6 +233,50 @@ def _skip_zh_retranslate(src_text: str, translation: str) -> bool:
     return False
 
 
+_PROMPT_ARTIFACT_HINTS = (
+    "assistant",
+    "translate",
+    "output only",
+    "numbered",
+    "json",
+    "system prompt",
+)
+
+
+def _looks_like_prompt_artifact(text: str) -> bool:
+    """
+    Detect prompt/policy leakage in zh outputs.
+
+    Keep this conservative to avoid harming short labels and control markers.
+    """
+    out = (text or "").strip()
+    if not out:
+        return False
+    if out.startswith("[翻译失败]") or out == "[INPAINT_ONLY]":
+        return False
+    if _VERY_SHORT_ALNUM_RE.match(out):
+        return False
+    if len(out) < 24:
+        return False
+
+    lower = out.lower()
+    hint_hits = sum(1 for hint in _PROMPT_ARTIFACT_HINTS if hint in lower)
+    if hint_hits == 0:
+        return False
+
+    # Mixed CJK+English policy text tends to have visible English control phrases.
+    if ("assistant" in lower or "translate" in lower or "output only" in lower) and (
+        _english_ratio(out) >= 0.15
+    ):
+        return True
+
+    # Chinese-heavy prompt leakage often includes "不要..." constraints plus output keywords.
+    if "不要" in out and ("output" in lower or "translate" in lower):
+        return True
+
+    return hint_hits >= 2 and _english_ratio(out) >= 0.2
+
+
 def _has_hangul(text: str) -> bool:
     return bool(_HANGUL_RE.search(text or ""))
 
@@ -623,7 +667,16 @@ class TranslatorModule(BaseModule):
         self._refresh_lang_from_settings()
         if not context.regions:
             logger.debug(f"[{context.task_id}] 无区域需要翻译")
-            self.last_metrics = {"requests": 0, "total_ms": 0, "avg_ms": 0}
+            self.last_metrics = {
+                "requests": 0,
+                "requests_primary": 0,
+                "requests_fallback": 0,
+                "timeouts_primary": 0,
+                "fallback_provider_calls": 0,
+                "missing_number_retries": 0,
+                "total_ms": 0,
+                "avg_ms": 0,
+            }
             return context
 
         logger.info(f"[{context.task_id}] 开始翻译 {len(context.regions)} 个区域")
@@ -718,10 +771,14 @@ class TranslatorModule(BaseModule):
         google_fallback_ms = 0.0
         crosspage_extra_items = 0
         crosspage_extra_ms = 0.0
+        timeouts_primary = 0
+        fallback_provider_calls = 0
+        missing_number_retries = 0
 
         def _accumulate_ai_calls(translator) -> None:
             nonlocal ai_calls_primary_total, ai_calls_fallback_total
             nonlocal prompt_chars_total, content_chars_total, text_chars_total, ctx_chars_total
+            nonlocal timeouts_primary, fallback_provider_calls, missing_number_retries
             metrics = getattr(translator, "last_metrics", None) or {}
             primary = metrics.get("api_calls")
             fallback = metrics.get("api_calls_fallback")
@@ -741,6 +798,15 @@ class TranslatorModule(BaseModule):
             value = metrics.get("ctx_chars_total")
             if isinstance(value, int) and value >= 0:
                 ctx_chars_total += value
+            value = metrics.get("timeouts_primary")
+            if isinstance(value, int) and value >= 0:
+                timeouts_primary += value
+            value = metrics.get("fallback_provider_calls")
+            if isinstance(value, int) and value >= 0:
+                fallback_provider_calls += value
+            value = metrics.get("missing_number_retries")
+            if isinstance(value, int) and value >= 0:
+                missing_number_retries += value
 
         if os.getenv("POST_REC") == "1" and context.image_path:
             try:
@@ -1289,6 +1355,56 @@ class TranslatorModule(BaseModule):
                                                 gt_exc,
                                             )
 
+                        # Prompt/policy leakage sanitizer: one bounded pass for suspicious
+                        # prompt-like outputs that can slip through normal fallback checks.
+                        sanitize_enable = (
+                            os.getenv("AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT", "1") == "1"
+                        )
+                        sanitize_budget = int(
+                            os.getenv("AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS", "2") or "2"
+                        )
+                        if sanitize_enable and sanitize_budget > 0:
+                            sanitized = 0
+                            for i, (src_text, out, meta) in enumerate(
+                                zip(texts_to_translate, fixed_translations, crosspage_meta)
+                            ):
+                                if sanitized >= sanitize_budget:
+                                    break
+                                if meta:
+                                    continue
+                                if not _looks_like_prompt_artifact(out):
+                                    continue
+
+                                retry_ctx = (
+                                    contexts_to_translate[i]
+                                    if i < len(contexts_to_translate)
+                                    else ""
+                                )
+                                try:
+                                    start = time.perf_counter()
+                                    try:
+                                        retry_outputs = await ai_translator.translate_batch(
+                                            [src_text], contexts=[retry_ctx]
+                                        )
+                                    except TypeError:
+                                        retry_outputs = await ai_translator.translate_batch(
+                                            [src_text]
+                                        )
+                                    elapsed_ms = (time.perf_counter() - start) * 1000
+                                    zh_retranslate_items += 1
+                                    zh_retranslate_ms += elapsed_ms
+                                    total_translate_ms += elapsed_ms
+                                    _accumulate_ai_calls(ai_translator)
+                                except Exception:
+                                    retry_outputs = None
+
+                                candidate = (
+                                    ((retry_outputs[0] if retry_outputs else "") or "").strip()
+                                )
+                                if candidate and not _looks_like_prompt_artifact(candidate):
+                                    fixed_translations[i] = candidate
+                                sanitized += 1
+
                         translations = fixed_translations
                 
                 # 4. 将翻译结果分配到原始区域
@@ -1497,6 +1613,9 @@ class TranslatorModule(BaseModule):
             "requests": ai_calls_primary_total + ai_calls_fallback_total,
             "requests_primary": ai_calls_primary_total,
             "requests_fallback": ai_calls_fallback_total,
+            "timeouts_primary": timeouts_primary,
+            "fallback_provider_calls": fallback_provider_calls,
+            "missing_number_retries": missing_number_retries,
             "total_ms": round(total_translate_ms, 2),
             "avg_ms": round(total_translate_ms / len(texts_to_translate), 2) if texts_to_translate else 0,
             "sfx_skipped": sfx_count,

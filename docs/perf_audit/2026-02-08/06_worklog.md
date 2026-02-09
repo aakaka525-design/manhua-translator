@@ -848,3 +848,36 @@ Interpretation:
 Open questions / follow-ups:
 - S6 closure complete for current objective.
 - Optional follow-up (non-blocking): evaluate `AI_TRANSLATE_FASTFAIL=0` in a separate A/B to see if `translator_max` can be reduced without regressing throughput.
+
+## 2026-02-09 M3.4 Task1 complete: stable translator counters in report + local tests
+
+Purpose:
+- Make fallback/timeout counters reconstructable from quality reports, even when `ai_translator.log` is missing.
+
+Changes implemented:
+- `core/ai_translator.py`
+  - Added run-level counters in `last_metrics` for batch translation:
+    - `timeouts_primary`
+    - `fallback_provider_calls`
+    - `missing_number_retries`
+  - Counters are accumulated for primary retries and fallback-provider invocations.
+- `core/modules/translator.py`
+  - Aggregates the above counters into module-level `last_metrics`:
+    - `requests_primary`, `requests_fallback`
+    - `timeouts_primary`, `fallback_provider_calls`, `missing_number_retries`
+- `core/quality_report.py`
+  - Added top-level `translator_counters` in report output, derived from translator stage `sub_metrics`.
+- Tests:
+  - `tests/test_quality_report.py`: assert `translator_counters` exists and contains expected values.
+  - `tests/test_translator_fallback_metrics.py`: assert new counter fields exist on `TranslatorModule.last_metrics`.
+
+Verification:
+- Command:
+  - `/Users/xa/Desktop/projiect/manhua/.venv/bin/python -m pytest tests/test_quality_report.py::test_write_quality_report_creates_file tests/test_translator_fallback_metrics.py tests/test_translator_prompt_artifact_sanitize.py -q`
+- Result: `6 passed`
+
+Open questions / follow-ups:
+- Proceed to cloud S6 A/B (`AI_TRANSLATE_FASTFAIL=1` vs `0`) to verify whether `translator_max` can be reduced while preserving:
+  - `pages_has_failure_marker=0`
+  - `pages_has_hangul=0`
+  - no OOM/restart.

@@ -594,6 +594,9 @@ class AITranslator:
             self.last_metrics = {
                 "api_calls": 0,
                 "api_calls_fallback": 0,
+                "timeouts_primary": 0,
+                "fallback_provider_calls": 0,
+                "missing_number_retries": 0,
                 "slices": 0,
                 "items_total": len(texts),
                 "items_translated": 0,
@@ -624,6 +627,9 @@ class AITranslator:
         max_retries = 2
         api_calls_primary = 0
         api_calls_fallback = 0
+        timeouts_primary = 0
+        fallback_provider_calls = 0
+        missing_number_retries = 0
         prompt_chars_total = 0
         content_chars_total = 0
         text_chars_total = 0
@@ -643,6 +649,7 @@ class AITranslator:
             slice_total: int | None = None,
         ) -> list[tuple[int, str]]:
             nonlocal api_calls_primary, api_calls_fallback
+            nonlocal timeouts_primary, fallback_provider_calls, missing_number_retries
             nonlocal prompt_chars_total, content_chars_total, text_chars_total, ctx_chars_total
             numbered_texts = "\n".join(
                 _format_entry(i + 1, t, cleaned_contexts[orig_idx])
@@ -841,6 +848,7 @@ class AITranslator:
 
                 except Exception as e:
                     if isinstance(e, _MissingNumberedItems) and attempt < max_retries:
+                        missing_number_retries += 1
                         logger.warning(
                             "batch: retry %d/%d due to missing numbered items=%d%s",
                             attempt + 1,
@@ -853,8 +861,12 @@ class AITranslator:
                     # Treat persistent missing-number errors as retryable/fallback-worthy:
                     # they are often caused by provider truncation or formatting drift and
                     # can be recovered by a different model/provider in the fallback chain.
+                    if "primary timeout after" in str(e).lower():
+                        timeouts_primary += 1
+
                     if self._is_overload_error(e) or isinstance(e, _MissingNumberedItems):
                         for fallback_translator in self._fallback_translator_chain():
+                            fallback_provider_calls += 1
                             fallback_provider = getattr(fallback_translator, "provider", "unknown")
                             fallback_model = getattr(fallback_translator, "model", "unknown")
                             logger.warning(
@@ -878,6 +890,20 @@ class AITranslator:
                                     api_calls_fallback += fallback_calls
                                 else:
                                     api_calls_fallback += 1
+                                for key in (
+                                    "timeouts_primary",
+                                    "fallback_provider_calls",
+                                    "missing_number_retries",
+                                ):
+                                    value = fallback_metrics.get(key)
+                                    if not isinstance(value, int) or value < 0:
+                                        continue
+                                    if key == "timeouts_primary":
+                                        timeouts_primary += value
+                                    elif key == "fallback_provider_calls":
+                                        fallback_provider_calls += value
+                                    elif key == "missing_number_retries":
+                                        missing_number_retries += value
                                 for key in (
                                     "prompt_chars_total",
                                     "content_chars_total",
@@ -1059,6 +1085,9 @@ class AITranslator:
                 self.last_metrics = {
                     "api_calls": api_calls_primary,
                     "api_calls_fallback": api_calls_fallback,
+                    "timeouts_primary": timeouts_primary,
+                    "fallback_provider_calls": fallback_provider_calls,
+                    "missing_number_retries": missing_number_retries,
                     "slices": len(fallback_slices),
                     "items_total": len(texts),
                     "items_translated": len(valid_pairs),
@@ -1077,6 +1106,9 @@ class AITranslator:
             self.last_metrics = {
                 "api_calls": api_calls_primary,
                 "api_calls_fallback": api_calls_fallback,
+                "timeouts_primary": timeouts_primary,
+                "fallback_provider_calls": fallback_provider_calls,
+                "missing_number_retries": missing_number_retries,
                 "slices": len(slices),
                 "items_total": len(texts),
                 "items_translated": len(valid_pairs),
@@ -1097,6 +1129,9 @@ class AITranslator:
         self.last_metrics = {
             "api_calls": api_calls_primary,
             "api_calls_fallback": api_calls_fallback,
+            "timeouts_primary": timeouts_primary,
+            "fallback_provider_calls": fallback_provider_calls,
+            "missing_number_retries": missing_number_retries,
             "slices": len(slices),
             "items_total": len(texts),
             "items_translated": len(valid_pairs),

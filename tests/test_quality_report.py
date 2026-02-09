@@ -31,7 +31,20 @@ def test_write_quality_report_creates_file(tmp_path, monkeypatch):
 
     metrics = PipelineMetrics(total_duration_ms=1234)
     metrics.add_stage(StageMetrics(name="ocr", duration_ms=100, items_processed=1))
-    metrics.add_stage(StageMetrics(name="translator", duration_ms=200, items_processed=1))
+    metrics.add_stage(
+        StageMetrics(
+            name="translator",
+            duration_ms=200,
+            items_processed=1,
+            sub_metrics={
+                "requests_primary": 2,
+                "requests_fallback": 1,
+                "timeouts_primary": 1,
+                "fallback_provider_calls": 1,
+                "missing_number_retries": 3,
+            },
+        )
+    )
 
     result = PipelineResult(
         success=True,
@@ -51,6 +64,11 @@ def test_write_quality_report_creates_file(tmp_path, monkeypatch):
     assert data["image_path"] == ctx.image_path
     assert data["target_language"] == "zh-CN"
     assert "timings_ms" in data
+    assert data["translator_counters"]["requests_primary"] == 2
+    assert data["translator_counters"]["requests_fallback"] == 1
+    assert data["translator_counters"]["timeouts_primary"] == 1
+    assert data["translator_counters"]["fallback_provider_calls"] == 1
+    assert data["translator_counters"]["missing_number_retries"] == 3
     assert data["regions"][0]["source_text"] == "Hello"
 
 

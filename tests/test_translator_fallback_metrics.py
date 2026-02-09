@@ -79,6 +79,11 @@ def test_translator_metrics_include_zh_retranslate_timer(monkeypatch):
     assert m.get("zh_retranslate_ms", 0) > 0
     assert m.get("google_fallback_items", 0) == 0
     assert m.get("crosspage_extra_items", 0) == 0
+    assert "requests_primary" in m
+    assert "requests_fallback" in m
+    assert "timeouts_primary" in m
+    assert "fallback_provider_calls" in m
+    assert "missing_number_retries" in m
 
 
 def test_translator_metrics_include_google_fallback_timer(monkeypatch):
@@ -103,6 +108,11 @@ def test_translator_metrics_include_google_fallback_timer(monkeypatch):
     m = translator.last_metrics or {}
     assert m.get("google_fallback_items", 0) >= 1
     assert m.get("google_fallback_ms", 0) > 0
+    assert "requests_primary" in m
+    assert "requests_fallback" in m
+    assert "timeouts_primary" in m
+    assert "fallback_provider_calls" in m
+    assert "missing_number_retries" in m
 
 
 def test_translator_metrics_include_crosspage_extra_timer(monkeypatch, tmp_path):
@@ -134,4 +144,8 @@ def test_translator_metrics_include_crosspage_extra_timer(monkeypatch, tmp_path)
     m = translator.last_metrics or {}
     assert m.get("crosspage_extra_items", 0) >= 1
     assert m.get("crosspage_extra_ms", 0) > 0
-
+    assert "requests_primary" in m
+    assert "requests_fallback" in m
+    assert "timeouts_primary" in m
+    assert "fallback_provider_calls" in m
+    assert "missing_number_retries" in m

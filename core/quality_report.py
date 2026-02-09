@@ -33,6 +33,37 @@ def _timings_from_metrics(metrics: Any) -> Dict[str, float]:
     return timings
 
 
+_TRANSLATOR_COUNTER_KEYS = (
+    "requests_primary",
+    "requests_fallback",
+    "timeouts_primary",
+    "fallback_provider_calls",
+    "missing_number_retries",
+)
+
+
+def _translator_counters_from_metrics(metrics: Any) -> Dict[str, int]:
+    counters: Dict[str, int] = {key: 0 for key in _TRANSLATOR_COUNTER_KEYS}
+    if metrics is None:
+        return counters
+    if not isinstance(metrics, dict) and hasattr(metrics, "to_dict"):
+        metrics = metrics.to_dict()
+    if not isinstance(metrics, dict):
+        return counters
+
+    stage_metrics = metrics.get("stages", []) or []
+    for stage in stage_metrics:
+        if (stage or {}).get("name") != "translator":
+            continue
+        sub_metrics = (stage or {}).get("sub_metrics", {}) or {}
+        for key in _TRANSLATOR_COUNTER_KEYS:
+            value = sub_metrics.get(key)
+            if isinstance(value, int) and value >= 0:
+                counters[key] = value
+        break
+    return counters
+
+
 _RUN_CONFIG_KEYS = [
     # Provider / model selection (safe: does not include API keys)
     "AI_PROVIDER",
@@ -188,6 +219,7 @@ def write_quality_report(result) -> str:
         "error_message": ctx.error_message,
         "target_language": ctx.target_language,
         "timings_ms": _timings_from_metrics(result.metrics),
+        "translator_counters": _translator_counters_from_metrics(result.metrics),
         "queue_wait_ms": _queue_wait_ms_from_metrics(result.metrics),
         "run_config": _collect_run_config(),
         "process": _collect_process_metrics(),
