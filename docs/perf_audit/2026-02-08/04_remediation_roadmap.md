@@ -136,10 +136,17 @@
     - `max_rss_max_mb=3358.0`（较前一 run 下降；内存压力降低）
     - `translator_p95=95812ms`（略降），但 `translator_max=266933ms`（更差，等待/尾延迟更重）
     - Evidence: `output/quality_reports/_stress_20260209_000350_api_s6_inflight2_pc1.summary.json`
+  - 闭环结果（S6 re-run + salvage enabled, inflight=2 + page_conc=1）:
+    - `pages_has_hangul=0`
+    - `pages_has_failure_marker=0`（达成硬门槛）
+    - `translator_p95=70759ms`（对比上轮 95812ms 进一步下降）
+    - `max_rss_max_mb=3554.58`（保持在安全范围，无 OOM/restart）
+    - Evidence: `output/quality_reports/_stress_20260209_010309_api_s6_salvage.summary.json`
   - 稳定性: 多章节并发下仍未观察到 OOM/restart（Evidence: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.docker_state.txt` + kernel OOM 0 lines）
 - 验收指标:
   - 云端 API 压测（>=6 章并发，UPSCALE=0）下：`pages_has_failure_marker=0` 且 `pages_has_hangul=0`（硬门槛）。
-  - AI log 中 `503` 与 `primary timeout` 计数相对下降（作为间接证据）。
+  - 当前状态: 已在 `output/quality_reports/_stress_20260209_010309_api_s6_salvage.summary.json` 达成。
+  - AI log 中 `503` 与 `primary timeout` 计数作为间接证据；若日志文件未落盘，则以 quality report + docker/kernel 证据为准。
 
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。

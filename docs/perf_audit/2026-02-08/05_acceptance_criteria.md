@@ -338,3 +338,46 @@ Results (from summary; nearest-rank p50/p95):
 Verdict:
 - Stability: PASS (no restarts/OOM observed)
 - Quality: NOT PASS (failure markers persist under this load; next step is failure-marker salvage retry or stricter caps)
+
+### 6.12 Cloud Stress S6 Re-run (API, 6 concurrent chapters, 104 pages, UPSCALE=0; salvage enabled)
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (6 chapters started concurrently)
+- `QUALITY_REPORT_DIR=output/quality_reports_stress_20260209_010309_api_s6_salvage`
+- Evidence:
+  - Report list: `output/quality_reports/_stress_20260209_010309_api_s6_salvage.list`
+  - Summary: `output/quality_reports/_stress_20260209_010309_api_s6_salvage.summary.json`
+  - Failures: `output/quality_reports/_stress_20260209_010309_api_s6_salvage.failures.txt` (empty)
+  - Docker: `output/quality_reports/_stress_20260209_010309_api_s6_salvage.docker_state.txt` (`OOMKilled=false`, `RestartCount=0`)
+  - Kernel OOM grep: `/tmp/kernel_oom_20260209_010309_api_s6_salvage.txt` (`0` lines)
+
+Env (key; no secrets):
+- `UPSCALE_ENABLE=0`
+- `OCR_TILE_OVERLAP_RATIO=0.25`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+- `AI_TRANSLATE_FASTFAIL=1`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+- `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+
+Results (from summary; nearest-rank p50/p95):
+- `pages_total=104`
+- quality:
+  - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
+  - `pages_has_failure_marker=0`, `regions_with_failure_marker=0` (PASS)
+  - `no_cjk_with_ascii=43`, `empty_target_regions=192`
+- timings (ms):
+  - `translator_p50=29424.89`, `translator_p95=70759.17`, `translator_max=257266.98`
+  - `ocr_p50=1597.41`, `ocr_p95=11857.04`, `ocr_max=17458.13`
+  - `total_p50=34429.14`, `total_p95=83590.93`, `total_max=273269.14`
+- process peak (from reports):
+  - `max_rss_max_mb=3554.58`
+
+Verdict:
+- Stability: PASS (no restarts/OOM observed)
+- Quality: PASS (达成本轮硬门槛：`pages_has_hangul=0` 且 `pages_has_failure_marker=0`)
+- Note: `translator_max` still high; tail-latency optimization can continue as非阻塞后续项
