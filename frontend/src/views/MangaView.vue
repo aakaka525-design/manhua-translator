@@ -199,17 +199,26 @@ async function translateChapter(chapter, event) {
     <ComicBackground />
     <GlassNav :title="mangaStore.currentManga?.name || 'Loading...'">
       <template #actions>
-        <button @click="goBack" class="text-text-secondary hover:text-text-main transition flex items-center gap-2">
-          <i class="fas fa-arrow-left"></i> 返回
+        <button
+          class="flex items-center gap-1.5 rounded-lg border border-border-subtle/60 px-2 py-1.5 text-xs text-text-secondary transition hover:bg-bg-secondary/30 hover:text-text-main sm:gap-2 sm:text-sm"
+          title="返回"
+          aria-label="返回"
+          @click="goBack"
+        >
+          <i class="fas fa-arrow-left"></i>
+          <span class="hidden sm:inline">返回</span>
         </button>
         <button
           data-test="delete-manga-btn"
-          class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
+          class="flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold transition sm:px-3"
           :class="deleteMangaDisabled ? 'cursor-not-allowed border-state-error/30 text-state-error/50' : 'border-state-error/60 text-state-error hover:bg-state-error/20'"
           :disabled="deleteMangaDisabled"
+          title="删除漫画"
+          aria-label="删除漫画"
           @click="requestDeleteManga"
         >
-          <i class="fas fa-trash-alt mr-1"></i> 删除漫画
+          <i class="fas fa-trash-alt"></i>
+          <span class="hidden sm:inline">删除漫画</span>
         </button>
       </template>
     </GlassNav>
@@ -241,15 +250,15 @@ async function translateChapter(chapter, event) {
         <div 
           v-for="chapter in mangaStore.chapters" 
           :key="chapter.id"
-          class="bg-surface border border-border-main rounded-xl p-4 flex items-center justify-between hover:bg-white/5 transition cursor-pointer group"
+          class="group flex cursor-pointer flex-col gap-3 rounded-xl border border-border-main bg-surface p-4 transition hover:bg-white/5 sm:flex-row sm:items-center sm:justify-between"
           @click="openChapter(chapter)"
         >
-          <div class="flex items-center gap-4">
+          <div class="flex min-w-0 items-center gap-4">
             <div class="w-10 h-10 rounded-lg bg-bg-secondary flex items-center justify-center text-accent-2 group-hover:scale-110 transition-transform">
               <i class="fas fa-book-open"></i>
             </div>
-            <div>
-              <h3 class="font-semibold text-text-main">{{ chapter.name }}</h3>
+            <div class="min-w-0">
+              <h3 class="truncate font-semibold text-text-main">{{ chapter.name }}</h3>
               <p class="text-xs text-text-secondary opacity-70">{{ chapter.page_count }} 页</p>
               <p v-if="chapter.isTranslating || chapter.statusText" class="text-[11px] text-text-secondary mt-1">
                 {{ chapter.statusText || '进行中' }}
@@ -260,7 +269,10 @@ async function translateChapter(chapter, event) {
             </div>
           </div>
           
-          <div class="flex items-center gap-3">
+          <div
+            :data-test="`chapter-actions-${chapter.id}`"
+            class="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:gap-3"
+          >
             <!-- Status Badges -->
             <span v-if="chapter.isComplete" class="px-2 py-0.5 bg-state-success/20 text-state-success text-xs rounded border border-state-success/30 font-bold">已完成</span>
             <span v-else-if="chapter.has_translated" class="px-2 py-0.5 bg-state-warning/20 text-state-warning text-xs rounded border border-state-warning/30 font-bold">
@@ -275,28 +287,32 @@ async function translateChapter(chapter, event) {
               v-if="!chapter.isComplete"
               @click="translateChapter(chapter, $event)"
               :disabled="chapter.isTranslating"
-              class="px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
+              class="flex h-8 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition sm:px-3"
               :class="chapter.isTranslating 
                 ? 'bg-bg-secondary text-text-secondary opacity-50 cursor-not-allowed' 
                 : 'bg-accent-1/20 text-accent-1 hover:bg-accent-1 hover:text-white'"
+              :title="chapter.isTranslating ? '翻译中' : '翻译章节'"
+              :aria-label="chapter.isTranslating ? '翻译中' : '翻译章节'"
             >
               <i class="fas" :class="chapter.isTranslating ? 'fa-spinner animate-spin' : 'fa-language'"></i>
-              {{ chapter.isTranslating ? '翻译中' : '翻译' }}
+              <span class="hidden sm:inline">{{ chapter.isTranslating ? '翻译中' : '翻译' }}</span>
             </button>
             <button
               :data-test="`delete-chapter-btn-${chapter.id}`"
               @click="requestDeleteChapter(chapter, $event)"
               :disabled="chapter.isTranslating || deletingManga || deletingChapterId === chapter.id"
-              class="px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 border"
+              class="flex h-8 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold transition sm:px-3"
               :class="chapter.isTranslating || deletingManga || deletingChapterId === chapter.id
                 ? 'border-state-error/20 text-state-error/40 cursor-not-allowed'
                 : 'border-state-error/50 text-state-error hover:bg-state-error/20'"
+              title="删除章节"
+              aria-label="删除章节"
             >
               <i class="fas" :class="deletingChapterId === chapter.id ? 'fa-spinner animate-spin' : 'fa-trash-alt'"></i>
-              删除
+              <span class="hidden sm:inline">删除</span>
             </button>
             
-            <i class="fas fa-chevron-right text-text-secondary opacity-50"></i>
+            <i class="fas fa-chevron-right text-text-secondary opacity-50 hidden sm:inline"></i>
           </div>
         </div>
       </div>

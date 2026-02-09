@@ -165,4 +165,17 @@ describe("manga delete actions", () => {
       "error"
     );
   });
+
+  it("uses mobile-friendly action layout and accessible delete labels", async () => {
+    const { wrapper } = mountView();
+    await flushPromises();
+
+    const mangaDeleteBtn = wrapper.get('[data-test="delete-manga-btn"]');
+    const chapterDeleteBtn = wrapper.get('[data-test="delete-chapter-btn-ch-1"]');
+    const chapterActions = wrapper.get('[data-test="chapter-actions-ch-1"]');
+
+    expect(mangaDeleteBtn.attributes("aria-label")).toBe("删除漫画");
+    expect(chapterDeleteBtn.attributes("aria-label")).toBe("删除章节");
+    expect(chapterActions.classes()).toContain("flex-wrap");
+  });
 });

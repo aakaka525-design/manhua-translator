@@ -18,22 +18,24 @@ function goHome() {
 </script>
 
 <template>
-  <nav class="fixed top-0 left-0 right-0 h-16 glass-nav z-50 flex items-center justify-between px-6">
-    <div class="flex items-center gap-3 cursor-pointer" @click="goHome">
-      <div class="w-8 h-8 bg-accent-1 rounded-lg rotate-3 flex items-center justify-center font-comic text-black text-xl font-bold">
+  <nav class="glass-nav fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between px-3 sm:px-6">
+    <div class="flex min-w-0 cursor-pointer items-center gap-2 sm:gap-3" @click="goHome">
+      <div class="flex h-8 w-8 shrink-0 rotate-3 items-center justify-center rounded-lg bg-accent-1 font-comic text-xl font-bold text-black">
         N
       </div>
-      <h1 class="font-heading text-2xl tracking-wide text-white">{{ title }}</h1>
+      <h1 class="max-w-[36vw] truncate font-heading text-base tracking-wide text-white sm:max-w-[52vw] sm:text-2xl">
+        {{ title }}
+      </h1>
     </div>
 
-    <div class="flex items-center gap-2">
+    <div class="flex shrink-0 items-center gap-1 sm:gap-2">
       <slot name="actions"></slot>
       <router-link :to="{ name: 'scraper' }" 
-        class="p-2 hover:bg-white/10 rounded-full transition" 
+        class="rounded-full p-1.5 transition hover:bg-white/10 sm:p-2" 
         title="资源爬取">
         <i class="fas fa-spider text-lg"></i>
       </router-link>
-      <button @click="settingsStore.showModal = true" class="p-2 hover:bg-white/10 rounded-full transition" title="设置">
+      <button @click="settingsStore.showModal = true" class="rounded-full p-1.5 transition hover:bg-white/10 sm:p-2" title="设置">
         <i class="fas fa-cog text-lg"></i>
       </button>
     </div>
