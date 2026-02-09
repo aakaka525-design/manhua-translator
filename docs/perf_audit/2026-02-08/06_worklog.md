@@ -1440,3 +1440,11 @@ Spot-check notes:
 Decision:
 - `translator long-tail closure`: **CLOSED**.
 - This round does not run L2 (97 pages).
+
+### M3.6.1 cloud sync checkpoint (post L1 second recheck docs push)
+- local pushed commit: `4945703`
+- cloud pull command:
+  - `git fetch origin && git checkout codex/stress-quality-fixes && git pull --no-rebase origin codex/stress-quality-fixes`
+- cloud branch had divergence (`ahead 21, behind 2`), pull used merge strategy `ort`.
+- cloud final HEAD: `1b1bf6e`
+- note: cloud runtime now includes latest L1 second recheck closure docs; no API/protocol change in this round.
