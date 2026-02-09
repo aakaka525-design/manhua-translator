@@ -382,3 +382,55 @@ Verdict:
 - Stability: PASS (no restarts/OOM observed)
 - Quality: PASS (达成本轮硬门槛：`pages_has_hangul=0` 且 `pages_has_failure_marker=0`)
 - Note: `translator_max` still high; tail-latency optimization can continue as非阻塞后续项
+
+### 6.13 Cloud Stress S6 FASTFAIL A/B (same workload, 97 pages, UPSCALE=0; post M3.4 sanitize+counters)
+Context:
+- Server: `185.218.204.62`
+- Trigger: API `POST /api/v1/translate/chapter` (4 chapters, total 97 pages)
+- Fixed knobs:
+  - `UPSCALE_ENABLE=0`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+  - `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+  - `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+  - `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+  - `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+  - `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=1`
+- Variable under test:
+  - A: `AI_TRANSLATE_FASTFAIL=1`
+  - B: `AI_TRANSLATE_FASTFAIL=0`
+
+Evidence:
+- A: `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.summary.json`
+- B: `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.summary.json`
+- Docker/Kernel:
+  - `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.docker_state.txt`
+  - `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.docker_state.txt`
+  - `/tmp/kernel_oom_20260209_023352_api_s6_ff1_m34.txt`
+  - `/tmp/kernel_oom_20260209_024841_api_s6_ff0_m34.txt`
+
+Results:
+- A (`FASTFAIL=1`):
+  - `pages_has_hangul=0`, `pages_has_failure_marker=2`
+  - `translator_p50=20587.02`, `translator_p95=53227.14`, `translator_max=68523.86`
+  - counters: `timeouts_primary=6`, `fallback_provider_calls=7`, `missing_number_retries=53`
+  - `max_rss_max_mb=2595.46`
+- B (`FASTFAIL=0`):
+  - `pages_has_hangul=0`, `pages_has_failure_marker=0`
+  - `translator_p50=17926.78`, `translator_p95=49718.92`, `translator_max=104644.79`
+  - counters: `timeouts_primary=5`, `fallback_provider_calls=6`, `missing_number_retries=53`
+  - `max_rss_max_mb=2558.58`
+
+Gate check:
+- Quality hard gate: PASS on B (`hangul=0` + `failure_marker=0` + no OOM/restart).
+- Tail gate: NOT PASS
+  - `translator_p95`: `-6.6%` (target `>=10%`)
+  - `translator_max`: regressed
+
+Conclusion:
+- For S6 quality-first operation, prefer `AI_TRANSLATE_FASTFAIL=0` (with current salvage/sanitize chain).
+- Tail optimization remains open; next single-variable candidate is lowering `AI_TRANSLATE_MAX_INFLIGHT_CALLS` to 1 and re-running the same S6 workload.

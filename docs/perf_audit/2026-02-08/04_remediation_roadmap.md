@@ -142,10 +142,21 @@
     - `translator_p95=70759ms`（对比上轮 95812ms 进一步下降）
     - `max_rss_max_mb=3554.58`（保持在安全范围，无 OOM/restart）
     - Evidence: `output/quality_reports/_stress_20260209_010309_api_s6_salvage.summary.json`
+  - M3.4 FASTFAIL 单变量 A/B（same workload, 97 pages）:
+    - A `FASTFAIL=1`: `pages_has_failure_marker=2`, `translator_p95=53227ms`, `translator_max=68524ms`
+    - B `FASTFAIL=0`: `pages_has_failure_marker=0`, `translator_p95=49719ms`, `translator_max=104645ms`
+    - counter 对比（A -> B）: `timeouts_primary 6 -> 5`, `fallback_provider_calls 7 -> 6`, `missing_number_retries 53 -> 53`
+    - 结论: `FASTFAIL=0` 明显提升质量闭环，但仅靠该开关无法收敛 `translator_max` 长尾（需继续单变量调优）。
+    - Evidence:
+      - `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.summary.json`
+      - `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.summary.json`
   - 稳定性: 多章节并发下仍未观察到 OOM/restart（Evidence: `output/quality_reports/_stress_20260209_064151_api_s6_missingfix.docker_state.txt` + kernel OOM 0 lines）
 - 验收指标:
   - 云端 API 压测（>=6 章并发，UPSCALE=0）下：`pages_has_failure_marker=0` 且 `pages_has_hangul=0`（硬门槛）。
   - 当前状态: 已在 `output/quality_reports/_stress_20260209_010309_api_s6_salvage.summary.json` 达成。
+  - M3.4 状态:
+    - 质量闭环: 已达标（推荐 S6 运行配置 `AI_TRANSLATE_FASTFAIL=0` + salvage/sanitize 开启）
+    - 性能长尾: 未闭环（`translator_max` 仍高），下一步建议单变量继续收敛 `AI_TRANSLATE_MAX_INFLIGHT_CALLS`。
   - AI log 中 `503` 与 `primary timeout` 计数作为间接证据；若日志文件未落盘，则以 quality report + docker/kernel 证据为准。
 
 ### 5. 高频日志导致 I/O 与序列化放大

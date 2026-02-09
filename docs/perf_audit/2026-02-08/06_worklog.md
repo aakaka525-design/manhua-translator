@@ -881,3 +881,76 @@ Open questions / follow-ups:
   - `pages_has_failure_marker=0`
   - `pages_has_hangul=0`
   - no OOM/restart.
+
+## 2026-02-09 M3.4 Task2/Task4 complete: Cloud S6 FASTFAIL A/B (same workload, UPSCALE=0)
+
+Purpose:
+- Validate whether `AI_TRANSLATE_FASTFAIL` can reduce translator tail (`p95/max`) without sacrificing quality under the same S6 workload.
+
+Scope and fixed knobs:
+- Server: `185.218.204.62`
+- Workload: API 4 chapters concurrently, total 97 pages
+  - `hole-inspection-is-a-task/chapter-12-raw` (13)
+  - `hole-inspection-is-a-task/chapter-16-raw` (32)
+  - `hole-inspection-is-a-task/chapter-18-raw` (29)
+  - `taming-a-female-bully/chapter-57-raw` (23)
+- Fixed env (A/B same except fastfail):
+  - `UPSCALE_ENABLE=0`
+  - `OCR_TILE_OVERLAP_RATIO=0.25`
+  - `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+  - `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+  - `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+  - `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+  - `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+  - `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+  - `TRANSLATE_CHAPTER_MAX_CONCURRENT_JOBS=6`
+  - `TRANSLATE_CHAPTER_PAGE_CONCURRENCY=1`
+
+Evidence artifacts:
+- A (`FASTFAIL=1`):
+  - list: `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.list`
+  - summary: `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.summary.json`
+  - failures: `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.failures.txt`
+  - docker: `output/quality_reports/_stress_20260209_023352_api_s6_ff1_m34.docker_state.txt`
+  - kernel: `/tmp/kernel_oom_20260209_023352_api_s6_ff1_m34.txt`
+- B (`FASTFAIL=0`):
+  - list: `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.list`
+  - summary: `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.summary.json`
+  - failures: `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.failures.txt`
+  - docker: `output/quality_reports/_stress_20260209_024841_api_s6_ff0_m34.docker_state.txt`
+  - kernel: `/tmp/kernel_oom_20260209_024841_api_s6_ff0_m34.txt`
+
+Results:
+- A (`FASTFAIL=1`)
+  - `pages_total=97`
+  - quality: `pages_has_hangul=0`, `pages_has_failure_marker=2`, `no_cjk_with_ascii=26`
+  - timings: `translator_p50=20587.02`, `translator_p95=53227.14`, `translator_max=68523.86`
+  - counters: `timeouts_primary=6`, `fallback_provider_calls=7`, `missing_number_retries=53`
+  - process: `max_rss_max_mb=2595.46`
+- B (`FASTFAIL=0`)
+  - `pages_total=97`
+  - quality: `pages_has_hangul=0`, `pages_has_failure_marker=0`, `no_cjk_with_ascii=28`
+  - timings: `translator_p50=17926.78`, `translator_p95=49718.92`, `translator_max=104644.79`
+  - counters: `timeouts_primary=5`, `fallback_provider_calls=6`, `missing_number_retries=53`
+  - process: `max_rss_max_mb=2558.58`
+
+Prompt-artifact sanitize check:
+- Scan both runs for long English prompt-like outputs (`translate|assistant|output only|system prompt|you are`, no CJK):
+  - A: `0` pages
+  - B: `0` pages
+
+Gate evaluation (M3.4 Task2):
+- Hard quality gate: PASS on B (`pages_has_failure_marker=0`, `pages_has_hangul=0`, no OOM/restart).
+- Tail gate (`translator_max` down >=15% OR `translator_p95` down >=10%):
+  - `translator_p95`: `53227.14 -> 49718.92` (about `-6.6%`, NOT PASS)
+  - `translator_max`: `68523.86 -> 104644.79` (worse, NOT PASS)
+
+Interpretation:
+- `AI_TRANSLATE_FASTFAIL=0` is better for quality closure under S6 (failure marker eliminated).
+- Long-tail is still not closed by fastfail toggle alone; max tail remains provider-variance dominated.
+
+New follow-up marked:
+- Continue single-variable tuning for tail only (quality config fixed):
+  - Next candidate: `AI_TRANSLATE_MAX_INFLIGHT_CALLS=1` with `FASTFAIL=0` on same S6 dataset.
