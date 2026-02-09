@@ -1060,3 +1060,51 @@ Status:
 
 Post-push sync checkpoint:
 - After the subsequent docs checkpoint push, cloud pulled again and reached HEAD `beb7cbc`.
+
+## 2026-02-09 M3.5: stress-test cost reduction policy (quality gates already green)
+
+Decision:
+- Since S6 hard gates are already met (`pages_has_failure_marker=0`, `pages_has_hangul=0`, no OOM/restart), full 97-page S6 is no longer required for every iteration.
+- Replace "always full-run" with "tiered sampling + trigger-based full recheck".
+
+Default config (unchanged):
+- `UPSCALE_ENABLE=0`
+- `AI_TRANSLATE_FASTFAIL=0`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- Keep current validated timeout/salvage/sanitize/batch knobs.
+
+L0 quick regression (default on every perf/quality tweak):
+- Scope: fixed 12 pages (4 chapters x 3 pages).
+- Time target: 10-20 minutes.
+- Hard gate:
+  - `pages_has_failure_marker=0`
+  - `pages_has_hangul=0`
+  - `OOMKilled=false` + `RestartCount=0` + kernel OOM lines=0
+
+L0 fixed page list (cloud dataset):
+- `data/raw/hole-inspection-is-a-task/chapter-12-raw/{3,9,13}.jpg`
+- `data/raw/hole-inspection-is-a-task/chapter-16-raw/{3,12,22}.jpg`  (includes prior prompt-artifact watch page `22.jpg`)
+- `data/raw/hole-inspection-is-a-task/chapter-18-raw/{3,12,22}.jpg`
+- `data/raw/taming-a-female-bully/chapter-57-raw/{3,12,22}.jpg`      (includes historical failure-marker watch page `12.jpg`)
+
+L1 medium validation (only if L0 PASS and change is perf-related):
+- Scope: 24 pages (expand from same chapter set).
+- Extra gate: `translator_p95 <= 1.15 * latest stable baseline`.
+
+L2 full S6 (97 pages; trigger-based only):
+- Trigger if any of:
+  1. changed concurrency/timeout/fallback/salvage/sanitize code or config,
+  2. L0 or L1 failed,
+  3. release gate before deployment sign-off,
+  4. `no_cjk_with_ascii` rises in two consecutive runs.
+
+Evidence files (required for every L0/L1/L2 run):
+- `output/quality_reports/_stress_<run_id>.summary.json`
+- `output/quality_reports/_stress_<run_id>.failures.txt`
+- `output/quality_reports/_stress_<run_id>.docker_state.txt`
+- `/tmp/kernel_oom_<run_id>.txt`
+
+Status update:
+- `full 97-page S6 for every loop`: CLOSED
+- `tiered sampling policy`: ACTIVE
+- `translator long-tail closure`: OPEN (under new L0/L1 gating workflow)

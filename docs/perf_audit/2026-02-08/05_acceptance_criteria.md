@@ -472,3 +472,39 @@ Conclusion:
   - `AI_TRANSLATE_FASTFAIL=0`
   - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
   - salvage/sanitize chain enabled.
+
+### 6.15 Post-pass execution policy (cost-controlled stress validation)
+Policy intent:
+- After S6 hard gates are green, avoid running full 97-page workload on every iteration.
+- Use tiered sampling to preserve quality guarantees while reducing cycle time.
+
+Tier definitions:
+- L0 (default): fixed 12 pages, target 10-20 minutes, for every perf/quality tweak.
+- L1 (conditional): 24 pages, run only when L0 passes and change is performance-related.
+- L2 (full): 97-page S6, trigger-based only.
+
+L0 fixed cloud sample:
+- `data/raw/hole-inspection-is-a-task/chapter-12-raw/{3,9,13}.jpg`
+- `data/raw/hole-inspection-is-a-task/chapter-16-raw/{3,12,22}.jpg`
+- `data/raw/hole-inspection-is-a-task/chapter-18-raw/{3,12,22}.jpg`
+- `data/raw/taming-a-female-bully/chapter-57-raw/{3,12,22}.jpg`
+
+Hard gates (L0/L1/L2 all must pass):
+- `pages_has_failure_marker=0`
+- `pages_has_hangul=0`
+- `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=0
+
+Additional gate:
+- L1 and above: `translator_p95 <= 1.15 * latest stable baseline`
+
+L2 trigger conditions:
+- concurrency/timeout/fallback/salvage/sanitize code or config changed
+- L0 or L1 failed
+- release sign-off gate
+- `no_cjk_with_ascii` increases for two consecutive runs
+
+Required evidence files (every run):
+- `output/quality_reports/_stress_<run_id>.summary.json`
+- `output/quality_reports/_stress_<run_id>.failures.txt`
+- `output/quality_reports/_stress_<run_id>.docker_state.txt`
+- `/tmp/kernel_oom_<run_id>.txt`

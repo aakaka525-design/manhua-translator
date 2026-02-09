@@ -167,6 +167,24 @@
       - trigger: 3 次连续同口径 S6 都满足 `failure_marker=0` 与 `hangul=0`。
   - AI log 中 `503` 与 `primary timeout` 计数作为间接证据；若日志文件未落盘，则以 quality report + docker/kernel 证据为准。
 
+### 4f. Stress validation cost control（分级抽样 + 触发式全量复核）
+- 问题: 在质量硬门槛已通过后，每轮都跑 97 页 S6 会显著拉长迭代周期，影响优化效率。
+- 涉及文件: `docs/perf_audit/2026-02-08/06_worklog.md`, `docs/perf_audit/2026-02-08/05_acceptance_criteria.md`
+- 改造动作（可执行步骤）:
+  1. 默认执行 L0（固定 12 页，10-20 分钟）做 go/no-go。
+  2. L0 通过后，性能相关改动才进 L1（24 页）。
+  3. L2（97 页）仅在触发条件满足时执行（参数/代码变更、L0/L1 失败、release gate、连续两轮 `no_cjk_with_ascii` 异常上升）。
+- 风险与兼容性:
+  - 抽样会降低“全量覆盖频率”，需要触发条件设计足够严格。
+- 预计收益（耗时/效率）:
+  - 日常回归耗时从“小时级全量”降到“10-20 分钟快速回归”，显著提升优化迭代速度。
+- 验收指标:
+  - L0/L1 周期内保持硬门槛 `failure_marker=0`、`hangul=0`、无 OOM/restart。
+  - L2 触发执行时仍可复现同口径证据链（summary/failures/docker/kernel）。
+- 当前状态:
+  - 已启用（ACTIVE），替代“每轮必跑 97 页”策略。
+  - 与当前推荐参数联动：`AI_TRANSLATE_FASTFAIL=0` + `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`。
+
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
 - 涉及文件: `core/ai_translator.py`, `core/modules/translator.py`, `core/modules/ocr.py`
