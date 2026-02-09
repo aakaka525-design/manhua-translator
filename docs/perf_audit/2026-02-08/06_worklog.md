@@ -831,6 +831,14 @@ AI counter note:
 - This run's `MANHUA_LOG_DIR` did not emit `ai_translator.log` files; therefore per-run `timeout/fallback/missing-number` counters were not available from file logs.
 - Fallback check via container stdout grep returned 0 for these patterns in this run. Keep summary focused on report-derived hard gates.
 
+`no_cjk_with_ascii` increase explanation (43 vs previous strict-backpressure run 10):
+- Sampling by page/region shows most entries are expected non-CJK control/marker outputs, not Hangul leakage:
+  - `[INPAINT_ONLY]` markers
+  - single-letter labels (`A`, `B`, `K`) and short tags (`HO`)
+  - occasional alnum code (`A6`)
+- One anomaly observed and tracked:
+  - `data/raw/hole-inspection-is-a-task/chapter-16-raw/22.jpg` contained a prompt-like English sentence in `target_text`; this is a quality risk and should be isolated in a follow-up translator sanitization check.
+
 Interpretation:
 - Stability: PASS (no restart/OOM).
 - Quality: PASS under S6 target workload (`pages_has_failure_marker=0` and `pages_has_hangul=0`).

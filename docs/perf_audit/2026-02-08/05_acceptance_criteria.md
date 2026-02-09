@@ -370,6 +370,7 @@ Results (from summary; nearest-rank p50/p95):
   - `pages_has_hangul=0`, `regions_with_hangul=0` (PASS)
   - `pages_has_failure_marker=0`, `regions_with_failure_marker=0` (PASS)
   - `no_cjk_with_ascii=43`, `empty_target_regions=192`
+  - 说明: 升高主要来自 `[INPAINT_ONLY]`、单字母标签（`A/B/K`）与短标签（`HO`），非韩文泄漏；但发现 1 条 prompt-like 英文句子（`chapter-16-raw/22.jpg`），已记录为后续清洗项。
 - timings (ms):
   - `translator_p50=29424.89`, `translator_p95=70759.17`, `translator_max=257266.98`
   - `ocr_p50=1597.41`, `ocr_p95=11857.04`, `ocr_max=17458.13`
