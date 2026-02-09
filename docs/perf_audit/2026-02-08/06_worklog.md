@@ -1039,6 +1039,12 @@ Follow-up status:
   - owner: perf track (`codex/stress-quality-fixes`)
   - trigger: when quality hard gate stays green for 3 consecutive same-workload runs.
 
+Quality re-check (prompt-like sanitize):
+- Scan run `20260209_034840_api_s6_ff0_inflight1_m341` for long English prompt-like outputs (`translate|assistant|output only|system prompt|you are`, no CJK):
+  - `prompt_like_pages=0`
+  - `prompt_like_regions=0`
+  - Result: sanitize guard remains effective on this run.
+
 ## 2026-02-09 M3.4.1 Task5: sync/pull checkpoint (cloud HEAD recorded)
 
 Local branch push:
@@ -1051,3 +1057,6 @@ Cloud sync (`185.218.204.62:/root/manhua-translator`):
 
 Status:
 - Cloud runtime is now synced to a revision that includes M3.4.1 docs closure changes.
+
+Post-push sync checkpoint:
+- After the subsequent docs checkpoint push, cloud pulled again and reached HEAD `beb7cbc`.
