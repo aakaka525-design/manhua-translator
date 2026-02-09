@@ -1035,6 +1035,7 @@ Decision:
 Follow-up status:
 - `M3.4.1 inflight=1 full rerun`: CLOSED (completed with full artifacts and final decision).
 - `Translator long-tail closure`: OPEN
+  - Historical checkpoint, superseded by `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)` where status is `CLOSED`.
   - next action: evaluate queueing/provider variance under `FASTFAIL=0, INFLIGHT=2` with a larger sample window (>=3 S6 rounds) before introducing another variable.
   - owner: perf track (`codex/stress-quality-fixes`)
   - trigger: when quality hard gate stays green for 3 consecutive same-workload runs.
@@ -1108,6 +1109,7 @@ Status update:
 - `full 97-page S6 for every loop`: CLOSED
 - `tiered sampling policy`: ACTIVE
 - `translator long-tail closure`: OPEN (under new L0/L1 gating workflow)
+  - Historical checkpoint, superseded by `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)` where status is `CLOSED`.
 
 ## 2026-02-09 M3.5 sync checkpoint (cloud)
 
@@ -1202,6 +1204,7 @@ Judgement:
 
 Decision:
 - `translator long-tail closure`: remains **OPEN**.
+- Historical checkpoint, superseded by `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)` where status is `CLOSED`.
 - Keep current deployment recommendation unchanged:
   - `AI_TRANSLATE_FASTFAIL=0`
   - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
@@ -1212,6 +1215,7 @@ Open item (explicit):
   - next action: run one L1 (24 pages) only when explicitly approved; keep single-variable policy.
   - owner: perf track (`codex/stress-quality-fixes`)
   - trigger: user approval for L1 or release-gate requirement.
+  - Historical checkpoint, superseded by `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)` where status is `CLOSED`.
 
 ## 2026-02-09 M3.6 sync checkpoint (cloud)
 
@@ -1335,6 +1339,7 @@ Gate evaluation (M3.6.1):
 - Hard gate: NOT PASS (`pages_has_failure_marker` must be 0, actual = 1)
 - Tail gate: PASS (`translator_p95` and `translator_max` both under L1 threshold)
 - Overall verdict: `translator long-tail closure` remains **OPEN**.
+  - Historical checkpoint, superseded by `2026-02-09 M3.6.1 L1 second recheck completion (24 pages, no L2)` where status is `CLOSED`.
 
 Next action (single path, no L2 auto-upgrade):
 - `open + next action`: run one additional L1 (24 pages, same fixed knobs), only after explicit user approval.
@@ -1453,6 +1458,11 @@ Decision:
 
 Purpose:
 - Normalize historical OPEN markers after branch integration so readers do not treat superseded checkpoints as active blockers.
+
+Current-status note:
+- Historical `OPEN/open` markers in this file are checkpoint snapshots only.
+- Effective status must be read from the latest checkpoint sections (`M3.6.1 second recheck`, `M3.8 close note`).
+- Current effective state: `translator long-tail closure = CLOSED`; semantic oddity item is `deferred (non-gate)`.
 
 Superseded OPEN markers:
 - `Translator long-tail closure: OPEN` entries in earlier M3.6/M3.6.1 checkpoints are superseded by:

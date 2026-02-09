@@ -543,6 +543,7 @@ Checkpoint verdict:
 
 Current status:
 - `translator long-tail closure`: OPEN
+- Historical checkpoint only, superseded by section `6.18` where this item is `CLOSED`.
 - Current deploy recommendation unchanged:
   - `AI_TRANSLATE_FASTFAIL=0`
   - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
@@ -584,6 +585,7 @@ Gate result:
 - Hard gate: NOT PASS (failure marker exists)
 - Tail gate: PASS (`p95<=57176.76`, `max<=130805.99`)
 - Final for this checkpoint: `translator long-tail closure` keeps `OPEN`.
+- Historical checkpoint only, superseded by section `6.18` where this item is `CLOSED`.
 
 Decision:
 - No L2 (97 pages) in this round.
@@ -625,6 +627,11 @@ Status decision:
 - M3.6.1 closes with L1 evidence only; no L2 execution in this round.
 
 ## 6.19 Merge normalization checkpoint (M3.7)
+
+Current-status note:
+- Historical `OPEN/open` markers in this document are checkpoint snapshots only.
+- Effective status is determined by the latest checkpoint section, not earlier phase snapshots.
+- Current effective state: `translator long-tail closure = CLOSED`; semantic oddity follow-up is `deferred (maintenance observation)`.
 
 Status normalization:
 - Historical `OPEN` records for `translator long-tail closure` in earlier sections are superseded by section `6.18`.

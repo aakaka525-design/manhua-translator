@@ -181,13 +181,14 @@
 - 验收指标:
   - L0/L1 周期内保持硬门槛 `failure_marker=0`、`hangul=0`、无 OOM/restart。
   - L2 触发执行时仍可复现同口径证据链（summary/failures/docker/kernel）。
-- 当前状态:
+  - 当前状态:
   - 已启用（ACTIVE），替代“每轮必跑 97 页”策略。
   - 与当前推荐参数联动：`AI_TRANSLATE_FASTFAIL=0` + `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`。
   - M3.6 L0 x3 结果（`20260209_045104/045852/050437`）:
     - R1 出现 `pages_has_failure_marker=1`（2 regions），R2/R3 质量门槛通过。
     - `translator_p95` 在 R1/R2 超过 L0 cap（基线 1.20x），长尾尚未收敛。
     - 结论: `translator long-tail closure` 保持 OPEN；暂不升级到 L2，L1 仅在明确授权或 release gate 触发时执行。
+    - Historical checkpoint only, superseded by `M3.6.1 final status update` where `translator long-tail closure` is `CLOSED`.
 
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
@@ -391,6 +392,7 @@ Roadmap state:
 - next action (only one): run one more L1 (24 pages, same knobs), no L2 escalation unless explicitly requested.
 - owner: perf track (`codex/stress-quality-fixes`)
 - trigger: explicit approval or release gate demand.
+- Historical checkpoint only, superseded by `M3.6.1 final status update` where `translator long-tail closure` is `CLOSED`.
 
 ## M3.6.1 final status update (L1 second recheck, 24 pages)
 
@@ -417,6 +419,11 @@ Roadmap state:
 - no L2 escalation required for this closure checkpoint.
 
 ## M3.7 integrated-branch status normalization
+
+Current-status note:
+- Historical `OPEN/open` markers in this roadmap are phase snapshots and not active blockers.
+- Effective state is determined by the latest normalization checkpoint and follow-up note.
+- Current effective state: `translator long-tail closure = CLOSED`; oddity follow-up is `deferred (maintenance observation)`.
 
 Integrated result:
 - Core perf/stability/error-handling branches merged into `codex/integrate-all-worktrees`.
