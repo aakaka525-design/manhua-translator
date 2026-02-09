@@ -1115,3 +1115,100 @@ Status update:
 - Cloud sync command:
   - `git fetch origin && git checkout codex/stress-quality-fixes && git pull --no-rebase origin codex/stress-quality-fixes`
 - Cloud HEAD after sync: `1b3328a` (merge commit on server branch)
+
+## 2026-02-09 M3.6 L0 x3 small-sample closure (UPSCALE=0, no full S6)
+
+Objective:
+- Continue closing open performance items without running large-image/full-S6 loops.
+- Use fixed L0 sample (12 pages) for 3 consecutive rounds and decide whether to keep `translator long-tail closure` open or closed.
+
+Cloud context:
+- Server: `185.218.204.62` (`/root/manhua-translator`)
+- Runtime branch at test time: `codex/stress-quality-fixes`
+- Cloud HEAD at test start: `9db61be`
+- Container: `manhua-translator-api-1` (healthy, UPSCALE disabled)
+
+Fixed knobs (all three rounds):
+- `UPSCALE_ENABLE=0`
+- `OCR_RESULT_CACHE_ENABLE=0`
+- `OCR_TILE_OVERLAP_RATIO=0.25`
+- `AI_TRANSLATE_FASTFAIL=0`
+- `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+- `AI_TRANSLATE_PRIMARY_TIMEOUT_MS=15000`
+- `AI_TRANSLATE_ZH_FALLBACK_BATCH=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE=1`
+- `AI_TRANSLATE_ZH_FALLBACK_SALVAGE_MAX_ITEMS=4`
+- `AI_TRANSLATE_ZH_SANITIZE_PROMPT_ARTIFACT=1`
+- `AI_TRANSLATE_ZH_SANITIZE_MAX_ITEMS=2`
+- `AI_TRANSLATE_BATCH_CONCURRENCY=1`
+
+L0 fixed page list (12 pages):
+- `data/raw/hole-inspection-is-a-task/chapter-12-raw/{3,9,13}.jpg`
+- `data/raw/hole-inspection-is-a-task/chapter-16-raw/{3,12,22}.jpg`
+- `data/raw/hole-inspection-is-a-task/chapter-18-raw/{3,12,22}.jpg`
+- `data/raw/taming-a-female-bully/chapter-57-raw/{3,12,22}.jpg`
+
+### Step A: invalidate old pseudo-runs (evidence only, not for judgement)
+- Run ids:
+  - `20260209_043932_api_l0_r1_m36`
+  - `20260209_043937_api_l0_r2_m36`
+  - `20260209_043943_api_l0_r3_m36`
+- Symptom: `translator/ocr=0ms` with near-zero total; these were API async polling artifacts and not real pipeline completion.
+- Decision: mark all three as **invalid** and exclude from pass/fail judgement.
+
+### Step B: valid L0 three-round rerun (real pipeline timings)
+Evidence files (per run):
+- `output/quality_reports/_stress_<run_id>.list`
+- `output/quality_reports/_stress_<run_id>.summary.json`
+- `output/quality_reports/_stress_<run_id>.failures.txt`
+- `output/quality_reports/_stress_<run_id>.docker_state.txt`
+- `/tmp/kernel_oom_<run_id>.txt`
+
+Run results:
+
+| run_id | pages_total | pages_has_failure_marker | pages_has_hangul | translator_p95_ms | translator_max_ms | no_cjk_with_ascii | OOMKilled | RestartCount |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `20260209_045104_api_l0_r1_m36` | 12 | 1 | 0 | 62119.23 | 62119.23 | 2 | false | 0 |
+| `20260209_045852_api_l0_r2_m36` | 12 | 0 | 0 | 108976.62 | 108976.62 | 2 | false | 0 |
+| `20260209_050437_api_l0_r3_m36` | 12 | 0 | 0 | 38086.75 | 38086.75 | 2 | false | 0 |
+
+Kernel OOM evidence:
+- `/tmp/kernel_oom_20260209_045104_api_l0_r1_m36.txt` -> 0 lines
+- `/tmp/kernel_oom_20260209_045852_api_l0_r2_m36.txt` -> 0 lines
+- `/tmp/kernel_oom_20260209_050437_api_l0_r3_m36.txt` -> 0 lines
+
+Failure detail (R1 only):
+- `output/quality_reports/_stress_20260209_045104_api_l0_r1_m36.failures.txt`
+- one page hit failure marker:
+  - `hole-inspection-is-a-task__chapter-16-raw__3__ec2e0e0b-6b28-464d-a088-7ecb420592ea.json`
+  - `fail_regions=2`
+
+### Step C: gate evaluation (M3.6)
+Baseline (latest stable S6 B, `FASTFAIL=0 + INFLIGHT=2`):
+- `translator_p95=49718.92`
+- `translator_max=104644.79`
+
+L0 three-round caps:
+- `translator_p95 <= 1.20x baseline = 59662.70`
+- `translator_max <= 1.25x baseline = 130805.99`
+
+Judgement:
+- Hard quality gate (all 3 rounds must pass): **NOT PASS**
+  - R1 has `pages_has_failure_marker=1`
+- Tail gate (all 3 rounds must stay under cap): **NOT PASS**
+  - R1 `translator_p95=62119.23` > `59662.70`
+  - R2 `translator_p95=108976.62` > `59662.70`
+- Stability gate (OOM/restart): PASS
+
+Decision:
+- `translator long-tail closure`: remains **OPEN**.
+- Keep current deployment recommendation unchanged:
+  - `AI_TRANSLATE_FASTFAIL=0`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+
+Open item (explicit):
+- `translator long-tail closure`
+  - status: open
+  - next action: run one L1 (24 pages) only when explicitly approved; keep single-variable policy.
+  - owner: perf track (`codex/stress-quality-fixes`)
+  - trigger: user approval for L1 or release-gate requirement.

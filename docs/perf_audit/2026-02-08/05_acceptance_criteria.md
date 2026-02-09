@@ -508,3 +508,45 @@ Required evidence files (every run):
 - `output/quality_reports/_stress_<run_id>.failures.txt`
 - `output/quality_reports/_stress_<run_id>.docker_state.txt`
 - `/tmp/kernel_oom_<run_id>.txt`
+
+### 6.16 M3.6 L0 x3 small-sample verification (no full S6)
+Execution scope:
+- L0 fixed 12-page sample, 3 consecutive rounds, `UPSCALE_ENABLE=0`.
+- Fixed config: `FASTFAIL=0`, `INFLIGHT=2`, timeout/salvage/sanitize/batch kept at validated settings.
+
+Valid run ids:
+- `20260209_045104_api_l0_r1_m36`
+- `20260209_045852_api_l0_r2_m36`
+- `20260209_050437_api_l0_r3_m36`
+
+Invalid run ids (excluded from judgement; async pseudo-finish, `translator/ocr=0ms`):
+- `20260209_043932_api_l0_r1_m36`
+- `20260209_043937_api_l0_r2_m36`
+- `20260209_043943_api_l0_r3_m36`
+
+Round summary:
+- R1: `failure_marker=1`, `hangul=0`, `translator_p95=62119.23`, `translator_max=62119.23`
+- R2: `failure_marker=0`, `hangul=0`, `translator_p95=108976.62`, `translator_max=108976.62`
+- R3: `failure_marker=0`, `hangul=0`, `translator_p95=38086.75`, `translator_max=38086.75`
+- All rounds: `OOMKilled=false`, `RestartCount=0`, kernel OOM lines=0
+
+Gate calculation:
+- Baseline (`FASTFAIL=0 + INFLIGHT=2`, S6): `translator_p95=49718.92`, `translator_max=104644.79`
+- L0 cap:
+  - `translator_p95 <= 59662.70` (`1.20x`)
+  - `translator_max <= 130805.99` (`1.25x`)
+
+Checkpoint verdict:
+- Hard quality gate (3/3): NOT PASS (R1 failed marker > 0)
+- Tail gate (3/3): NOT PASS (R1/R2 p95 exceed cap)
+- Stability gate: PASS
+
+Current status:
+- `translator long-tail closure`: OPEN
+- Current deploy recommendation unchanged:
+  - `AI_TRANSLATE_FASTFAIL=0`
+  - `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`
+
+Next action policy:
+- Do not auto-upgrade to full S6.
+- L1 (24 pages) only when explicitly approved or release gate requires it.

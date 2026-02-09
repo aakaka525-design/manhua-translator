@@ -184,6 +184,10 @@
 - 当前状态:
   - 已启用（ACTIVE），替代“每轮必跑 97 页”策略。
   - 与当前推荐参数联动：`AI_TRANSLATE_FASTFAIL=0` + `AI_TRANSLATE_MAX_INFLIGHT_CALLS=2`。
+  - M3.6 L0 x3 结果（`20260209_045104/045852/050437`）:
+    - R1 出现 `pages_has_failure_marker=1`（2 regions），R2/R3 质量门槛通过。
+    - `translator_p95` 在 R1/R2 超过 L0 cap（基线 1.20x），长尾尚未收敛。
+    - 结论: `translator long-tail closure` 保持 OPEN；暂不升级到 L2，L1 仅在明确授权或 release gate 触发时执行。
 
 ### 5. 高频日志导致 I/O 与序列化放大
 - 问题: translator/OCR 路径包含大量逐条日志与长文本日志。
